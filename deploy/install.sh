@@ -67,27 +67,75 @@ for i in $(seq 1 30); do curl -fsS "http://127.0.0.1:${APP_PORT:-8787}/api/healt
 curl -fsS "http://127.0.0.1:${APP_PORT:-8787}/api/health" && echo
 
 if [ $MODE = nginx ]; then
-  say "主機已有 nginx：新增一個獨立的站台設定（不動既有設定）"
+  say "主機已有 nginx：只新增／更新這個站台自己的設定檔（不動其他站台）"
   CONF=/etc/nginx/conf.d/octopus-style-class.conf
-  if [ ! -f "$CONF" ]; then
+  PROXY="        proxy_pass http://127.0.0.1:${APP_PORT:-8787};
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;"
+  # 找一個已經在用、且憑證涵蓋本網域（例如萬用憑證 *.henrylin.tw）的站台，沿用它的 SSL 設定
+  SSL_LINES=""; LISTEN=""; H2=""
+  for f in /etc/nginx/conf.d/*.conf; do
+    [ "$f" = "$CONF" ] && continue
+    crt=$(grep -m1 -E '^\s*ssl_certificate\s' "$f" 2>/dev/null | awk '{print $2}' | tr -d ';') || true
+    [ -n "$crt" ] && [ -f "$crt" ] || continue
+    sans=$(openssl x509 -in "$crt" -noout -ext subjectAltName 2>/dev/null | tr ',' '\n' | sed 's/.*DNS://' | tr -d ' ') || continue
+    ok=0; for n in $sans; do case "$n" in "$DOMAIN") ok=1;; \*.*) [ "${DOMAIN#*.}" = "${n#\*.}" ] && ok=1;; esac; done
+    [ $ok = 1 ] || continue
+    SSL_LINES=$(grep -E '^\s*(ssl_certificate|ssl_certificate_key|ssl_dhparam|ssl_trusted_certificate)\s|^\s*include\s+\S*(ssl|letsencrypt)\S*;' "$f" | sed 's/^\s*/    /' | awk '!seen[$0]++' || true)
+    LISTEN=$(grep -E '^\s*listen\s+(\[::\]:)?443' "$f" | sed 's/^\s*/    /' | sed -E 's/\s+default_server//' | awk '!seen[$0]++' || true)
+    if grep -qE '^\s*http2\s+on;' "$f"; then H2="    http2 on;"; fi
+    echo "沿用 $f 的憑證設定（$crt）"; break
+  done
+  [ -f "$CONF" ] && cp "$CONF" "$CONF.prev"
+  if [ -n "$SSL_LINES" ] && [ -n "$LISTEN" ]; then
+    cat > "$CONF" <<NGX
+server {
+    listen 80;
+    server_name $DOMAIN;
+    return 301 https://\$host\$request_uri;
+}
+server {
+$LISTEN
+$H2
+    server_name $DOMAIN;
+$SSL_LINES
+    client_max_body_size 2m;
+    location / {
+$PROXY
+    }
+}
+NGX
+  elif [ ! -f "$CONF" ]; then
     cat > "$CONF" <<NGX
 server {
     listen 80;
     server_name $DOMAIN;
     client_max_body_size 2m;
     location / {
-        proxy_pass http://127.0.0.1:${APP_PORT:-8787};
-        proxy_set_header Host \$host;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
+$PROXY
     }
 }
 NGX
-    if nginx -t 2>/dev/null; then nginx -s reload; else rm -f "$CONF"; warn "nginx 設定檢查沒過，已還原。請手動設定反向代理到 127.0.0.1:${APP_PORT:-8787}"; fi
+  fi
+  if nginx -t 2>/tmp/octopus-nginx-test.log; then nginx -s reload; rm -f "$CONF.prev"
+  else
+    warn "nginx 設定檢查沒過，已還原。錯誤訊息："; cat /tmp/octopus-nginx-test.log
+    if [ -f "$CONF.prev" ]; then mv "$CONF.prev" "$CONF"; else rm -f "$CONF"; fi
   fi
   if [ -f "$CONF" ] && ! grep -q ssl_certificate "$CONF"; then
     if command -v certbot >/dev/null 2>&1; then certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --register-unsafely-without-email --redirect || warn "憑證申請失敗（多半是 DNS 還沒指到這台）。DNS 生效後重跑這個腳本即可。"
-    else warn "沒有 certbot，尚未啟用 HTTPS。請安裝後執行：certbot --nginx -d $DOMAIN"; fi
+    else warn "找不到涵蓋 $DOMAIN 的現成憑證，也沒有 certbot，尚未啟用 HTTPS。"; fi
+  fi
+  say "檢查對外連線"
+  code=$(curl -s -o /dev/null -w '%{http_code}' --resolve "$DOMAIN:443:127.0.0.1" "https://$DOMAIN/api/health" || true)
+  echo "https://$DOMAIN/api/health → HTTP $code"
+  if [ "$code" != 200 ]; then
+    warn "還沒通。以下資訊請截圖回報："
+    echo "--- $CONF"; cat "$CONF" 2>/dev/null
+    echo "--- 其他站台的 listen／憑證設定"; grep -HnE '^\s*(listen|ssl_certificate\s|server_name)' /etc/nginx/conf.d/*.conf 2>/dev/null | grep -v "$CONF" | head -40
+    [ -f /etc/nginx/conf.d/subdomain.conf.template ] && { echo "--- subdomain.conf.template"; cat /etc/nginx/conf.d/subdomain.conf.template; }
   fi
 elif [ $MODE = manual ]; then
   warn "80/443 已被其他程式使用，而且不是 nginx。請在現有的反向代理加一筆：$DOMAIN → http://127.0.0.1:${APP_PORT:-8787}"
