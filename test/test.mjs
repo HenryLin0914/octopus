@@ -131,6 +131,14 @@ ok((await call('boss', 'a.unbind', { userId: (await call('dad', 'init')).data.us
   }
 }
 
+{ // 出席總表
+  const g = (await call('teacher', 'a.attendance', {})).data, sum = g.students.reduce((n, x) => n + x.total, 0);
+  ok(g.rows.length > 0 && g.total.total === sum && g.total.total === g.total.出席 + g.total.請假 + g.total.缺席 && g.months[0] >= g.month, '出席總表合計一致（老師可看）');
+  const one = (await call('boss', 'a.attendance', { studentId: sid })).data;
+  ok(one.rows.length > 0 && one.rows.every(x => x.sid === sid) && one.students.length === 1 && one.students[0].rate >= 0, '出席總表可依學生篩選');
+  ok((await call('boss', 'a.attendance', { month: '2000-01' })).data.total.rate === null, '沒有紀錄的月份出席率為空');
+}
+
 // Webhook
 const body = JSON.stringify({ events: [{ type: 'message', replyToken: 'r', message: { type: 'text', text: '剩幾堂' }, source: { userId: (await call('mom', 'init')).data.userId } }] });
 const sig = crypto.createHmac('sha256', 'sec').update(body).digest('base64');

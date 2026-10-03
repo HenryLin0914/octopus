@@ -8,7 +8,7 @@ LINE 官方帳號 + LIFF 網頁 + 自架後端（Node.js + SQLite），整套以
 |---|---|---|
 | 後端 | `server/` | `app.js` 商業邏輯與資料庫、`server.js` HTTP 入口。無第三方套件 |
 | 家長端 | `public/index.html` | LINE 圖文選單開啟：報到、上課卡、出席、課表、請假、影片、綁定 |
-| 管理後台 | `public/admin.html` | 總覽、週課表與排課、點名、學生、帳務（儲值與上課卡）、請假、影片、設定 |
+| 管理後台 | `public/admin.html` | 總覽、週課表與排課、點名、學生、帳務（儲值與上課卡）、出席（紀錄、出席率、請假）、影片、設定 |
 | 資料庫 | `data/octopus.db` | SQLite；每日自動備份到 `data/backups/`（保留 14 天） |
 | 部署 | `Dockerfile`、`docker-compose.yml`、`deploy/install.sh` | |
 

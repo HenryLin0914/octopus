@@ -411,6 +411,20 @@ export function createApp(opts = {}) {
         bound: get('SELECT COUNT(*) n FROM bindings WHERE student_id=?', s.id).n, courses: all('SELECT course_id FROM enrollments WHERE student_id=?', s.id).map(r => r.course_id),
         family: all('SELECT DISTINCT student_id id FROM bindings WHERE student_id<>? AND user_id IN (SELECT user_id FROM bindings WHERE student_id=?) UNION SELECT DISTINCT student_id FROM card_students WHERE student_id<>? AND card_id IN (SELECT card_id FROM card_students WHERE student_id=?)', s.id, s.id, s.id, s.id).map(r => r.id) }));
     },
+    /** 出席總表：某月（可再依課程、學生篩選）的明細、統計與每位學生出席率 */
+    'a.attendance'(b) {
+      const month = /^\d{4}-\d{2}$/.test(b.month || '') ? b.month : today().slice(0, 7);
+      const cond = ["a.status<>'取消'", 'substr(s.date,1,7)=?'], args = [month];
+      if (b.courseId) { cond.push('s.course_id=?'); args.push(str(b.courseId, 20)); }
+      if (b.studentId) { cond.push('a.student_id=?'); args.push(str(b.studentId, 20)); }
+      const rows = all(`SELECT a.id,a.student_id sid,st.name student,a.status,a.deduct,a.method,a.operator,a.note,s.id sessionId,s.date,s.start,s.course_id courseId,COALESCE(c.name,s.course_id) course FROM attendance a JOIN sessions s ON s.id=a.session_id LEFT JOIN students st ON st.id=a.student_id LEFT JOIN courses c ON c.id=s.course_id WHERE ${cond.join(' AND ')} ORDER BY s.date DESC, s.start DESC, st.name`, ...args);
+      const count = list => { const o = { 出席: 0, 請假: 0, 缺席: 0, deduct: 0 }; list.forEach(r => { if (r.status in o) o[r.status]++; o.deduct += r.deduct || 0; }); const n = o.出席 + o.請假 + o.缺席; return { ...o, total: n, rate: n ? Math.round(o.出席 / n * 100) : null }; };
+      const by = new Map();
+      rows.forEach(r => { if (!by.has(r.sid)) by.set(r.sid, []); by.get(r.sid).push(r); });
+      return { month, total: count(rows), truncated: rows.length > 600, rows: rows.slice(0, 600),
+        students: [...by].map(([id, list]) => ({ id, name: list[0].student || id, ...count(list) })).sort((x, y) => (x.rate ?? 101) - (y.rate ?? 101) || y.total - x.total),
+        months: [...new Set([today().slice(0, 7), ...all("SELECT DISTINCT substr(s.date,1,7) m FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE a.status<>'取消' ORDER BY m DESC LIMIT 36").map(r => r.m)])].sort().reverse() };
+    },
     'a.leaves'() {
       return all('SELECT l.id,st.name student,l.reason,l.status,l.applied_at applied,l.by_name by,s.date,s.start,COALESCE(c.name,s.course_id) course FROM leaves l JOIN sessions s ON s.id=l.session_id JOIN students st ON st.id=l.student_id LEFT JOIN courses c ON c.id=s.course_id WHERE s.date>=? ORDER BY s.date,s.start LIMIT 200', addDays(today(), -30));
     },
