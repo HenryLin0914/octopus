@@ -291,15 +291,25 @@ function recordAttendance(sess, studentId, status, method, operator) {
 function notifyAfterAttendance(sess, studentId, status, deduct, remain) {
   try {
     const stu = find('學生名冊', '學生ID', studentId) || {};
+    const name = stu['姓名'] || studentId;
     const info = sessionInfo(sess);
-    const msgs = [];
+    const low = deduct > 0 && cfgOn('低堂數推播') && remain <= cfgNum('低堂數門檻', 2);
+    let msg = null;
     if (status === '出席' && cfgOn('報到推播')) {
-      msgs.push('✅ ' + stu['姓名'] + ' 已報到\n' + info.date + ' ' + info.start + ' ' + info.course + '\n剩餘堂數：' + remain);
+      msg = flexMsg('✅ ' + name + ' 已報到｜剩餘 ' + remain + ' 堂', [flexBubble({
+        color: C_BRAND, title: '報到成功', name: name,
+        rows: [['課程', info.course], ['時間', info.date + ' ' + info.start], ['教室', info.room]],
+        big: { label: '剩餘堂數', value: remain, unit: '堂', color: low ? C_WARN : C_BRAND },
+        note: low ? '堂數即將用完，請記得儲值' : '', btn: ['查看出席紀錄', 'attendance']
+      })]);
+    } else if (low) {
+      msg = flexMsg('🔔 ' + name + ' 剩餘 ' + remain + ' 堂，請記得儲值', [flexBubble({
+        color: C_WARN, title: '堂數即將用完', name: name,
+        rows: [['提醒', '請記得到櫃檯儲值']],
+        big: { label: '剩餘堂數', value: remain, unit: '堂' }, btn: ['查看上課卡', 'card']
+      })]);
     }
-    if (deduct > 0 && cfgOn('低堂數推播') && remain <= cfgNum('低堂數門檻', 2)) {
-      msgs.push('🔔 ' + stu['姓名'] + ' 的上課卡剩餘 ' + remain + ' 堂，請記得儲值。');
-    }
-    if (msgs.length) push(parentsOf(studentId), msgs.join('\n\n'));
+    if (msg) pushMsg(parentsOf(studentId), msg);
   } catch (err) { console.error(err); }
 }
 
@@ -565,7 +575,11 @@ const API = {
       const to = [];
       owners.forEach(function (id) { parentsOf(id).forEach(function (u) { to.push(u); }); });
       const who = owners.map(function (id) { return (find('學生名冊', '學生ID', id) || {})['姓名'] || id; }).join('、');
-      push(to, '🎫 儲值成功\n學生：' + who + (owners.length > 1 ? '（共用）' : '') + '\n方案：' + plan['方案名稱'] + '（' + lessons + ' 堂）\n金額：' + price + ' 元' + (expire ? '\n到期日：' + expire : '') + '\n目前剩餘：' + remain + ' 堂');
+      pushMsg(to, flexMsg('🎫 儲值成功｜' + who + ' 目前剩餘 ' + remain + ' 堂', [flexBubble({
+        color: C_OK, title: '儲值成功', name: who + (owners.length > 1 ? '（共用）' : ''),
+        rows: [['方案', plan['方案名稱']], ['堂數', lessons + ' 堂'], ['金額', price + ' 元'], ['到期日', expire]],
+        big: { label: '目前剩餘', value: remain, unit: '堂' }, btn: ['查看上課卡', 'card']
+      })]));
     }
     return { remain: remain, expire: expire, shared: owners.length - 1 };
   },
@@ -652,7 +666,11 @@ const API = {
     if (approve && sess) recordAttendance(sess, l['學生ID'], '請假', '線上請假', user.admin['姓名'] || user.name);
     if (l['申請人userId'] && sess) {
       const i = sessionInfo(sess), s = find('學生名冊', '學生ID', l['學生ID']) || {};
-      push([l['申請人userId']], (approve ? '✅ 請假已核准' : '❌ 請假未核准，請聯絡教室') + '\n' + (s['姓名'] || '') + '｜' + i.date + ' ' + i.start + ' ' + i.course);
+      pushMsg([l['申請人userId']], flexMsg((approve ? '✅ 請假已核准' : '❌ 請假未核准') + '｜' + (s['姓名'] || '') + ' ' + i.date + ' ' + i.course, [flexBubble({
+        color: approve ? C_OK : C_BAD, title: approve ? '請假已核准' : '請假未核准', name: s['姓名'] || '',
+        rows: [['課程', i.course], ['時間', i.date + ' ' + i.start]],
+        note: approve ? '' : '如有疑問請聯絡教室', btn: ['查看請假紀錄', 'leave']
+      })]));
     }
     return { status: approve ? '已核准' : '已駁回' };
   },
@@ -673,10 +691,53 @@ function lineFetch(path, payload) {
   if (res.getResponseCode() >= 300) console.error('LINE ' + path + ' ' + res.getResponseCode() + ' ' + res.getContentText());
 }
 function reply(replyToken, messages) { lineFetch('reply', { replyToken: replyToken, messages: messages }); }
-function push(userIds, text) {
+function pushMsg(userIds, message) {
   const to = userIds.filter(function (u, i) { return u && userIds.indexOf(u) === i; });
   if (!to.length) return;
-  lineFetch('multicast', { to: to, messages: [{ type: 'text', text: text }] });
+  lineFetch('multicast', { to: to, messages: [message] });
+}
+
+/* ---------- Flex 訊息卡片 ---------- */
+const C_BRAND = '#D6336C', C_OK = '#2B8A3E', C_WARN = '#E67700', C_BAD = '#C92A2A', C_INK = '#3B2430', C_SUB = '#A8798A';
+
+/** 卡片：o = { color, title, name, rows:[[標籤,內容]], big:{label,value,unit,color}, note, btn:[文字, LIFF頁] } */
+function flexBubble(o) {
+  const body = [];
+  if (o.name) body.push({ type: 'text', text: String(o.name), weight: 'bold', size: 'xl', color: C_INK, wrap: true });
+  (o.rows || []).forEach(function (r) {
+    if (r[1] === '' || r[1] === null || r[1] === undefined) return;
+    body.push({ type: 'box', layout: 'baseline', spacing: 'md', contents: [
+      { type: 'text', text: String(r[0]), size: 'sm', color: C_SUB, flex: 2 },
+      { type: 'text', text: String(r[1]), size: 'sm', color: C_INK, flex: 5, wrap: true }
+    ] });
+  });
+  if (o.big) {
+    body.push({ type: 'separator', margin: 'lg' });
+    body.push({ type: 'box', layout: 'baseline', margin: 'lg', contents: [
+      { type: 'text', text: String(o.big.label), size: 'sm', color: C_SUB, flex: 1 },
+      { type: 'text', text: String(o.big.value), size: '3xl', weight: 'bold', color: o.big.color || o.color, flex: 0 },
+      { type: 'text', text: String(o.big.unit || ' '), size: 'sm', color: C_SUB, flex: 0, margin: 'sm' }
+    ] });
+  }
+  if (o.note) body.push({ type: 'text', text: String(o.note), size: 'xs', color: C_WARN, wrap: true, margin: 'md' });
+  if (!body.length) body.push({ type: 'text', text: String(o.title), size: 'sm', color: C_SUB });
+  const bubble = {
+    type: 'bubble', size: 'kilo',
+    header: { type: 'box', layout: 'vertical', backgroundColor: o.color, paddingAll: 'lg', contents: [
+      { type: 'text', text: cfg('教室名稱', '舞蹈教室'), size: 'xs', color: '#FFFFFFCC' },
+      { type: 'text', text: String(o.title), size: 'xl', weight: 'bold', color: '#FFFFFF', margin: 'sm' }
+    ] },
+    body: { type: 'box', layout: 'vertical', spacing: 'md', paddingAll: 'lg', contents: body }
+  };
+  if (o.btn && prop('LIFF_ID')) {
+    bubble.footer = { type: 'box', layout: 'vertical', paddingAll: 'sm', contents: [
+      { type: 'button', style: 'link', height: 'sm', color: o.color, action: { type: 'uri', label: o.btn[0], uri: liffUrl(o.btn[1]) } }
+    ] };
+  }
+  return bubble;
+}
+function flexMsg(alt, bubbles) {
+  return { type: 'flex', altText: String(alt).slice(0, 400), contents: bubbles.length === 1 ? bubbles[0] : { type: 'carousel', contents: bubbles.slice(0, 12) } };
 }
 function textMsg(t) { return { type: 'text', text: t }; }
 
@@ -709,22 +770,29 @@ function handleWebhook(events) {
       const kids = kidsOf(ev.source.userId);
       if (!kids.length) { reply(ev.replyToken, [menuFlex('您尚未綁定學生，請點「綁定學生」並輸入教室提供的綁定碼。')]); return; }
       if (/堂數|上課卡|剩|餘額/.test(t)) {
-        reply(ev.replyToken, [textMsg(kids.map(function (s) {
-          const cards = validCards(s['學生ID']);
-          return '🎫 ' + s['姓名'] + '：剩餘 ' + totalRemain(s['學生ID']) + ' 堂' +
-            cards.map(function (c) { return '\n　' + c['方案名稱'] + ' ' + c['剩餘堂數'] + '/' + c['總堂數'] + (c['到期日'] ? '（到期 ' + nd(c['到期日']) + '）' : ''); }).join('');
-        }).join('\n\n'))]);
+        reply(ev.replyToken, [flexMsg(kids.map(function (s) { return s['姓名'] + ' 剩餘 ' + totalRemain(s['學生ID']) + ' 堂'; }).join('、'), kids.map(function (s) {
+          const remain = totalRemain(s['學生ID']);
+          return flexBubble({
+            color: C_BRAND, title: '上課卡', name: s['姓名'],
+            rows: validCards(s['學生ID']).map(function (c) { return [c['方案名稱'], c['剩餘堂數'] + ' / ' + c['總堂數'] + ' 堂' + (c['到期日'] ? '｜到期 ' + nd(c['到期日']) : '')]; }),
+            big: { label: '剩餘堂數', value: remain, unit: '堂', color: remain <= cfgNum('低堂數門檻', 2) ? C_WARN : C_BRAND },
+            note: remain <= 0 ? '目前沒有可用的上課卡' : '', btn: ['查看上課卡', 'card']
+          });
+        }))]);
         return;
       }
       if (/出席|出缺|紀錄/.test(t)) {
         const sess = {};
         table('課表場次').forEach(function (s) { sess[s['場次ID']] = s; });
-        reply(ev.replyToken, [textMsg(kids.map(function (s) {
+        reply(ev.replyToken, [flexMsg('最近出席紀錄', kids.map(function (s) {
           const rs = table('出席紀錄').filter(function (r) { return r['學生ID'] === s['學生ID'] && r['狀態'] !== '取消' && sess[r['場次ID']]; })
-            .map(function (r) { const i = sessionInfo(sess[r['場次ID']]); return { k: i.date + i.start, line: i.date.slice(5) + ' ' + i.course + '：' + r['狀態'] }; })
+            .map(function (r) { const i = sessionInfo(sess[r['場次ID']]); return { k: i.date + i.start, row: [i.date.slice(5), i.course + '｜' + r['狀態']] }; })
             .sort(function (x, y) { return x.k < y.k ? 1 : -1; }).slice(0, 5);
-          return '📋 ' + s['姓名'] + ' 最近紀錄\n' + (rs.length ? rs.map(function (r) { return r.line; }).join('\n') : '尚無紀錄');
-        }).join('\n\n')), menuFlex('查看完整紀錄請點下方按鈕')]);
+          return flexBubble({
+            color: C_BRAND, title: '最近出席紀錄', name: s['姓名'],
+            rows: rs.map(function (r) { return r.row; }), note: rs.length ? '' : '尚無紀錄', btn: ['查看完整紀錄', 'attendance']
+          });
+        }))]);
         return;
       }
       reply(ev.replyToken, [menuFlex()]);
