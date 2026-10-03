@@ -77,7 +77,7 @@ async function api(action, data){
 }
 
 function tagOf(st){
-  const c = st==='出席'||st==='已核准' ? 'ok' : st==='請假'||st==='待審核'||st==='請假待審核' ? 'warn' : st==='缺席'||st==='已駁回'||st==='停課' ? 'bad' : '';
+  const c = st==='出席'||st==='已核准'||st==='已登記' ? 'ok' : st==='請假'||st==='待審核'||st==='請假待審核' ? 'warn' : st==='缺席'||st==='已駁回'||st==='停課' ? 'bad' : '';
   return `<span class="tag ${c}">${esc(st)}</span>`;
 }
 function chips(){
@@ -210,7 +210,7 @@ document.addEventListener('click', async e => {
     if(el.id === 'lv-go'){
       el.disabled = true;
       const r = await api('leave', { studentId: S.cur, sessionId: $('#lv-s').value, reason: $('#lv-r').value });
-      toast(r.status === '待審核' ? '已送出，等待教室審核' : '請假成功');
+      toast('請假成功，教室已收到通知');
       return go('leave');
     }
     if(el.id === 'scan'){

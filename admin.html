@@ -73,7 +73,7 @@ async function api(action, data, quiet){
   } finally { if(!quiet) loading(false); }
 }
 function tagOf(st){
-  const c = st==='出席'||st==='已核准'||st==='在學' ? 'ok' : st==='請假'||st==='待審核' ? 'warn' : st==='缺席'||st==='已駁回'||st==='停課'||st==='停用' ? 'bad' : '';
+  const c = st==='出席'||st==='已核准'||st==='已登記'||st==='在學' ? 'ok' : st==='請假'||st==='待審核' ? 'warn' : st==='缺席'||st==='已駁回'||st==='停課'||st==='停用' ? 'bad' : '';
   return st ? `<span class="tag ${c}">${esc(st)}</span>` : '<span class="tag">未到</span>';
 }
 function stuOptions(){ return A.students.filter(s=>s.status!=='停用').map(s=>`<option value="${esc(s.id)}">${esc(s.name)}（${esc(s.id)}｜剩 ${esc(s.remain)}）</option>`).join(''); }

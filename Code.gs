@@ -39,7 +39,6 @@ const SAMPLE = {
     ['無堂數可線上報到', '否', '是：沒有可用上課卡也能線上報到（不扣堂）'],
     ['僅限選課學生報到', '否', '是：只有「選課」分頁內的學生可線上報到該課'],
     ['請假截止小時', '2', '上課前幾小時內不可線上請假'],
-    ['請假需審核', '否', '是：請假需後台核准才生效'],
     ['請假扣堂', '否', '是：請假也扣堂'],
     ['缺席扣堂', '是', '是：未請假缺席（場次結算時）扣堂'],
     ['產生場次週數', '4', '自動產生未來幾週的課表場次'],
@@ -47,7 +46,9 @@ const SAMPLE = {
     ['低堂數門檻', '2', '剩餘堂數小於等於此數字時提醒'],
     ['儲值推播', '是', '儲值後推播通知家長（會消耗 LINE 推播則數）'],
     ['報到推播', '否', '報到後推播通知家長（會消耗 LINE 推播則數）'],
-    ['低堂數推播', '是', '堂數不足時推播通知家長（會消耗 LINE 推播則數）']
+    ['低堂數推播', '是', '堂數不足時推播通知家長（會消耗 LINE 推播則數）'],
+    ['請假推播', '是', '家長線上請假後，推播「已收到請假」給該學生的家長（會消耗 LINE 推播則數）'],
+    ['請假通知管理員', '是', '家長線上請假後，推播通知「管理員」分頁內的人（會消耗 LINE 推播則數）']
   ],
   '選單': [
     ['1', '線上報到', '✅', 'checkin', '是'],
@@ -313,6 +314,29 @@ function notifyAfterAttendance(sess, studentId, status, deduct, remain) {
   } catch (err) { console.error(err); }
 }
 
+/** 家長線上請假後：通知該學生的家長「已收到請假」，並通知管理員 */
+function notifyLeave(sess, studentId, reason, byName) {
+  try {
+    const stu = find('學生名冊', '學生ID', studentId) || {};
+    const name = stu['姓名'] || studentId;
+    const info = sessionInfo(sess);
+    const rows = [['課程', info.course], ['時間', info.date + ' ' + info.start], ['原因', reason], ['申請人', byName]];
+    const parents = parentsOf(studentId);
+    if (cfg('請假推播', '是') === '是') {
+      pushMsg(parents, flexMsg('📝 已收到 ' + name + ' 的請假｜' + info.date + ' ' + info.course, [flexBubble({
+        color: C_INFO, title: '已收到請假', name: name, rows: rows,
+        note: cfgOn('請假扣堂') ? '本次請假會扣堂' : '本次請假不扣堂', noteColor: C_SUB, btn: ['查看請假紀錄', 'leave']
+      })]));
+    }
+    if (cfg('請假通知管理員', '是') === '是') {
+      const admins = table('管理員').filter(function (r) { return r['啟用'] === '是' && parents.indexOf(r['LINE_userId']) < 0; }).map(function (r) { return r['LINE_userId']; });
+      pushMsg(admins, flexMsg('📝 請假通知｜' + name + ' ' + info.date + ' ' + info.course, [flexBubble({
+        color: C_INK, title: '學生請假通知', name: name, rows: rows
+      })]));
+    }
+  } catch (err) { console.error(err); }
+}
+
 function qrToken(sessionId, offset) {
   const win = cfgNum('QR更新秒數', 60);
   const idx = Math.floor(Date.now() / 1000 / win) + (offset || 0);
@@ -456,10 +480,11 @@ const API = {
     if (activeRecord(b.sessionId, b.studentId)) throw new Error('這堂課已有紀錄，無法重複請假');
     const dup = table('請假紀錄').filter(function (l) { return l['學生ID'] === b.studentId && l['場次ID'] === b.sessionId && l['狀態'] === '待審核'; })[0];
     if (dup) throw new Error('這堂課已送出請假申請');
-    const review = cfgOn('請假需審核');
-    insert('請假紀錄', { '請假ID': uid('L'), '學生ID': b.studentId, '場次ID': b.sessionId, '原因': String(b.reason || '').slice(0, 200), '申請時間': now(), '申請人': user.name, '狀態': review ? '待審核' : '已核准', '申請人userId': user.userId });
-    if (!review) recordAttendance(sess, b.studentId, '請假', '線上請假', user.name || '家長');
-    return { status: review ? '待審核' : '已核准' };
+    const reason = String(b.reason || '').slice(0, 200);
+    insert('請假紀錄', { '請假ID': uid('L'), '學生ID': b.studentId, '場次ID': b.sessionId, '原因': reason, '申請時間': now(), '申請人': user.name, '狀態': '已登記', '申請人userId': user.userId });
+    recordAttendance(sess, b.studentId, '請假', '線上請假', user.name || '家長');
+    notifyLeave(sess, b.studentId, reason, user.name || '家長');
+    return { status: '已登記' };
   },
 
   'leaves': function (b, user) {
@@ -698,7 +723,7 @@ function pushMsg(userIds, message) {
 }
 
 /* ---------- Flex 訊息卡片 ---------- */
-const C_BRAND = '#D6336C', C_OK = '#2B8A3E', C_WARN = '#E67700', C_BAD = '#C92A2A', C_INK = '#3B2430', C_SUB = '#A8798A';
+const C_BRAND = '#D6336C', C_OK = '#2B8A3E', C_WARN = '#E67700', C_BAD = '#C92A2A', C_INFO = '#1971C2', C_INK = '#3B2430', C_SUB = '#A8798A';
 
 /** 卡片：o = { color, title, name, rows:[[標籤,內容]], big:{label,value,unit,color}, note, btn:[文字, LIFF頁] } */
 function flexBubble(o) {
@@ -719,7 +744,7 @@ function flexBubble(o) {
       { type: 'text', text: String(o.big.unit || ' '), size: 'sm', color: C_SUB, flex: 0, margin: 'sm' }
     ] });
   }
-  if (o.note) body.push({ type: 'text', text: String(o.note), size: 'xs', color: C_WARN, wrap: true, margin: 'md' });
+  if (o.note) body.push({ type: 'text', text: String(o.note), size: 'xs', color: o.noteColor || C_WARN, wrap: true, margin: 'md' });
   if (!body.length) body.push({ type: 'text', text: String(o.title), size: 'sm', color: C_SUB });
   const bubble = {
     type: 'bubble', size: 'kilo',
@@ -852,6 +877,11 @@ function setup() {
     if (isNew || s.getLastRow() === 0) {
       s.getRange(1, 1, 1, h.length).setValues([h]);
       if (SAMPLE[name]) s.getRange(2, 1, SAMPLE[name].length, h.length).setValues(SAMPLE[name]);
+    } else if (name === '系統設定') { // 既有試算表：補上新版才有的設定項目
+      const have = {};
+      s.getDataRange().getDisplayValues().forEach(function (r) { have[String(r[0]).trim()] = 1; });
+      const miss = SAMPLE[name].filter(function (r) { return !have[r[0]]; });
+      if (miss.length) s.getRange(s.getLastRow() + 1, 1, miss.length, h.length).setValues(miss);
     }
     s.getRange(1, 1, 1, h.length).setFontWeight('bold').setBackground('#1f2937').setFontColor('#ffffff');
     s.setFrozenRows(1);
