@@ -125,11 +125,27 @@ NGX
     if [ -f "$CONF.prev" ]; then mv "$CONF.prev" "$CONF"; else rm -f "$CONF"; fi
   fi
   if [ -f "$CONF" ] && ! grep -q ssl_certificate "$CONF"; then
-    if command -v certbot >/dev/null 2>&1; then certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --register-unsafely-without-email --redirect || warn "憑證申請失敗（多半是 DNS 還沒指到這台）。DNS 生效後重跑這個腳本即可。"
-    else warn "找不到涵蓋 $DOMAIN 的現成憑證，也沒有 certbot，尚未啟用 HTTPS。"; fi
+    warn "找不到涵蓋 $DOMAIN 的現成憑證，尚未啟用 HTTPS。請手動為這個站台加上憑證。"
   fi
+
+  # 還原：先前版本的腳本曾讓 certbot 把別的站台設定檔裡的憑證換成本網域的憑證，這裡改回原本的
+  for f in /etc/nginx/conf.d/*.conf; do
+    [ "$f" = "$CONF" ] && continue
+    grep -q "/etc/letsencrypt/live/$DOMAIN/" "$f" 2>/dev/null || continue
+    orig=$(grep -E '^\s*ssl_certificate\s' "$f" | grep -v "/live/$DOMAIN/" | head -1 | awk '{print $2}' | tr -d ';' || true)
+    [ -n "$orig" ] && [ -d "$(dirname "$orig")" ] || { warn "$f 內有指向本網域憑證的設定，但找不到原本的憑證路徑，請手動檢查"; continue; }
+    bak="$f.bak-octopus-$(date +%s)"; cp "$f" "$bak"
+    sed -i "s#/etc/letsencrypt/live/$DOMAIN/#$(dirname "$orig")/#g" "$f"
+    if nginx -t 2>/tmp/octopus-nginx-test.log; then nginx -s reload; echo "已把 $f 的憑證改回 $(dirname "$orig")（備份：$bak）"
+    else cp "$bak" "$f"; warn "還原 $f 失敗，已保持原狀："; cat /tmp/octopus-nginx-test.log; fi
+  done
+
   say "檢查對外連線"
-  code=$(curl -s -o /dev/null -w '%{http_code}' --resolve "$DOMAIN:443:127.0.0.1" "https://$DOMAIN/api/health" || true)
+  code=000
+  for i in 1 2 3 4 5 6; do   # nginx 重新載入需要一點時間
+    code=$(curl -s -o /dev/null -w '%{http_code}' --resolve "$DOMAIN:443:127.0.0.1" "https://$DOMAIN/api/health" || true)
+    [ "$code" = 200 ] && break; sleep 2
+  done
   echo "https://$DOMAIN/api/health → HTTP $code"
   if [ "$code" != 200 ]; then
     warn "還沒通。以下資訊請截圖回報："
