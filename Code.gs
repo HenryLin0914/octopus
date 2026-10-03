@@ -217,10 +217,13 @@ function parentsOf(studentId) {
 
 /* ============================== 商業邏輯 ============================== */
 
+/** 一張上課卡可多位學生共用：「學生ID」欄用逗號分隔，例 S0001,S0002 */
+function cardIds(c) { return String(c['學生ID'] || '').split(/[,，、;\s]+/).filter(function (x) { return x; }); }
+function cardHas(c, studentId) { return cardIds(c).indexOf(studentId) >= 0; }
 function validCards(studentId) {
   const t = today();
   return table('上課卡').filter(function (c) {
-    return c['學生ID'] === studentId && c['狀態'] === '啟用' && Number(c['剩餘堂數']) > 0 &&
+    return cardHas(c, studentId) && c['狀態'] === '啟用' && Number(c['剩餘堂數']) > 0 &&
       (!c['到期日'] || nd(c['到期日']) >= t);
   }).sort(function (a, b) { return (nd(a['到期日']) || '9999') < (nd(b['到期日']) || '9999') ? -1 : 1; });
 }
@@ -380,8 +383,13 @@ const API = {
 
   'card': function (b, user) {
     assertOwns(user, b.studentId);
-    const cards = table('上課卡').filter(function (c) { return c['學生ID'] === b.studentId; })
-      .map(function (c) { return { id: c['卡ID'], plan: c['方案名稱'], total: c['總堂數'], remain: c['剩餘堂數'], buy: nd(c['購買日']), expire: nd(c['到期日']), status: c['狀態'] }; })
+    const names = {};
+    table('學生名冊').forEach(function (s) { names[s['學生ID']] = s['姓名']; });
+    const cards = table('上課卡').filter(function (c) { return cardHas(c, b.studentId); })
+      .map(function (c) {
+        const shared = cardIds(c).filter(function (id) { return id !== b.studentId; }).map(function (id) { return names[id] || id; });
+        return { id: c['卡ID'], plan: c['方案名稱'], total: c['總堂數'], remain: c['剩餘堂數'], buy: nd(c['購買日']), expire: nd(c['到期日']), status: c['狀態'], shared: shared };
+      })
       .reverse();
     const topups = table('儲值紀錄').filter(function (r) { return r['學生ID'] === b.studentId; }).slice(-10).reverse()
       .map(function (r) { return { time: r['時間'], plan: r['方案名稱'], lessons: r['堂數'], amount: r['金額'] }; });
@@ -499,8 +507,15 @@ const API = {
   'a.students': function () {
     const bound = {};
     table('家長綁定').forEach(function (r) { if (r['狀態'] === '啟用') bound[r['學生ID']] = (bound[r['學生ID']] || 0) + 1; });
+    // 家人：同一位家長綁定的其他學生，或曾共用同一張上課卡的學生（儲值時可勾選共用）
+    const fam = {};
+    const link = function (ids) { ids.forEach(function (a) { ids.forEach(function (c) { if (a !== c) { (fam[a] = fam[a] || {})[c] = 1; } }); }); };
+    const byParent = {};
+    table('家長綁定').forEach(function (r) { if (r['狀態'] === '啟用') (byParent[r['LINE_userId']] = byParent[r['LINE_userId']] || []).push(r['學生ID']); });
+    Object.keys(byParent).forEach(function (k) { link(byParent[k]); });
+    table('上課卡').forEach(function (c) { link(cardIds(c)); });
     return table('學生名冊').map(function (s) {
-      return { id: s['學生ID'], name: s['姓名'], birthday: nd(s['生日']), phone: s['電話'], code: s['綁定碼'], status: s['狀態'], note: s['備註'], remain: totalRemain(s['學生ID']), bound: bound[s['學生ID']] || 0 };
+      return { id: s['學生ID'], name: s['姓名'], birthday: nd(s['生日']), phone: s['電話'], code: s['綁定碼'], status: s['狀態'], note: s['備註'], remain: totalRemain(s['學生ID']), bound: bound[s['學生ID']] || 0, family: Object.keys(fam[s['學生ID']] || {}) };
     });
   },
 
@@ -536,14 +551,23 @@ const API = {
     if (!(lessons > 0)) throw new Error('堂數不正確');
     const t = today();
     const expire = Number(plan['有效天數']) > 0 ? addDays(t, Number(plan['有效天數'])) : '';
+    const owners = [b.studentId];
+    (b.shareIds || []).forEach(function (id) {
+      if (owners.indexOf(id) >= 0) return;
+      if (!find('學生名冊', '學生ID', id)) throw new Error('找不到共用學生：' + id);
+      owners.push(id);
+    });
     const cardId = uid('K');
-    insert('上課卡', { '卡ID': cardId, '學生ID': b.studentId, '方案名稱': plan['方案名稱'], '總堂數': lessons, '剩餘堂數': lessons, '購買日': t, '到期日': expire, '狀態': '啟用' });
+    insert('上課卡', { '卡ID': cardId, '學生ID': owners.join(','), '方案名稱': plan['方案名稱'], '總堂數': lessons, '剩餘堂數': lessons, '購買日': t, '到期日': expire, '狀態': '啟用' });
     insert('儲值紀錄', { '紀錄ID': uid('T'), '時間': now(), '學生ID': b.studentId, '方案名稱': plan['方案名稱'], '堂數': lessons, '金額': price, '付款方式': b.pay || '現金', '經手人': user.admin['姓名'] || user.name, '卡ID': cardId, '備註': b.note || '' });
     const remain = totalRemain(b.studentId);
     if (cfgOn('儲值推播')) {
-      push(parentsOf(b.studentId), '🎫 儲值成功\n學生：' + stu['姓名'] + '\n方案：' + plan['方案名稱'] + '（' + lessons + ' 堂）\n金額：' + price + ' 元' + (expire ? '\n到期日：' + expire : '') + '\n目前剩餘：' + remain + ' 堂');
+      const to = [];
+      owners.forEach(function (id) { parentsOf(id).forEach(function (u) { to.push(u); }); });
+      const who = owners.map(function (id) { return (find('學生名冊', '學生ID', id) || {})['姓名'] || id; }).join('、');
+      push(to, '🎫 儲值成功\n學生：' + who + (owners.length > 1 ? '（共用）' : '') + '\n方案：' + plan['方案名稱'] + '（' + lessons + ' 堂）\n金額：' + price + ' 元' + (expire ? '\n到期日：' + expire : '') + '\n目前剩餘：' + remain + ' 堂');
     }
-    return { remain: remain, expire: expire };
+    return { remain: remain, expire: expire, shared: owners.length - 1 };
   },
 
   'a.sessions': function (b) {

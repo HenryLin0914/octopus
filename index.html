@@ -101,7 +101,7 @@ const PAGES = {
     return `${chips()}
       <div class="card hero"><small>可用堂數</small><div class="n">${esc(d.remain)}</div></div>
       <h2>上課卡</h2><div class="card">${d.cards.length ? d.cards.map(c=>`
-        <div class="row"><div><div class="t">${esc(c.plan)}</div><div class="s">購買 ${esc(c.buy)}${c.expire?'｜到期 '+esc(c.expire):''}</div></div>
+        <div class="row"><div><div class="t">${esc(c.plan)}</div><div class="s">購買 ${esc(c.buy)}${c.expire?'｜到期 '+esc(c.expire):''}${c.shared&&c.shared.length?'<br>與 '+esc(c.shared.join('、'))+' 共用':''}</div></div>
         <div style="text-align:right"><b>${esc(c.remain)}</b> / ${esc(c.total)}<br>${tagOf(c.status)}</div></div>`).join('') : '<div class="empty">尚無上課卡</div>'}</div>
       <h2>儲值紀錄</h2><div class="card">${d.topups.length ? d.topups.map(t=>`
         <div class="row"><div><div class="t">${esc(t.plan)}</div><div class="s">${esc(t.time)}</div></div><div>${esc(t.lessons)} 堂｜$${esc(t.amount)}</div></div>`).join('') : '<div class="empty">尚無紀錄</div>'}</div>`;

@@ -110,6 +110,7 @@ const TABS = {
   topup(){
     return `<div class="card">
       <label style="margin-top:0">學生</label><select id="tp-s"><option value="">請選擇</option>${stuOptions()}</select>
+      <div id="tp-share"></div>
       <label>方案</label><select id="tp-p">${A.meta.plans.map(p=>`<option value="${esc(p.id)}" data-l="${esc(p.lessons)}" data-p="${esc(p.price)}">${esc(p.name)}｜${esc(p.lessons)} 堂｜$${esc(p.price)}${Number(p.days)>0?'｜'+esc(p.days)+' 天':''}</option>`).join('')}</select>
       <div class="two"><div><label>堂數</label><input id="tp-l" type="number" inputmode="numeric"></div><div><label>實收金額</label><input id="tp-m" type="number" inputmode="numeric"></div></div>
       <label>付款方式</label><select id="tp-pay"><option>現金</option><option>轉帳</option><option>LINE Pay</option><option>信用卡</option><option>其他</option></select>
@@ -155,6 +156,16 @@ async function show(tab){
     if(A.tab === 'topup') fillPlan();
   }catch(e){ $('#app').innerHTML = `<div class="card empty">⚠️ ${esc(e.message)}</div>`; }
 }
+function shareBox(){
+  const box = $('#tp-share'); if(!box) return;
+  const s = A.students.find(x => x.id === $('#tp-s').value);
+  if(!s){ box.innerHTML = ''; return; }
+  const fam = (s.family || []).map(id => A.students.find(x => x.id === id)).filter(x => x && x.status !== '停用');
+  const others = A.students.filter(x => x.id !== s.id && x.status !== '停用' && !fam.includes(x));
+  box.innerHTML = `<label>共用這張卡的學生（可不選）</label>
+    <div id="tp-fam">${fam.map(f=>`<label style="display:flex;align-items:center;gap:8px;color:var(--ink);margin-top:6px"><input type="checkbox" class="tp-ck" value="${esc(f.id)}" style="width:auto;margin:0">${esc(f.name)}（${esc(f.id)}）</label>`).join('')}</div>
+    <select id="tp-more"><option value="">＋ 加入其他學生共用</option>${others.map(o=>`<option value="${esc(o.id)}">${esc(o.name)}（${esc(o.id)}）</option>`).join('')}</select>`;
+}
 function fillPlan(){ const o = $('#tp-p') && $('#tp-p').selectedOptions[0]; if(o){ $('#tp-l').value = o.dataset.l; $('#tp-m').value = o.dataset.p; } }
 
 async function drawQr(){
@@ -172,6 +183,12 @@ $('#qr-x').onclick = () => { clearTimeout(qrTimer); $('#qrbox').style.display = 
 document.addEventListener('change', e => {
   if(e.target.id === 'ck-date'){ A.date = e.target.value; show(); }
   if(e.target.id === 'tp-p') fillPlan();
+  if(e.target.id === 'tp-s') shareBox();
+  if(e.target.id === 'tp-more' && e.target.value){
+    const o = e.target.selectedOptions[0];
+    $('#tp-fam').insertAdjacentHTML('beforeend', `<label style="display:flex;align-items:center;gap:8px;color:var(--ink);margin-top:6px"><input type="checkbox" class="tp-ck" value="${esc(o.value)}" checked style="width:auto;margin:0">${esc(o.textContent)}</label>`);
+    o.remove(); e.target.value = '';
+  }
 });
 document.addEventListener('input', e => {
   if(e.target.id === 'st-kw'){ A.kw = e.target.value; clearTimeout(show.h); show.h = setTimeout(async () => { await show(); const i = $('#st-kw'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 400); }
@@ -201,9 +218,11 @@ document.addEventListener('click', async e => {
     if(el.id === 'tp-go'){
       const sid = $('#tp-s').value; if(!sid) return toast('請選擇學生');
       const s = A.students.find(x => x.id === sid);
-      if(!confirm('確認為「' + s.name + '」儲值 ' + $('#tp-l').value + ' 堂，金額 $' + $('#tp-m').value + '？')) return;
+      const shareIds = [...document.querySelectorAll('.tp-ck:checked')].map(x => x.value);
+      const shareNames = shareIds.map(id => (A.students.find(x => x.id === id) || {}).name || id);
+      if(!confirm('確認為「' + s.name + '」儲值 ' + $('#tp-l').value + ' 堂，金額 $' + $('#tp-m').value + (shareNames.length ? '\n共用學生：' + shareNames.join('、') : '') + '？')) return;
       el.disabled = true;
-      const r = await api('a.topup', { studentId: sid, planId: $('#tp-p').value, lessons: $('#tp-l').value, price: $('#tp-m').value, pay: $('#tp-pay').value, note: $('#tp-n').value });
+      const r = await api('a.topup', { studentId: sid, shareIds, planId: $('#tp-p').value, lessons: $('#tp-l').value, price: $('#tp-m').value, pay: $('#tp-pay').value, note: $('#tp-n').value });
       toast('儲值完成，' + s.name + ' 剩餘 ' + r.remain + ' 堂');
       await loadStudents(); return show();
     }
