@@ -105,6 +105,22 @@ ok((await call('boss', 'a.unbind', { userId: (await call('dad', 'init')).data.us
   ok(g.total === t0 && g.rows.length === n0 && (await call('boss', 'a.students', {})).data.find(q => q.id === z).remain === 0, '作廢儲值會停用上課卡');
 }
 
+{ // 影片：YouTube 連結、LINE 查閱、通知
+  const { ytId } = await import('../server/app.js');
+  ok(['https://youtu.be/dQw4w9WgXcQ?si=x', 'https://www.youtube.com/watch?feature=share&v=dQw4w9WgXcQ', 'https://m.youtube.com/shorts/dQw4w9WgXcQ', 'https://youtube.com/live/dQw4w9WgXcQ'].every(u => ytId(u) === 'dQw4w9WgXcQ') && ytId('https://drive.google.com/x') === '', '解析各種 YouTube 網址');
+  ok((await call('boss', 'a.videoInfo', { url: 'https://youtu.be/dQw4w9WgXcQ' })).data.yt === 'dQw4w9WgXcQ', '貼上連結取得影片資訊');
+  const p0 = pushes.length;
+  r = await call('boss', 'a.videoSave', { title: '個人練習', url: 'youtu.be/dQw4w9WgXcQ', studentId: sid, notify: true });
+  const m = pushes[pushes.length - 1].body;
+  ok(r.data.notified === 1 && pushes.length === p0 + 1 && m.messages[0].contents.hero.url.includes('dQw4w9WgXcQ') && m.messages[0].contents.footer.contents[0].action.uri === 'https://youtu.be/dQw4w9WgXcQ', '新影片通知家長（含縮圖）');
+  const mine = (await call('mom', 'videos', { studentId: sid })).data;
+  ok(mine.length === 2 && mine.some(v => v.yt === 'dQw4w9WgXcQ' && v.personal), '家長端看得到班級與個人影片');
+  ok((await call('boss', 'a.videoSave', { title: 'x', url: 'https://youtu.be/dQw4w9WgXcQ', studentId: 'S9999' })).ok === false, '指定不存在的學生被拒');
+  const vb = JSON.stringify({ events: [{ type: 'message', replyToken: 'r', message: { type: 'text', text: '影片' }, source: { userId: (await call('mom', 'init')).data.userId } }] });
+  const n = pushes.length; await app.webhook(vb, crypto.createHmac('sha256', 'sec').update(vb).digest('base64'));
+  ok(pushes.length === n + 1 && pushes[n].body.messages[0].contents.type === 'carousel' && pushes[n].body.messages[0].contents.contents.length === 2, 'LINE 輸入「影片」回覆影片卡片');
+}
+
 // Webhook
 const body = JSON.stringify({ events: [{ type: 'message', replyToken: 'r', message: { type: 'text', text: '剩幾堂' }, source: { userId: (await call('mom', 'init')).data.userId } }] });
 const sig = crypto.createHmac('sha256', 'sec').update(body).digest('base64');

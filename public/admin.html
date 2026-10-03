@@ -7,6 +7,7 @@
 <style>
 :root{--bg:#f4f2f5;--card:#fff;--ink:#231a20;--sub:#7d6f78;--line:#e7e1e6;--soft:#faf7f9;--brand:#d6336c;--brand2:#fbe4ec;--ok:#2b8a3e;--ok2:#e6f4ea;--warn:#e67700;--warn2:#fff3e0;--bad:#c92a2a;--bad2:#fde8e8;--info:#1971c2;--r:12px}
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 html,body{height:100%;overflow-x:hidden}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,"PingFang TC","Noto Sans TC","Noto Sans CJK TC","Microsoft JhengHei",sans-serif;-webkit-text-size-adjust:100%}
 button,input,select,textarea{font:inherit;color:inherit}
@@ -48,6 +49,14 @@ main{padding:22px 26px 60px;min-width:0}
 .row:last-child{border-bottom:0}.row .g{flex:1;min-width:0;overflow-wrap:anywhere}
 .setv{width:190px;flex:none}.setv.num{width:80px;text-align:right}
 .seg{display:inline-flex;background:var(--line);border-radius:10px;padding:3px;gap:2px}.seg button{border:0;background:none;border-radius:8px;padding:6px 14px;font-weight:600;font-size:14px;color:var(--sub)}.seg button.on{background:#fff;color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.vgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}
+.vcard{background:var(--card);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;display:flex;flex-direction:column}
+.vcard.off{opacity:.6}
+.thumb{display:block;position:relative;aspect-ratio:16/9;background:#2a1f27 center/cover no-repeat;border:0;padding:0;width:100%}
+.thumb:after{content:"";position:absolute;left:50%;top:50%;width:46px;height:46px;margin:-23px;border-radius:50%;background:rgba(0,0,0,.55) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 6.500v11l9-5.500z' fill='%23fff'/%3E%3C/svg%3E") center/26px no-repeat}
+.vcard .in{padding:11px 13px 12px;display:flex;flex-direction:column;gap:6px;flex:1}
+.vcard .t{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.vcard .acts{margin-top:auto;padding-top:4px}
 .amt{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
 .t{font-weight:600}.s{font-size:13px;color:var(--sub)}
 .dot{width:10px;height:10px;border-radius:50%;flex:none;display:inline-block}
@@ -149,6 +158,8 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
   .row{gap:8px}
   .row .acts{justify-content:flex-end}
   .roster .row{flex-wrap:wrap}.roster .row .g{flex:1 1 100%}.roster .row .acts{flex:1;justify-content:flex-start}
+  .vgrid{grid-template-columns:minmax(0,1fr);gap:10px}
+  .vcard{flex-direction:row}.vcard .thumb{width:128px;flex:none;aspect-ratio:auto;min-height:96px}.vcard .thumb:after{width:36px;height:36px;margin:-18px;background-size:20px}.vcard .in{min-width:0;padding:10px 12px}
   .setv.num{width:68px}.setv:not(.num){width:100%}.row:has(.setv:not(.num)){flex-wrap:wrap}
   .sess{padding:11px 10px;gap:9px}.sess .tm{width:46px}
   .bar{width:64px}
@@ -168,7 +179,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 <script src="config.js"></script>
 <script src="common.js"></script>
 <script>
-const A = { meta: null, students: [], page: 'home', week: null, filter: { kw: '', f: 'all', course: '' }, money: { tab: 'log', month: '' } };
+const A = { meta: null, students: [], page: 'home', week: null, filter: { kw: '', f: 'all', course: '' }, money: { tab: 'log', month: '' }, vf: '' };
 const owner = () => A.meta && A.meta.role === 'owner';
 const ICON = {
   home: '<svg viewBox="0 0 24 24"><path d="M3 11l9-8 9 8M5 10v10h14V10"/></svg>',
@@ -176,9 +187,10 @@ const ICON = {
   students: '<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.6 3.2-5.5 6.5-5.5s5.900 1.900 6.500 5.500M16 5a3.500 3.500 0 010 6.500M18 14.500c2 .6 3.200 2.300 3.500 5.500"/></svg>',
   leaves: '<svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4M9 12h7M9 16h5"/></svg>',
   money: '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/></svg>',
+  videos: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10 9.500v5l4.500-2.500z"/></svg>',
   settings: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.900 4.900l2.100 2.100M17 17l2.100 2.100M4.900 19.100L7 17M17 7l2.100-2.100"/></svg>'
 };
-const NAV = [['home', '總覽'], ['schedule', '課表'], ['students', '學生'], ['money', '帳務', true], ['leaves', '請假'], ['settings', '設定', true]];
+const NAV = [['home', '總覽'], ['schedule', '課表'], ['students', '學生'], ['money', '帳務', true], ['leaves', '請假'], ['videos', '影片', true], ['settings', '設定', true]];
 const tag = (st, text) => { const c = ['出席', '已登記', '在學', '啟用', '正常'].includes(st) ? 'ok' : ['請假', '用完', '已結算'].includes(st) ? 'warn' : ['缺席', '停課', '停用', '過期'].includes(st) ? 'bad' : ''; return `<span class="tag ${c}">${esc(text || st)}</span>`; };
 const courseOf = id => (A.meta.courses.find(c => c.id === id) || {});
 const monday = d => dAdd(d, -((dDay(d) + 6) % 7));
@@ -318,6 +330,20 @@ const PAGES = {
       <p class="s">每一筆儲值會開一張上課卡並記下實收金額。完整明細可到「設定 → 匯出資料 → 儲值紀錄」下載。</p>`;
   },
 
+  async videos() {
+    if (!A.students.length) A.students = await api('a.students');
+    const all = await api('a.videos'); A.videos = all;
+    const who = v => v.student_id ? '👤 ' + ((A.students.find(x => x.id === v.student_id) || {}).name || v.student_id) : v.course_id ? (courseOf(v.course_id).name || v.course_id) : '全部家長';
+    const f = A.vf, list = all.filter(v => !f || (f === '@all' ? !v.course_id && !v.student_id : f === '@stu' ? !!v.student_id : v.course_id === f));
+    return `<div class="head"><h1>影片</h1><span class="sp"></span><button class="btn p" data-video="">＋ 新增影片</button></div>
+      <div class="acts" style="margin-bottom:12px;align-items:center"><select id="vf" style="width:auto;max-width:100%"><option value="">全部影片（${all.length}）</option><option value="@all" ${f === '@all' ? 'selected' : ''}>給全部家長的</option><option value="@stu" ${f === '@stu' ? 'selected' : ''}>給個別學生的</option>${A.meta.courses.map(c => `<option value="${esc(c.id)}" ${f === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>
+      ${list.length ? `<div class="vgrid">${list.map(v => `<div class="vcard ${v.status === '停用' ? 'off' : ''}"><button class="thumb" data-play="${esc(v.id)}" aria-label="播放" ${v.yt ? `style="background-image:url(https://i.ytimg.com/vi/${esc(v.yt)}/mqdefault.jpg)"` : ''}></button>
+        <div class="in"><div class="t">${esc(v.title)}</div><div class="s">${esc(v.date)}</div><div><span class="tag info">${esc(who(v))}</span> ${v.status === '停用' ? tag('停用', '已隱藏') : ''} ${v.yt ? '' : '<span class="tag">非 YouTube</span>'}</div>
+        <div class="acts"><button class="btn sm" data-video="${esc(v.id)}">編輯</button><button class="btn sm ghost" data-vtoggle="${esc(v.id)}">${v.status === '停用' ? '重新顯示' : '隱藏'}</button></div></div></div>`).join('')}</div>`
+        : `<div class="card empty">${all.length ? '這個分類沒有影片' : '還沒有影片。<br><br><button class="btn p" data-video="">＋ 新增第一部影片</button><br><br><span class="s">先把影片上傳到 YouTube（建議設為「不公開」），再把連結貼到這裡。</span>'}</div>`}
+      <p class="s">家長在 LINE 點選單的「影片」，或直接傳「影片」兩個字給官方帳號，就能看到自己孩子看得到的影片。</p>`;
+  },
+
   async leaves() {
     const d = await api('a.leaves'), t = A.meta.today;
     const up = d.filter(l => l.date >= t), past = d.filter(l => l.date < t).reverse();
@@ -328,7 +354,7 @@ const PAGES = {
   },
 
   async settings() {
-    const [sets, plans, videos, admins] = [await api('a.settings'), await api('a.plans'), await api('a.videos'), await api('a.admins')];
+    const [sets, plans, admins] = [await api('a.settings'), await api('a.plans'), await api('a.admins')];
     const pending = admins.filter(a => !a.active);
     return `<div class="head"><h1>設定</h1></div><div class="grid cols">
     <div class="grid">
@@ -341,7 +367,6 @@ const PAGES = {
         ${pending.length ? `<div class="s" style="color:var(--warn);margin-bottom:6px">有 ${pending.length} 位申請開通，按「開通」即可</div>` : ''}
         ${admins.map(a => `<div class="row"><div class="g"><div class="t">${esc(a.name || '（未命名）')} ${a.active ? `<span class="tag ${a.role === 'owner' ? 'info' : ''}">${a.role === 'owner' ? '管理員' : '老師'}</span>` : '<span class="tag warn">待開通</span>'}</div><div class="s" style="word-break:break-all">${esc(a.userId)}</div></div><button class="btn sm ${a.active ? '' : 'p'}" data-admin="${esc(a.userId)}">${a.active ? '編輯' : '開通'}</button></div>`).join('')}
         <p class="s" style="margin-bottom:0">老師用 LINE 開啟後台網址並按「申請開通」，就會出現在這裡。老師只能看課表與點名，不能儲值或改設定。</p></div>
-      <div class="card"><h2>影片<span class="sp"></span><button class="btn sm" data-video="">＋ 新增</button></h2>${videos.length ? videos.map(v => `<div class="row"><div class="g"><div class="t">${esc(v.title)} ${v.status === '停用' ? tag('停用') : ''}</div><div class="s">${esc(v.date)}｜${v.student_id ? '指定學生 ' + esc(v.student_id) : v.course_id ? esc(courseOf(v.course_id).name || v.course_id) : '全部家長'}</div></div><button class="btn sm" data-video="${esc(v.id)}">編輯</button></div>`).join('') : '<div class="empty">尚無影片</div>'}</div>
       <div class="card"><h2>LINE 圖文選單</h2><p class="s" style="margin-top:0">把六格功能選單套用到官方帳號聊天室下方。</p><button class="btn" data-richmenu>重新套用圖文選單</button></div>
       <div class="card"><h2>匯出資料（CSV，可用 Excel 開啟）</h2><div class="acts">${[['students', '學生'], ['attendance', '出席紀錄'], ['topups', '儲值紀錄'], ['cards', '上課卡'], ['sessions', '課表'], ['leaves', '請假']].map(x => `<button class="btn sm" data-export="${x[0]}">${x[1]}</button>`).join('')}</div>
         <p class="s" style="margin-bottom:0">資料庫每天自動備份，保留最近 14 天。</p></div>
@@ -470,6 +495,35 @@ function topup(id) {
   $('[name=price]', m).placeholder = '定價 ' + (p0.price ?? '');
 }
 
+/* ---------- 影片 ---------- */
+function editVideo(id) {
+  const v = id ? A.videos.find(x => x.id === id) : null;
+  const F = [{ k: 'url', label: 'YouTube 連結（貼上後自動帶出標題與縮圖）', ph: 'https://youtu.be/…' }, { k: 'title', label: '標題' },
+    { k: 'aud', label: '誰可以看', type: 'select', opts: [['all', '全部家長'], ['course', '指定課程的家長'], ['stu', '只給一位學生']] },
+    { k: 'courseId', label: '課程', type: 'select', opts: A.meta.courses.map(c => [c.id, c.name]) }, { k: 'studentId', label: '學生', type: 'select', opts: A.students.filter(x => x.status !== '停用' || (v && v.student_id === x.id)).map(x => [x.id, x.name + '（' + x.id + '）']) },
+    { k: 'date', label: '日期', type: 'date', half: 1 }, { k: 'status', label: '狀態', type: 'select', opts: [['啟用', '顯示'], ['停用', '隱藏']], half: 1 },
+    { k: 'notify', label: 'LINE 通知', type: 'select', opts: [['1', '儲存後通知看得到的家長'], ['', '不通知']] }];
+  const val = v ? { ...v, courseId: v.course_id, studentId: v.student_id, aud: v.student_id ? 'stu' : v.course_id ? 'course' : 'all', notify: '' } : { date: A.meta.today, aud: 'all', notify: '1' };
+  const m = formDialog(v ? '編輯影片' : '新增影片', F, val, async o => {
+    if (o.aud === 'course' && !o.courseId) throw new Error('請先建立課程'); if (o.aud === 'stu' && !o.studentId) throw new Error('請先新增學生');
+    const r = await api('a.videoSave', { id: id || undefined, title: o.title, url: o.url.trim(), date: o.date, status: o.status, courseId: o.aud === 'course' ? o.courseId : '', studentId: o.aud === 'stu' ? o.studentId : '', notify: !!o.notify });
+    toast('已儲存' + (o.notify ? (r.notified ? '，已通知 ' + r.notified + ' 位家長' : '（目前沒有已綁定的家長可通知）') : '')); show();
+  }, { extra: '<div id="vprev" style="margin-top:12px"></div><p class="s">影片請先上傳到 YouTube。不想公開的話，在 YouTube 把瀏覽權限設為「不公開」，只有拿到連結的人看得到。</p>', del: v ? { text: '刪除', confirm: '確定刪除這部影片？', run: async () => { await api('a.videoDelete', { id: v.id }); toast('已刪除'); show(); } } : undefined });
+  const q = n => $(`[name=${n}]`, m), aud = () => { q('courseId').closest('label').hidden = q('aud').value !== 'course'; q('studentId').closest('label').hidden = q('aud').value !== 'stu'; };
+  q('aud').onchange = aud; aud();
+  let last = '';
+  const look = async () => {
+    const u = q('url').value.trim(); if (u === last) return; last = u;
+    if (!u) { $('#vprev', m).innerHTML = ''; return; }
+    try { const r = await api('a.videoInfo', { url: u }, true); if (q('url').value.trim() !== u) return;
+      $('#vprev', m).innerHTML = r.yt ? `<div class="thumb" style="border-radius:10px;background-image:url(https://i.ytimg.com/vi/${esc(r.yt)}/mqdefault.jpg)"></div>` : '<div class="s" style="color:var(--warn)">這不是 YouTube 連結，仍可儲存，但不會有縮圖。</div>';
+      if (r.title && !q('title').value.trim()) q('title').value = r.title;
+    } catch { /* 預覽失敗不影響儲存 */ }
+  };
+  q('url').addEventListener('input', () => { clearTimeout(look.h); look.h = setTimeout(look, 500); }); q('url').addEventListener('change', look);
+  if (v) look();
+}
+
 /* ---------- 路由與事件 ---------- */
 async function show(page) {
   if (page) A.page = page;
@@ -486,6 +540,7 @@ document.addEventListener('change', async e => {
   const t = e.target;
   if (t.id === 'fc') { A.filter.course = t.value; show(); }
   if (t.id === 'mmonth') { A.money.month = t.value; show(); }
+  if (t.id === 'vf') { A.vf = t.value; show(); }
   if (t.dataset.set) { try { const r = await api('a.settingSave', { key: t.dataset.set, value: t.type === 'checkbox' ? (t.checked ? '是' : '否') : t.value }, true); toast('已儲存'); if (t.dataset.set === '教室名稱') A.meta.studio = r.value; } catch (err) { toast(err.message, true); show(); } }
 });
 document.addEventListener('click', async e => {
@@ -516,10 +571,9 @@ document.addEventListener('click', async e => {
     if ('plan' in ds) { const p = ds.plan ? (await api('a.plans')).find(x => x.id === ds.plan) : null;
       return formDialog(p ? '編輯方案' : '新增方案', [{ k: 'name', label: '方案名稱' }, { k: 'lessons', label: '堂數', type: 'number', half: 1 }, { k: 'price', label: '價格', type: 'number', half: 1 }, { k: 'validDays', label: '有效天數（0＝無期限）', type: 'number', half: 1 }, { k: 'active', label: '狀態', type: 'select', opts: [['1', '啟用'], ['0', '停用']], half: 1 }],
         p ? { ...p, validDays: p.valid_days } : { validDays: 90, active: 1 }, async o => { await api('a.planSave', { id: ds.plan || undefined, ...o, active: o.active === '1' }); A.meta = await api('a.meta'); toast('已儲存'); show(); }); }
-    if ('video' in ds) { const v = ds.video ? (await api('a.videos')).find(x => x.id === ds.video) : null;
-      return formDialog(v ? '編輯影片' : '新增影片', [{ k: 'title', label: '標題' }, { k: 'url', label: '影片連結（YouTube、Google Drive…）', ph: 'https://' }, { k: 'date', label: '日期', type: 'date', half: 1 }, { k: 'status', label: '狀態', type: 'select', opts: [['啟用', '顯示'], ['停用', '隱藏']], half: 1 },
-        { k: 'courseId', label: '誰可以看', type: 'select', opts: [['', '全部家長']].concat(A.meta.courses.map(c => [c.id, '只有「' + c.name + '」的家長'])) }, { k: 'studentId', label: '或只給某位學生（選填，填學生編號）', ph: '例：S0001' }],
-        v ? { ...v, courseId: v.course_id, studentId: v.student_id } : { date: A.meta.today }, async o => { await api('a.videoSave', { id: ds.video || undefined, ...o }); toast('已儲存'); show(); }, v ? { del: { text: '刪除', confirm: '確定刪除這部影片？', run: async () => { await api('a.videoDelete', { id: v.id }); show(); } } } : {}); }
+    if ('video' in ds) return editVideo(ds.video);
+    if (ds.play) { const v = (A.videos || []).find(x => x.id === ds.play); return v && openUrl(v.url); }
+    if (ds.vtoggle) { const v = A.videos.find(x => x.id === ds.vtoggle); await api('a.videoSave', { id: v.id, title: v.title, url: v.url, date: v.date, courseId: v.course_id, studentId: v.student_id, status: v.status === '停用' ? '啟用' : '停用' }); toast(v.status === '停用' ? '已重新顯示' : '已隱藏，家長看不到'); return show(); }
     if ('admin' in ds) { const a = ds.admin ? (await api('a.admins')).find(x => x.userId === ds.admin) : null;
       return formDialog(a ? (a.active ? '編輯權限' : '開通「' + (a.name || '') + '」') : '手動新增', [...(a ? [] : [{ k: 'userId', label: 'LINE user ID（U 開頭 33 碼）' }]), { k: 'name', label: '顯示名稱' }, { k: 'role', label: '角色', type: 'select', opts: [['teacher', '老師（課表、點名）'], ['owner', '管理員（全部功能）']] }, { k: 'active', label: '狀態', type: 'select', opts: [['1', '啟用'], ['0', '停用']] }],
         a ? { ...a, active: 1 } : { role: 'teacher', active: 1 }, async o => { await api('a.adminSave', { userId: a ? a.userId : o.userId.trim(), name: o.name, role: o.role, active: o.active === '1' }); toast('已儲存'); show(); },

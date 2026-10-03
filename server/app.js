@@ -64,8 +64,10 @@ const PLANS = [['P01', '單堂', 1, 500, 30], ['P02', '10堂卡', 10, 4500, 90],
 const COLORS = ['#D6336C', '#1971C2', '#2B8A3E', '#E67700', '#7048E8', '#0C8599', '#C2255C', '#5C940D'];
 
 const OWNER_ONLY = new Set(['a.studentSave', 'a.enroll', 'a.unbind', 'a.topup', 'a.cardSave', 'a.courseSave', 'a.sessionSave', 'a.sessionDelete', 'a.genSessions',
-  'a.videoSave', 'a.videoDelete', 'a.planSave', 'a.settingSave', 'a.adminSave', 'a.richmenu', 'a.export', 'a.student', 'a.videos', 'a.plans', 'a.settings', 'a.admins', 'a.cards', 'a.ledger', 'a.topupSave']);
-const ASYNC = new Set(['a.richmenu']);
+  'a.videoSave', 'a.videoDelete', 'a.planSave', 'a.settingSave', 'a.adminSave', 'a.richmenu', 'a.export', 'a.student', 'a.videos', 'a.plans', 'a.settings', 'a.admins', 'a.cards', 'a.ledger', 'a.topupSave', 'a.videoInfo']);
+const ASYNC = new Set(['a.richmenu', 'a.videoInfo']);
+/** 從各種 YouTube 網址取出影片 ID（watch、youtu.be、shorts、live、embed） */
+export const ytId = url => { const m = String(url || '').match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^#]*&)?v=|shorts\/|live\/|embed\/|v\/))([\w-]{11})(?![\w-])/); return m ? m[1] : ''; };
 
 export function createApp(opts = {}) {
   const env = opts.env || process.env;
@@ -100,7 +102,7 @@ export function createApp(opts = {}) {
     } catch (e) { console.error('LINE', pathname, e.message); }
   }
   let outbox = [];
-  const pushMsg = (userIds, message) => { const to = [...new Set(userIds.filter(Boolean))]; if (to.length) outbox.push({ to, messages: [message] }); };
+  const pushMsg = (userIds, message) => { const to = [...new Set(userIds.filter(Boolean))]; for (let i = 0; i < to.length; i += 500) outbox.push({ to: to.slice(i, i + 500), messages: [message] }); };
   const flush = () => { const o = outbox; outbox = []; return Promise.all(o.map(m => lineMsg('multicast', m))); };
 
   const verifyIdToken = opts.verifyIdToken || (async idToken => {
@@ -147,6 +149,20 @@ export function createApp(opts = {}) {
     return bubble;
   }
   const flexMsg = (alt, bubbles) => ({ type: 'flex', altText: String(alt).slice(0, 400), contents: bubbles.length === 1 ? bubbles[0] : { type: 'carousel', contents: bubbles.slice(0, 12) } });
+
+  /** 影片卡片：YouTube 影片附縮圖，點圖或按鈕直接觀看 */
+  function videoBubble(v) {
+    const yt = ytId(v.url), act = { type: 'uri', label: '觀看影片', uri: v.url };
+    const bubble = { type: 'bubble', size: 'kilo',
+      body: { type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: 'lg', action: act, contents: [
+        { type: 'text', text: cfg('教室名稱', '舞蹈教室') + '｜影片', size: 'xs', color: C.SUB },
+        { type: 'text', text: String(v.title || '影片'), weight: 'bold', size: 'md', color: C.INK, wrap: true, maxLines: 3 },
+        { type: 'text', text: [v.date, v.who || v.course || '全部家長'].filter(Boolean).join('｜'), size: 'xs', color: C.SUB, wrap: true }] },
+      footer: { type: 'box', layout: 'vertical', paddingAll: 'sm', contents: [{ type: 'button', style: 'primary', height: 'sm', color: C.BRAND, action: act }] } };
+    if (yt) bubble.hero = { type: 'image', url: 'https://i.ytimg.com/vi/' + yt + '/hqdefault.jpg', size: 'full', aspectRatio: '16:9', aspectMode: 'cover', action: act };
+    return bubble;
+  }
+  const videosFor = sid => all("SELECT v.id,v.title,v.date,v.url,COALESCE(c.name,'') course,v.student_id personal FROM videos v LEFT JOIN courses c ON c.id=v.course_id WHERE v.status='啟用' AND v.url<>'' AND (v.student_id=? OR (v.student_id='' AND (v.course_id='' OR v.course_id IN (SELECT course_id FROM enrollments WHERE student_id=?)))) ORDER BY v.date DESC, v.id DESC", sid, sid).map(v => ({ ...v, yt: ytId(v.url) }));
 
   /* ---------- 共用查詢 ---------- */
   const adminOf = userId => get('SELECT * FROM admins WHERE user_id=? AND active=1', userId) || null;
@@ -310,7 +326,7 @@ export function createApp(opts = {}) {
     },
     videos(b, user) {
       assertOwns(user, b.studentId);
-      return all("SELECT v.title,v.date,v.url,COALESCE(c.name,'') course FROM videos v LEFT JOIN courses c ON c.id=v.course_id WHERE v.status='啟用' AND v.url<>'' AND (v.student_id=? OR (v.student_id='' AND (v.course_id='' OR v.course_id IN (SELECT course_id FROM enrollments WHERE student_id=?)))) ORDER BY v.date DESC", b.studentId, b.studentId);
+      return videosFor(b.studentId);
     },
     checkinInfo(b) { const s = sessRow(b.sessionId); if (!s) throw new Error('找不到這堂課'); return sessionInfo(s); },
     checkin(b, user) {
@@ -537,14 +553,33 @@ export function createApp(opts = {}) {
     'a.cards'() {
       return all("SELECT c.*, (SELECT GROUP_CONCAT(s.name,'、') FROM card_students cs JOIN students s ON s.id=cs.student_id WHERE cs.card_id=c.id) names FROM cards c ORDER BY (c.status='啟用') DESC, c.bought DESC, c.id DESC LIMIT 300");
     },
-    'a.videos'() { return all('SELECT * FROM videos ORDER BY date DESC, id DESC'); },
+    'a.videos'() { return all('SELECT * FROM videos ORDER BY date DESC, id DESC').map(v => ({ ...v, yt: ytId(v.url) })); },
+    /** 貼上連結時自動帶出 YouTube 標題（抓不到就回空字串） */
+    async 'a.videoInfo'(b) {
+      const url = str(b.url, 500), yt = ytId(url);
+      if (!yt) return { yt: '', title: '' };
+      let title = '';
+      try { const r = await lineFetch('https://www.youtube.com/oembed?format=json&url=' + encodeURIComponent('https://www.youtube.com/watch?v=' + yt)); if (r.ok) title = str((await r.json()).title, 80); } catch { /* 私人影片或連不上 */ }
+      return { yt, title };
+    },
     'a.videoSave'(b) {
-      const title = str(b.title, 80), url = str(b.url, 500);
-      if (!title || !/^https?:\/\//.test(url)) throw new Error('請輸入標題與正確的連結');
-      const v = [title, str(b.courseId, 20), str(b.studentId, 20), nd(b.date) || today(), url, b.status === '停用' ? '停用' : '啟用'];
+      let url = str(b.url, 500); const title = str(b.title, 80);
+      if (url && !/^https?:\/\//i.test(url) && /^(www\.|m\.)?(youtube\.com|youtu\.be)\//i.test(url)) url = 'https://' + url;
+      if (!/^https?:\/\//.test(url)) throw new Error('請貼上正確的影片連結');
+      if (!title) throw new Error('請輸入標題');
+      const sid = str(b.studentId, 20), cid = sid ? '' : str(b.courseId, 20);
+      if (sid && !student(sid)) throw new Error('找不到學生');
+      if (cid && !get('SELECT 1 x FROM courses WHERE id=?', cid)) throw new Error('找不到課程');
+      const v = [title, cid, sid, nd(b.date) || today(), url, b.status === '停用' ? '停用' : '啟用'];
       if (b.id) run('UPDATE videos SET title=?,course_id=?,student_id=?,date=?,url=?,status=? WHERE id=?', ...v, b.id);
       else run('INSERT INTO videos(title,course_id,student_id,date,url,status,id) VALUES(?,?,?,?,?,?,?)', ...v, uid('V'));
-      return { ok: true };
+      let notified = 0;
+      if (b.notify && v[5] === '啟用') {
+        const to = [...new Set(sid ? parentsOf(sid) : cid ? all("SELECT b.user_id FROM bindings b JOIN enrollments e ON e.student_id=b.student_id JOIN students s ON s.id=b.student_id WHERE e.course_id=? AND s.status<>'停用'", cid).map(r => r.user_id) : all("SELECT b.user_id FROM bindings b JOIN students s ON s.id=b.student_id WHERE s.status<>'停用'").map(r => r.user_id))];
+        notified = to.length;
+        pushMsg(to, flexMsg('🎬 新影片｜' + title, [videoBubble({ title, url, date: v[3], who: sid ? student(sid).name : cid ? get('SELECT name FROM courses WHERE id=?', cid).name : '' })]));
+      }
+      return { ok: true, notified };
     },
     'a.videoDelete'(b) { run('DELETE FROM videos WHERE id=?', b.id); return { ok: true }; },
     'a.plans'() { return all('SELECT * FROM plans ORDER BY sort,id'); },
@@ -682,6 +717,14 @@ export function createApp(opts = {}) {
         if (/出席|出缺|紀錄/.test(t)) {
           await reply([flexMsg('最近出席紀錄', kids.map(s => { const rs = all("SELECT a.status,s.date,COALESCE(c.name,s.course_id) course FROM attendance a JOIN sessions s ON s.id=a.session_id LEFT JOIN courses c ON c.id=s.course_id WHERE a.student_id=? AND a.status<>'取消' ORDER BY s.date DESC,s.start DESC LIMIT 5", s.id);
             return flexBubble({ color: C.BRAND, title: '最近出席紀錄', name: s.name, rows: rs.map(r => [r.date.slice(5), r.course + '｜' + r.status]), note: rs.length ? '' : '尚無紀錄', btn: ['查看完整紀錄', 'attendance'] }); }))]);
+          continue;
+        }
+        if (/影片|影音|視頻|video|youtube/i.test(t)) {
+          const seen = new Set(), list = [];
+          kids.forEach(s => videosFor(s.id).forEach(v => { if (!seen.has(v.id)) { seen.add(v.id); list.push({ ...v, who: v.personal ? s.name : '' }); } }));
+          list.sort((a, b) => a.date < b.date ? 1 : -1);
+          await reply([list.length ? flexMsg('🎬 影片｜' + list.slice(0, 3).map(v => v.title).join('、'), list.slice(0, 10).map(videoBubble))
+            : flexMsg('目前沒有影片', [flexBubble({ color: C.BRAND, title: '影片', note: '目前還沒有影片，老師上傳後會通知您。', noteColor: C.SUB })])]);
           continue;
         }
         await reply([menuFlex()]);
