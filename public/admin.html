@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>教室後台</title>
+<style>
+:root{--bg:#f4f2f5;--card:#fff;--ink:#231a20;--sub:#7d6f78;--line:#e7e1e6;--soft:#faf7f9;--brand:#d6336c;--brand2:#fbe4ec;--ok:#2b8a3e;--ok2:#e6f4ea;--warn:#e67700;--warn2:#fff3e0;--bad:#c92a2a;--bad2:#fde8e8;--info:#1971c2;--r:12px}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,"PingFang TC","Noto Sans TC","Noto Sans CJK TC","Microsoft JhengHei",sans-serif;-webkit-text-size-adjust:100%}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+/* 版面 */
+#shell{display:grid;grid-template-columns:208px 1fr;min-height:100%}
+#side{background:#2a1f27;color:#fff;padding:18px 12px;position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:4px}
+#side .brand{font-weight:700;font-size:16px;padding:6px 10px 16px;line-height:1.3}
+#side .brand small{display:block;font-weight:400;font-size:12px;opacity:.6}
+#side a{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;color:#d9ccd4;text-decoration:none;font-size:15px}
+#side a svg{width:20px;height:20px;flex:none;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+#side a.on{background:var(--brand);color:#fff}
+#side a:hover:not(.on){background:#3a2c36}
+#side .me{margin-top:auto;font-size:12px;opacity:.6;padding:8px 12px}
+main{padding:22px 26px 60px;min-width:0}
+.head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.head h1{font-size:22px;margin:0;flex:1;min-width:140px}
+.head .sp{flex:1}
+/* 元件 */
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px}
+.card h2{font-size:14px;margin:0 0 10px;color:var(--sub);font-weight:600;display:flex;align-items:center;gap:8px}
+.card h2 .sp{flex:1}
+.grid{display:grid;gap:14px}
+.stats{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.stat b{display:block;font-size:28px;line-height:1.15;font-variant-numeric:tabular-nums}
+.stat span{font-size:13px;color:var(--sub)}
+.cols{grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);align-items:start}
+.btn{border:1px solid var(--line);background:#fff;border-radius:9px;padding:8px 14px;font-weight:600;font-size:14px;white-space:nowrap}
+.btn:hover{background:var(--soft)}
+.btn.p{background:var(--brand);border-color:var(--brand);color:#fff}.btn.p:hover{background:#c22a60}
+.btn.sm{padding:5px 10px;font-size:13px}
+.btn.ok{background:var(--ok);border-color:var(--ok);color:#fff}.btn.w{background:var(--warn);border-color:var(--warn);color:#fff}.btn.b{background:var(--bad);border-color:var(--bad);color:#fff}
+.btn.ghost{border-color:transparent;background:none;color:var(--brand)}
+.btn:disabled{opacity:.5;cursor:default}
+.btn.on{outline:2px solid var(--ink);outline-offset:1px}
+.tag{display:inline-block;font-size:12px;border-radius:999px;padding:2px 9px;background:#eee;color:#555;white-space:nowrap}
+.tag.ok{background:var(--ok2);color:var(--ok)}.tag.warn{background:var(--warn2);color:var(--warn)}.tag.bad{background:var(--bad2);color:var(--bad)}.tag.info{background:#e7f1fb;color:var(--info)}
+.row{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--line)}
+.row:last-child{border-bottom:0}.row .g{flex:1;min-width:0}
+.t{font-weight:600}.s{font-size:13px;color:var(--sub)}
+.dot{width:10px;height:10px;border-radius:50%;flex:none;display:inline-block}
+.empty{text-align:center;color:var(--sub);padding:26px 10px;font-size:14px}
+.acts{display:flex;gap:6px;flex-wrap:wrap}
+input,select,textarea{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:#fff}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--brand2);border-color:var(--brand)}
+label.f{display:block;font-size:13px;color:var(--sub);margin-top:12px}
+label.f>input,label.f>select,label.f>textarea{margin-top:4px;color:var(--ink);font-size:15px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.chk{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+.chk label{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:14px;cursor:pointer;background:#fff;user-select:none}
+.chk input{width:auto;margin:0;accent-color:var(--brand)}
+.chk label:has(input:checked){border-color:var(--brand);background:var(--brand2);color:var(--brand);font-weight:600}
+.sw{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+.sw label{width:30px;height:30px;border-radius:50%;cursor:pointer;position:relative}
+.sw input{position:absolute;opacity:0}
+.sw label:has(input:checked){outline:3px solid var(--ink);outline-offset:2px}
+table{width:100%;border-collapse:collapse}
+th{font-size:12px;color:var(--sub);text-align:left;font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:11px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+tr.click{cursor:pointer}tr.click:hover td{background:var(--soft)}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+.bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden;width:90px}.bar i{display:block;height:100%;background:var(--ok)}
+.switch{position:relative;width:44px;height:26px;flex:none}
+.switch input{opacity:0;width:100%;height:100%;margin:0;position:absolute;cursor:pointer;z-index:1}
+.switch i{position:absolute;inset:0;background:#cfc6cc;border-radius:13px;transition:.15s}
+.switch i:after{content:"";position:absolute;width:20px;height:20px;border-radius:50%;background:#fff;top:3px;left:3px;transition:.15s}
+.switch input:checked+i{background:var(--ok)}.switch input:checked+i:after{left:21px}
+/* 週課表 */
+.wk{display:grid;grid-template-columns:48px repeat(7,minmax(0,1fr));background:var(--card);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.wk .hd{padding:10px 4px;text-align:center;font-size:13px;color:var(--sub);border-bottom:1px solid var(--line);border-left:1px solid var(--line)}
+.wk .hd b{display:block;font-size:17px;color:var(--ink)}
+.wk .hd.today b{background:var(--brand);color:#fff;border-radius:50%;width:30px;height:30px;line-height:30px;margin:2px auto 0}
+.wk .hd:first-child{border-left:0}
+.wk .hrs{position:relative}.wk .hrs span{position:absolute;right:6px;font-size:11px;color:var(--sub);transform:translateY(-50%)}
+.wk .day{position:relative;border-left:1px solid var(--line);background-image:linear-gradient(var(--line) 1px,transparent 1px);background-size:100% var(--hh)}
+.wk .day.today{background-color:#fff8fb}
+.ev{position:absolute;border-radius:8px;padding:5px 7px;font-size:12px;line-height:1.3;overflow:hidden;color:#fff;border:0;text-align:left;box-shadow:0 1px 2px rgba(0,0,0,.15)}
+.ev b,.ev span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ev b{font-size:13px}
+.ev.off{background:repeating-linear-gradient(45deg,#b9b0b6,#b9b0b6 6px,#a79da4 6px,#a79da4 12px)!important}
+.ev.done{opacity:.72}
+.ev:hover{filter:brightness(1.08)}
+.agenda .dayh{font-size:13px;color:var(--sub);font-weight:600;margin:16px 2px 6px}
+.agenda .dayh.today{color:var(--brand)}
+.sess{display:flex;gap:12px;align-items:center;width:100%;text-align:left;background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:12px;margin-bottom:8px}
+.sess .tm{font-weight:700;font-variant-numeric:tabular-nums;width:52px;flex:none}
+.sess .g .s{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sess .strip{width:4px;align-self:stretch;border-radius:2px;flex:none}
+/* 對話框 */
+.mask{position:fixed;inset:0;background:rgba(35,26,32,.45);z-index:50;display:flex;align-items:flex-start;justify-content:center;padding:5vh 14px;overflow:auto}
+.dlg{background:#fff;border-radius:16px;width:100%;max-width:520px;box-shadow:0 20px 60px rgba(0,0,0,.25)}
+.dlg.wide{max-width:760px}
+.dlg header{display:flex;align-items:center;padding:16px 18px;border-bottom:1px solid var(--line);gap:10px}
+.dlg header h3{margin:0;font-size:17px;flex:1}
+.dlg header button{border:0;background:none;font-size:22px;line-height:1;color:var(--sub);padding:0 4px}
+.dlg .bd{padding:6px 18px 18px}
+.dlg footer{display:flex;gap:8px;justify-content:flex-end;padding:14px 18px;border-top:1px solid var(--line)}
+.dlg footer .sp{flex:1}
+#toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);background:#231a20;color:#fff;padding:10px 18px;border-radius:999px;font-size:14px;opacity:0;pointer-events:none;transition:.2s;z-index:90;max-width:90%}
+#toast.show{opacity:1;transform:translateX(-50%)}#toast.bad{background:var(--bad)}
+#load{position:fixed;top:0;left:0;right:0;height:3px;z-index:95;display:none}
+#load.show{display:block}#load span{display:block;height:100%;width:40%;background:var(--brand);animation:ld 1s ease-in-out infinite}
+@keyframes ld{0%{margin-left:-40%}100%{margin-left:100%}}
+#qrbox{position:fixed;inset:0;background:#fff;z-index:80;display:none;flex-direction:column;align-items:center;justify-content:center;padding:20px;text-align:center}
+#qrbox.show{display:flex}#qrbox h2{font-size:24px;margin:0}
+/* 手機 */
+@media (max-width:860px){
+  #shell{display:block}
+  #side{position:fixed;bottom:0;left:0;right:0;top:auto;height:auto;flex-direction:row;padding:4px 4px calc(4px + env(safe-area-inset-bottom));z-index:40;gap:0}
+  #side .brand,#side .me{display:none}
+  #side a{flex:1;flex-direction:column;gap:2px;font-size:11px;padding:7px 2px;border-radius:8px}
+  main{padding:16px 14px 90px}
+  .cols{grid-template-columns:1fr}
+  .head h1{font-size:20px}
+  .hide-m{display:none}
+  .mask{padding:0;align-items:flex-end}.dlg{border-radius:16px 16px 0 0;max-height:92vh;overflow:auto}
+}
+</style>
+</head>
+<body>
+<div id="shell">
+  <nav id="side" hidden></nav>
+  <main id="app"><div class="empty">載入中…</div></main>
+</div>
+<div id="qrbox"><h2 id="qr-t"></h2><p class="s" id="qr-s"></p><div id="qr" style="margin:18px 0"></div><p class="s">家長用 LINE 掃描即可報到｜QR Code 會自動更新</p><button class="btn" id="qr-x">關閉</button></div>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="config.js"></script>
+<script src="common.js"></script>
+<script>
+const A = { meta: null, students: [], page: 'home', week: null, filter: { kw: '', f: 'all', course: '' } };
+const owner = () => A.meta && A.meta.role === 'owner';
+const ICON = {
+  home: '<svg viewBox="0 0 24 24"><path d="M3 11l9-8 9 8M5 10v10h14V10"/></svg>',
+  schedule: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
+  students: '<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.6 3.2-5.5 6.5-5.5s5.900 1.900 6.500 5.500M16 5a3.500 3.500 0 010 6.500M18 14.500c2 .6 3.200 2.300 3.500 5.500"/></svg>',
+  leaves: '<svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4M9 12h7M9 16h5"/></svg>',
+  settings: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.900 4.900l2.100 2.100M17 17l2.100 2.100M4.900 19.100L7 17M17 7l2.100-2.100"/></svg>'
+};
+const NAV = [['home', '總覽'], ['schedule', '課表'], ['students', '學生'], ['leaves', '請假'], ['settings', '設定', true]];
+const tag = (st, text) => { const c = ['出席', '已登記', '在學', '啟用', '正常'].includes(st) ? 'ok' : ['請假', '用完', '已結算'].includes(st) ? 'warn' : ['缺席', '停課', '停用', '過期'].includes(st) ? 'bad' : ''; return `<span class="tag ${c}">${esc(text || st)}</span>`; };
+const courseOf = id => (A.meta.courses.find(c => c.id === id) || {});
+const monday = d => dAdd(d, -((dDay(d) + 6) % 7));
+const money = n => '$' + Number(n || 0).toLocaleString();
+
+/* ---------- 對話框與表單 ---------- */
+function dialog(title, body, { wide, foot } = {}) {
+  const m = document.createElement('div'); m.className = 'mask';
+  m.innerHTML = `<div class="dlg ${wide ? 'wide' : ''}"><header><h3>${esc(title)}</h3><button data-x aria-label="關閉">×</button></header><div class="bd">${body}</div>${foot ? `<footer>${foot}</footer>` : ''}</div>`;
+  m.addEventListener('mousedown', e => { if (e.target === m) m.remove(); });
+  m.addEventListener('click', e => { if (e.target.closest('[data-x]')) m.remove(); });
+  document.body.appendChild(m);
+  return m;
+}
+/** fields: [{k,label,type,opts,ph,half}]；type: text/number/date/time/select/textarea/days/color/checks */
+function fieldsHtml(fields, v = {}) {
+  const one = f => {
+    const val = v[f.k] ?? f.def ?? '';
+    if (f.type === 'select') return `<label class="f">${esc(f.label)}<select name="${f.k}">${f.opts.map(o => `<option value="${esc(o[0])}" ${String(o[0]) === String(val) ? 'selected' : ''}>${esc(o[1])}</option>`).join('')}</select></label>`;
+    if (f.type === 'textarea') return `<label class="f">${esc(f.label)}<textarea name="${f.k}" rows="${f.rows || 2}" placeholder="${esc(f.ph || '')}">${esc(val)}</textarea></label>`;
+    if (f.type === 'days') return `<div class="f s" style="margin-top:12px">${esc(f.label)}<div class="chk">${[1, 2, 3, 4, 5, 6, 0].map(d => `<label><input type="checkbox" name="${f.k}" value="${d}" ${(val || []).map(Number).includes(d) ? 'checked' : ''}>週${WD[d]}</label>`).join('')}</div></div>`;
+    if (f.type === 'checks') return `<div class="f s" style="margin-top:12px">${esc(f.label)}<div class="chk">${f.opts.map(o => `<label><input type="checkbox" name="${f.k}" value="${esc(o[0])}" ${(val || []).includes(o[0]) ? 'checked' : ''}>${esc(o[1])}</label>`).join('') || '<span class="s">（尚無選項）</span>'}</div></div>`;
+    if (f.type === 'color') return `<div class="f s" style="margin-top:12px">${esc(f.label)}<div class="sw">${f.opts.map(c => `<label style="background:${c}"><input type="radio" name="${f.k}" value="${c}" ${c === (val || f.opts[0]) ? 'checked' : ''}></label>`).join('')}</div></div>`;
+    return `<label class="f">${esc(f.label)}<input name="${f.k}" type="${f.type || 'text'}" value="${esc(val)}" placeholder="${esc(f.ph || '')}" ${f.type === 'number' ? 'inputmode="numeric"' : ''}></label>`;
+  };
+  let out = '', i = 0;
+  while (i < fields.length) {
+    if (fields[i].half && fields[i + 1] && fields[i + 1].half) { out += `<div class="two">${one(fields[i])}${one(fields[i + 1])}</div>`; i += 2; }
+    else out += one(fields[i++]);
+  }
+  return out;
+}
+function readForm(el, fields) {
+  const o = {};
+  fields.forEach(f => {
+    if (f.type === 'days' || f.type === 'checks') o[f.k] = $$(`[name="${f.k}"]:checked`, el).map(x => x.value);
+    else if (f.type === 'color') o[f.k] = ($(`[name="${f.k}"]:checked`, el) || {}).value;
+    else o[f.k] = $(`[name="${f.k}"]`, el).value;
+  });
+  return o;
+}
+/** 表單對話框：save(values) 回傳 Promise，成功後自動關閉 */
+function formDialog(title, fields, values, save, { extra = '', saveText = '儲存', del } = {}) {
+  const m = dialog(title, fieldsHtml(fields, values) + extra, { foot: `${del ? '<button class="btn ghost" style="color:var(--bad)" data-del>' + esc(del.text) + '</button>' : ''}<span class="sp"></span><button class="btn" data-x>取消</button><button class="btn p" data-save>${esc(saveText)}</button>` });
+  $('[data-save]', m).onclick = async e => {
+    e.target.disabled = true;
+    try { await save(readForm(m, fields), m); m.remove(); } catch (err) { toast(err.message, true); e.target.disabled = false; }
+  };
+  if (del) $('[data-del]', m).onclick = async () => { if (!confirm(del.confirm)) return; try { await del.run(); m.remove(); } catch (err) { toast(err.message, true); } };
+  const first = $('input,select,textarea', m); if (first && window.innerWidth > 860) first.focus();
+  return m;
+}
+
+/* ---------- 頁面 ---------- */
+const PAGES = {
+  async home() {
+    const d = await api('a.overview');
+    const st = d.stats;
+    return `<div class="head"><h1>${esc(A.meta.name || '')}，您好</h1><span class="s">${dLabel(d.date)}</span></div>
+    <div class="grid stats" style="margin-bottom:14px">
+      <div class="card stat"><b>${st.students}</b><span>在學學生</span></div>
+      <div class="card stat"><b>${st.weekSessions}</b><span>未來 7 天堂數</span></div>
+      <div class="card stat"><b>${st.unbound}</b><span>尚未綁定家長</span></div>
+      ${owner() ? `<div class="card stat"><b>${money(st.monthIncome)}</b><span>本月儲值收入</span></div>` : ''}
+    </div>
+    <div class="grid cols">
+      <div class="card"><h2>今日課程<span class="sp"></span><a class="btn sm ghost" href="#schedule">看整週 ›</a></h2>
+        ${d.sessions.length ? d.sessions.map(sessRow).join('') : '<div class="empty">今天沒有課程</div>'}</div>
+      <div class="grid">
+        <div class="card"><h2>堂數不足</h2>${d.low.length ? d.low.map(s => `<div class="row"><div class="g t">${esc(s.name)}</div><span class="tag ${s.remain <= 0 ? 'bad' : 'warn'}">剩 ${s.remain} 堂</span>${owner() ? `<button class="btn sm" data-topup="${esc(s.id)}">儲值</button>` : ''}</div>`).join('') : '<div class="empty">目前沒有</div>'}</div>
+        <div class="card"><h2>14 天內到期的上課卡</h2>${d.expiring.length ? d.expiring.map(c => `<div class="row"><div class="g"><div class="t">${esc(c.names || '')}</div><div class="s">${esc(c.plan)}｜剩 ${c.remain} 堂</div></div><span class="tag warn">${esc(c.expire.slice(5))} 到期</span></div>`).join('') : '<div class="empty">目前沒有</div>'}</div>
+        <div class="card"><h2>近期請假</h2>${d.leaves.length ? d.leaves.map(l => `<div class="row"><div class="g"><div class="t">${esc(l.student)}</div><div class="s">${dLabel(l.date)} ${esc(l.start)} ${esc(l.course)}${l.reason ? '｜' + esc(l.reason) : ''}</div></div></div>`).join('') : '<div class="empty">目前沒有</div>'}</div>
+      </div>
+    </div>`;
+  },
+
+  async schedule() {
+    A.week = A.week || monday(A.meta.today);
+    const d = await api('a.week', { start: A.week });
+    const days = [...Array(7)].map((_, i) => dAdd(A.week, i));
+    const by = Object.fromEntries(days.map(x => [x, []]));
+    d.sessions.forEach(s => by[s.date] && by[s.date].push(s));
+    const head = `<div class="head"><h1>課表</h1>
+      <div class="acts"><button class="btn" data-wk="-7">‹</button><button class="btn" data-wk="0">本週</button><button class="btn" data-wk="7">›</button></div>
+      <span class="s">${A.week.slice(5).replace('-', '/')} – ${days[6].slice(5).replace('-', '/')}</span><span class="sp"></span>
+      ${owner() ? '<button class="btn" data-courses>課程管理</button><button class="btn p" data-newsess>＋ 加課</button>' : ''}</div>`;
+    if (!A.meta.courses.length) return head + `<div class="card empty">還沒有任何課程。${owner() ? '<br><br><button class="btn p" data-newcourse>＋ 建立第一門課程</button><br><br><span class="s">設定每週上課日與時間後，系統會自動排出未來的課表。</span>' : ''}</div>`;
+    if (window.innerWidth <= 860) return head + `<div class="agenda">${days.map(x => `<div class="dayh ${x === A.meta.today ? 'today' : ''}">${dLabel(x)}${x === A.meta.today ? '｜今天' : ''}</div>${by[x].length ? by[x].map(sessRow).join('') : '<div class="s" style="padding:2px 4px 6px">沒有課程</div>'}`).join('')}</div>`;
+    const mins = t => +t.slice(0, 2) * 60 + +t.slice(3);
+    const h0 = Math.min(9, ...d.sessions.map(s => Math.floor(mins(s.start) / 60))), h1 = Math.max(21, ...d.sessions.map(s => Math.ceil(mins(s.end) / 60))), HH = 54;
+    const col = x => {
+      const list = by[x].slice().sort((a, b) => a.start < b.start ? -1 : 1), lanes = [];
+      list.forEach(s => { let i = lanes.findIndex(end => end <= s.start); if (i < 0) { i = lanes.length; lanes.push(''); } lanes[i] = s.end; s._lane = i; });
+      list.forEach(s => { s._n = Math.max(1, ...list.filter(o => o.start < s.end && o.end > s.start).map(o => o._lane + 1)); });
+      return `<div class="day ${x === A.meta.today ? 'today' : ''}" style="height:${(h1 - h0) * HH}px;--hh:${HH}px">${list.map(s => `<button class="ev ${s.status === '停課' ? 'off' : ''} ${s.status === '已結算' ? 'done' : ''}" data-sess="${esc(s.sessionId)}"
+        style="background:${esc(s.color)};top:${(mins(s.start) / 60 - h0) * HH + 1}px;height:${Math.max(26, (mins(s.end) - mins(s.start)) / 60 * HH - 3)}px;left:calc(${s._lane / s._n * 100}% + 2px);width:calc(${100 / s._n}% - 4px)">
+        <b>${esc(s.course)}</b><span>${s.status === '停課' ? '停課' : `到 ${s.present}／${s.enrolled}${s.leave ? '｜假 ' + s.leave : ''}`}</span><span>${esc(s.start)}–${esc(s.end)}${s.teacher ? '｜' + esc(s.teacher) : ''}</span></button>`).join('')}</div>`;
+    };
+    return head + `<div class="wk"><div class="hd"></div>${days.map(x => `<div class="hd ${x === A.meta.today ? 'today' : ''}">週${WD[dDay(x)]}<b>${+x.slice(8)}</b></div>`).join('')}
+      <div class="hrs" style="height:${(h1 - h0) * HH}px">${[...Array(h1 - h0)].map((_, i) => i ? `<span style="top:${i * HH}px">${String(h0 + i).padStart(2, '0')}:00</span>` : '').join('')}</div>${days.map(col).join('')}</div>
+      <p class="s">點課程方塊可點名、顯示報到 QR Code、調課或停課。灰色斜紋為停課。</p>`;
+  },
+
+  async students() {
+    A.students = await api('a.students');
+    const f = A.filter, low = 2;
+    const list = A.students.filter(s => (!f.kw || (s.name + s.id + s.phone).includes(f.kw)) && (!f.course || s.courses.includes(f.course)) &&
+      (f.f === 'all' ? s.status !== '停用' : f.f === 'low' ? s.status !== '停用' && s.remain <= low : f.f === 'unbound' ? s.status !== '停用' && !s.bound : s.status === '停用'));
+    const cnt = k => A.students.filter(s => k === 'all' ? s.status !== '停用' : k === 'low' ? s.status !== '停用' && s.remain <= low : k === 'unbound' ? s.status !== '停用' && !s.bound : s.status === '停用').length;
+    return `<div class="head"><h1>學生</h1><span class="sp"></span>${owner() ? '<button class="btn" data-import>批次匯入</button><button class="btn p" data-newstu>＋ 新增學生</button>' : ''}</div>
+    <div class="card" style="margin-bottom:12px"><div class="two" style="grid-template-columns:2fr 1fr"><input id="kw" placeholder="搜尋姓名／編號／電話" value="${esc(f.kw)}">
+      <select id="fc"><option value="">全部課程</option>${A.meta.courses.filter(c => c.status === '啟用').map(c => `<option value="${esc(c.id)}" ${f.course === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>
+      <div class="acts" style="margin-top:10px">${[['all', '在學'], ['low', '堂數不足'], ['unbound', '未綁定家長'], ['off', '已停用']].map(x => `<button class="btn sm ${f.f === x[0] ? 'p' : ''}" data-f="${x[0]}">${x[1]} ${cnt(x[0])}</button>`).join('')}</div></div>
+    <div class="card" style="padding:4px 6px;overflow:auto">${list.length ? `<table><thead><tr><th>姓名</th><th class="hide-m">課程</th><th class="n">剩餘堂數</th><th>家長</th><th class="hide-m">綁定碼</th></tr></thead><tbody>${list.map(s => `
+      <tr class="${owner() ? 'click' : ''}" data-stu="${esc(s.id)}"><td><div class="t">${esc(s.name)}</div><div class="s">${esc(s.id)}${s.phone ? '｜' + esc(s.phone) : ''}</div></td>
+      <td class="hide-m">${s.courses.map(c => `<span class="tag info">${esc(courseOf(c).name || c)}</span>`).join(' ') || '<span class="s">未排課</span>'}</td>
+      <td class="n"><span class="tag ${s.remain <= 0 ? 'bad' : s.remain <= low ? 'warn' : 'ok'}">${s.remain}</span></td>
+      <td>${s.bound ? `<span class="tag ok">已綁 ${s.bound}</span>` : '<span class="tag">未綁定</span>'}</td><td class="hide-m" style="font-variant-numeric:tabular-nums;letter-spacing:1px">${esc(s.code)}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">沒有符合的學生</div>'}</div>`;
+  },
+
+  async leaves() {
+    const d = await api('a.leaves'), t = A.meta.today;
+    const up = d.filter(l => l.date >= t), past = d.filter(l => l.date < t).reverse();
+    const row = l => `<div class="row"><div class="g"><div class="t">${esc(l.student)}　<span class="s">${dLabel(l.date)} ${esc(l.start)} ${esc(l.course)}</span></div><div class="s">${l.reason ? '原因：' + esc(l.reason) + '｜' : ''}${esc(l.by || '')} 於 ${esc((l.applied || '').slice(5, 16))} 申請</div></div></div>`;
+    return `<div class="head"><h1>請假</h1></div>
+      <div class="card" style="margin-bottom:14px"><h2>即將到來</h2>${up.length ? up.map(row).join('') : '<div class="empty">沒有請假</div>'}</div>
+      <div class="card"><h2>過去 30 天</h2>${past.length ? past.map(row).join('') : '<div class="empty">沒有紀錄</div>'}</div>`;
+  },
+
+  async settings() {
+    const [sets, plans, videos, admins] = [await api('a.settings'), await api('a.plans'), await api('a.videos'), await api('a.admins')];
+    const pending = admins.filter(a => !a.active);
+    return `<div class="head"><h1>設定</h1></div><div class="grid cols">
+    <div class="grid">
+      <div class="card"><h2>教室規則與通知</h2>${sets.map(s => `<div class="row"><div class="g"><div class="t">${esc(s.key)}</div><div class="s">${esc(s.note)}</div></div>
+        ${s.kind === 'bool' ? `<label class="switch"><input type="checkbox" data-set="${esc(s.key)}" ${s.value === '是' ? 'checked' : ''}><i></i></label>` : `<input data-set="${esc(s.key)}" value="${esc(s.value)}" style="width:${s.kind === 'num' ? 80 : 190}px;text-align:${s.kind === 'num' ? 'right' : 'left'}" ${s.kind === 'num' ? 'inputmode="numeric"' : ''}>`}</div>`).join('')}</div>
+    </div>
+    <div class="grid">
+      <div class="card"><h2>儲值方案<span class="sp"></span><button class="btn sm" data-plan="">＋ 新增</button></h2>${plans.map(p => `<div class="row"><div class="g"><div class="t">${esc(p.name)} ${p.active ? '' : tag('停用')}</div><div class="s">${p.lessons} 堂｜${money(p.price)}｜${p.valid_days ? p.valid_days + ' 天有效' : '無期限'}</div></div><button class="btn sm" data-plan="${esc(p.id)}">編輯</button></div>`).join('')}</div>
+      <div class="card"><h2>管理員與老師<span class="sp"></span><button class="btn sm" data-admin="">＋ 手動新增</button></h2>
+        ${pending.length ? `<div class="s" style="color:var(--warn);margin-bottom:6px">有 ${pending.length} 位申請開通，按「開通」即可</div>` : ''}
+        ${admins.map(a => `<div class="row"><div class="g"><div class="t">${esc(a.name || '（未命名）')} ${a.active ? `<span class="tag ${a.role === 'owner' ? 'info' : ''}">${a.role === 'owner' ? '管理員' : '老師'}</span>` : '<span class="tag warn">待開通</span>'}</div><div class="s" style="word-break:break-all">${esc(a.userId)}</div></div><button class="btn sm ${a.active ? '' : 'p'}" data-admin="${esc(a.userId)}">${a.active ? '編輯' : '開通'}</button></div>`).join('')}
+        <p class="s" style="margin-bottom:0">老師用 LINE 開啟後台網址並按「申請開通」，就會出現在這裡。老師只能看課表與點名，不能儲值或改設定。</p></div>
+      <div class="card"><h2>影片<span class="sp"></span><button class="btn sm" data-video="">＋ 新增</button></h2>${videos.length ? videos.map(v => `<div class="row"><div class="g"><div class="t">${esc(v.title)} ${v.status === '停用' ? tag('停用') : ''}</div><div class="s">${esc(v.date)}｜${v.student_id ? '指定學生 ' + esc(v.student_id) : v.course_id ? esc(courseOf(v.course_id).name || v.course_id) : '全部家長'}</div></div><button class="btn sm" data-video="${esc(v.id)}">編輯</button></div>`).join('') : '<div class="empty">尚無影片</div>'}</div>
+      <div class="card"><h2>LINE 圖文選單</h2><p class="s" style="margin-top:0">把六格功能選單套用到官方帳號聊天室下方。</p><button class="btn" data-richmenu>重新套用圖文選單</button></div>
+      <div class="card"><h2>匯出資料（CSV，可用 Excel 開啟）</h2><div class="acts">${[['students', '學生'], ['attendance', '出席紀錄'], ['topups', '儲值紀錄'], ['cards', '上課卡'], ['sessions', '課表'], ['leaves', '請假']].map(x => `<button class="btn sm" data-export="${x[0]}">${x[1]}</button>`).join('')}</div>
+        <p class="s" style="margin-bottom:0">資料庫每天自動備份，保留最近 14 天。</p></div>
+    </div></div>`;
+  }
+};
+function sessRow(s) {
+  const pct = s.enrolled ? Math.min(100, Math.round(s.present / s.enrolled * 100)) : 0;
+  return `<button class="sess" data-sess="${esc(s.sessionId)}"><span class="strip" style="background:${s.status === '停課' ? '#b9b0b6' : esc(s.color)}"></span><span class="tm">${esc(s.start)}</span>
+    <span class="g" style="flex:1;min-width:0"><span class="t" style="display:block">${esc(s.course)} ${s.status !== '正常' ? tag(s.status) : ''}</span><span class="s">${esc(s.start)}–${esc(s.end)}${s.teacher ? '｜' + esc(s.teacher) : ''}${s.room ? '｜' + esc(s.room) : ''}</span></span>
+    ${s.status === '停課' ? '' : `<span style="text-align:right"><span class="s">到 ${s.present}／${s.enrolled}${s.leave ? '｜假 ' + s.leave : ''}</span><span class="bar"><i style="width:${pct}%"></i></span></span>`}</button>`;
+}
+
+/* ---------- 場次：點名／QR／調課 ---------- */
+async function openSession(id) {
+  const d = await api('a.roster', { sessionId: id }), i = d.info;
+  const body = () => `<div class="s" style="margin:8px 0 4px">${dLabel(i.date)} ${esc(i.start)}–${esc(i.end)}${i.teacher ? '｜' + esc(i.teacher) : ''}${i.room ? '｜' + esc(i.room) : ''} ${i.status !== '正常' ? tag(i.status) : ''}</div>
+    ${i.note ? `<div class="s">備註：${esc(i.note)}</div>` : ''}
+    <div class="acts" style="margin:10px 0"><button class="btn sm p" data-a="qr">報到 QR Code</button>${owner() ? '<button class="btn sm" data-a="edit">調課／代課／停課</button>' : ''}<button class="btn sm" data-a="close">結算（未到記缺席）</button></div>
+    <div class="s" style="margin-bottom:2px">已到 ${d.list.filter(x => x.status === '出席').length}／${d.list.length} 人</div>
+    ${d.list.length ? d.list.map(x => `<div class="row"><div class="g"><div class="t">${esc(x.name)} ${x.status ? tag(x.status) : '<span class="tag">未到</span>'}</div><div class="s">剩 ${x.remain} 堂${x.method ? '｜' + esc(x.method) : ''}${x.note ? '｜' + esc(x.note) : ''}</div></div>
+      <div class="acts">${[['出席', 'ok'], ['請假', 'w'], ['缺席', 'b']].map(b => `<button class="btn sm ${x.status === b[0] ? b[1] : ''}" data-mk="${b[0]}" data-id="${esc(x.id)}">${b[0]}</button>`).join('')}${x.status ? `<button class="btn sm ghost" data-mk="取消" data-id="${esc(x.id)}">清除</button>` : ''}</div></div>`).join('') : '<div class="empty">這門課還沒有排入學生，可在下方加入臨時上課的學生</div>'}
+    <label class="f">加入其他學生（臨時上課）<select id="adhoc"><option value="">請選擇學生</option>${A.students.filter(s => s.status !== '停用' && !d.list.some(x => x.id === s.id)).map(s => `<option value="${esc(s.id)}">${esc(s.name)}（剩 ${s.remain}）</option>`).join('')}</select></label>`;
+  const m = dialog(i.course, body(), { wide: true });
+  const refresh = async () => { const n = await api('a.roster', { sessionId: id }); d.list = n.list; Object.assign(i, n.info); $('.bd', m).innerHTML = body(); };
+  m.addEventListener('change', async e => { if (e.target.id !== 'adhoc' || !e.target.value) return; try { const r = await api('a.mark', { sessionId: id, studentId: e.target.value, status: '出席' }); toast('已報到' + (r.note ? '（' + r.note + '）' : '')); await refresh(); } catch (err) { toast(err.message, true); } });
+  m.addEventListener('click', async e => {
+    const b = e.target.closest('button'); if (!b) return;
+    try {
+      if (b.dataset.mk) { const r = await api('a.mark', { sessionId: id, studentId: b.dataset.id, status: b.dataset.mk }); toast(b.dataset.mk + (r.deduct ? '，扣 ' + r.deduct + ' 堂' : '') + (r.note ? '（' + r.note + '）' : '') + '｜剩 ' + r.remain + ' 堂'); await refresh(); }
+      if (b.dataset.a === 'close') { if (!confirm('確定結算？未報到且未請假的學生會記為缺席' + '。')) return; const r = await api('a.close', { sessionId: id }); toast('已結算，缺席 ' + r.absent + ' 人'); await refresh(); }
+      if (b.dataset.a === 'qr') showQr(id, i);
+      if (b.dataset.a === 'edit') { m.remove(); editSession(i); }
+    } catch (err) { toast(err.message, true); }
+  });
+  const ob = new MutationObserver(() => { if (!document.body.contains(m)) { ob.disconnect(); show(); } }); ob.observe(document.body, { childList: true });
+}
+let qrTimer = null;
+async function showQr(id, i) {
+  $('#qr-t').textContent = i.course; $('#qr-s').textContent = dLabel(i.date) + ' ' + i.start + '–' + i.end; $('#qrbox').classList.add('show');
+  const draw = async () => { try { const d = await api('a.qr', { sessionId: id }, true); $('#qr').innerHTML = ''; new QRCode($('#qr'), { text: d.url, width: 280, height: 280 }); qrTimer = setTimeout(draw, d.refresh * 1000); } catch (e) { toast(e.message, true); } };
+  clearTimeout(qrTimer); draw();
+}
+$('#qr-x').onclick = () => { clearTimeout(qrTimer); $('#qrbox').classList.remove('show'); };
+function editSession(i) {
+  const isNew = !i;
+  const F = [...(isNew ? [{ k: 'courseId', label: '課程', type: 'select', opts: A.meta.courses.filter(c => c.status === '啟用').map(c => [c.id, c.name]) }] : []),
+    { k: 'date', label: '日期', type: 'date' }, { k: 'start', label: '開始', type: 'time', half: 1 }, { k: 'end', label: '結束', type: 'time', half: 1 },
+    { k: 'teacher', label: '老師（代課時填寫，留白＝原老師）', half: 1 }, { k: 'room', label: '教室（留白＝原教室）', half: 1 },
+    ...(isNew ? [] : [{ k: 'status', label: '狀態', type: 'select', opts: [['正常', '正常上課'], ['停課', '停課'], ['已結算', '已結算']] }]), { k: 'note', label: '備註' }];
+  const c0 = A.meta.courses.find(c => c.status === '啟用') || {};
+  const v = isNew ? { date: A.meta.today, start: c0.start || '19:00', end: c0.end || '20:00' } : { date: i.date, start: i.start, end: i.end, teacher: '', room: '', status: i.status, note: i.note };
+  const m = formDialog(isNew ? '加課（單堂）' : '調整「' + i.course + '」這一堂', F, v, async o => { await api('a.sessionSave', { id: isNew ? undefined : i.sessionId, ...o }); toast('已儲存'); show(); },
+    isNew ? {} : { extra: '<p class="s">只影響這一堂，不會改到每週固定時間。要改每週時間請到「課程管理」。</p>', del: { text: '刪除這一堂', confirm: '確定刪除？（每週固定產生的課會改為停課）', run: async () => { await api('a.sessionDelete', { id: i.sessionId }); toast('已處理'); show(); } } });
+  if (isNew) $('[name=courseId]', m).onchange = e => { const c = courseOf(e.target.value); $('[name=start]', m).value = c.start; $('[name=end]', m).value = c.end; };
+}
+
+/* ---------- 課程管理 ---------- */
+function coursesDialog() {
+  const m = dialog('課程管理', (A.meta.courses.length ? A.meta.courses.map(c => `<div class="row"><span class="dot" style="background:${esc(c.color)}"></span><div class="g"><div class="t">${esc(c.name)} ${c.status === '停用' ? tag('停用') : ''}</div>
+    <div class="s">每週${String(c.weekdays).split('').map(d => WD[d]).join('、')} ${esc(c.start)}–${esc(c.end)}${c.teacher ? '｜' + esc(c.teacher) : ''}${c.room ? '｜' + esc(c.room) : ''}</div></div><button class="btn sm" data-c="${esc(c.id)}">編輯</button></div>`).join('') : '<div class="empty">還沒有課程</div>'), { foot: '<span class="sp"></span><button class="btn p" data-c="">＋ 新增課程</button>' });
+  m.addEventListener('click', e => { const b = e.target.closest('[data-c]'); if (b) { m.remove(); editCourse(b.dataset.c); } });
+}
+function editCourse(id) {
+  const c = id ? courseOf(id) : null;
+  const F = [{ k: 'name', label: '課程名稱', ph: '例：兒童街舞初級' }, { k: 'weekdays', label: '每週上課日（可複選）', type: 'days' },
+    { k: 'start', label: '開始時間', type: 'time', half: 1 }, { k: 'end', label: '結束時間', type: 'time', half: 1 }, { k: 'teacher', label: '老師', half: 1 }, { k: 'room', label: '教室', half: 1 },
+    { k: 'capacity', label: '人數上限（0＝不限）', type: 'number', half: 1 }, { k: 'deduct', label: '每堂扣幾堂', type: 'number', half: 1 }, { k: 'color', label: '課表顏色', type: 'color', opts: A.meta.colors },
+    ...(c ? [{ k: 'status', label: '狀態', type: 'select', opts: [['啟用', '開課中'], ['停用', '停開（不再排課）']] }] : [])];
+  const v = c ? { ...c, weekdays: String(c.weekdays).split('') } : { start: '19:00', end: '20:00', deduct: 1, capacity: 0, weekdays: [], color: A.meta.colors[A.meta.courses.length % A.meta.colors.length] };
+  formDialog(c ? '編輯課程' : '新增課程', F, v, async o => { const r = await api('a.courseSave', { id: id || undefined, ...o }); A.meta = await api('a.meta'); toast('已儲存' + (r.added ? '，排出 ' + r.added + ' 堂新課' : '')); show(); },
+    { extra: '<p class="s">儲存後會自動排出未來幾週的課表（週數可在「設定」調整）。修改時間或上課日時，尚未點名的未來課程會一起更新。</p>' });
+}
+
+/* ---------- 學生 ---------- */
+const STU_F = () => [{ k: 'name', label: '姓名' }, { k: 'birthday', label: '生日', type: 'date', half: 1 }, { k: 'phone', label: '家長電話', half: 1 },
+  { k: 'courses', label: '排入課程（點名單會出現這位學生）', type: 'checks', opts: A.meta.courses.filter(c => c.status === '啟用').map(c => [c.id, c.name]) }, { k: 'note', label: '備註' }];
+function newStudent() {
+  formDialog('新增學生', STU_F(), {}, async o => { const r = await api('a.studentSave', o); show(); setTimeout(() => dialog('已新增 ' + o.name, `<p>學生編號：<b>${esc(r.id)}</b></p><p>綁定碼：<b style="font-size:28px;letter-spacing:4px">${esc(r.code)}</b></p><p class="s">請把綁定碼交給家長。家長在 LINE 點選單任一格，輸入綁定碼即可；爸爸媽媽可以各自綁定。</p>`), 50); }, { saveText: '新增' });
+}
+function importStudents() {
+  const F = [{ k: 'text', label: '每行一位：姓名,生日,電話（生日、電話可省略）', type: 'textarea', rows: 8, ph: '王小明,2018-03-15,0912345678\n李小華' },
+    { k: 'courseId', label: '全部排入課程（可不選）', type: 'select', opts: [['', '不指定']].concat(A.meta.courses.filter(c => c.status === '啟用').map(c => [c.id, c.name])) }];
+  formDialog('批次匯入學生', F, {}, async o => {
+    const rows = o.text.split('\n').map(l => l.split(/[,，\t]/).map(x => x.trim())).filter(a => a[0]).map(a => ({ name: a[0], birthday: a[1] || '', phone: a[2] || '' }));
+    if (!rows.length) throw new Error('請至少輸入一位學生');
+    const r = await api('a.studentImport', { rows, courseId: o.courseId }); toast('已新增 ' + r.added + ' 位，綁定碼已自動產生'); show();
+  }, { saveText: '匯入', extra: '<p class="s">可直接從 Excel 複製貼上。每位學生的綁定碼會自動產生，之後可用「匯出資料 → 學生」一次列出。</p>' });
+}
+async function openStudent(id) {
+  const d = await api('a.student', { id }), s = d.info;
+  const html = () => `<div class="row"><div class="g"><div class="s">${esc(s.id)}${s.birthday ? '｜' + esc(s.birthday) : ''}${s.phone ? '｜' + esc(s.phone) : ''} ${tag(s.status)}</div>
+      <div style="margin-top:4px">綁定碼 <b style="font-size:20px;letter-spacing:3px">${esc(s.code)}</b></div></div><div style="text-align:right"><b style="font-size:30px;line-height:1">${d.remain}</b><div class="s">剩餘堂數</div></div></div>
+    <div class="acts" style="margin:12px 0"><button class="btn p" data-a="topup">儲值</button><button class="btn" data-a="edit">編輯資料與排課</button></div>
+    <h4 style="margin:16px 0 4px">上課卡</h4>${d.cards.length ? d.cards.map(c => `<div class="row"><div class="g"><div class="t">${esc(c.plan_name)} ${tag(c.status)}</div><div class="s">購買 ${esc(c.bought)}${c.expire ? '｜到期 ' + esc(c.expire) : ''}${c.students.length > 1 ? '｜共用：' + esc(c.students.map(x => x.name).join('、')) : ''}</div></div><b>${c.remain}／${c.total}</b><button class="btn sm" data-card="${esc(c.id)}">調整</button></div>`).join('') : '<div class="s">尚無上課卡</div>'}
+    <h4 style="margin:16px 0 4px">已綁定的家長</h4>${d.parents.length ? d.parents.map(p => `<div class="row"><div class="g"><div class="t">${esc(p.name || '（未命名）')} <span class="s">${esc(p.relation || '')}</span></div><div class="s">${esc(p.at || '')}</div></div><button class="btn sm ghost" style="color:var(--bad)" data-unbind="${esc(p.userId)}">解除</button></div>`).join('') : '<div class="s">尚未有家長綁定</div>'}
+    <h4 style="margin:16px 0 4px">最近出席</h4>${d.attendance.length ? d.attendance.slice(0, 10).map(a => `<div class="row"><div class="g"><span class="t">${esc(a.course)}</span> <span class="s">${dLabel(a.date)} ${esc(a.start)}${a.deduct ? '｜扣 ' + a.deduct + ' 堂' : ''}</span></div>${tag(a.status)}</div>`).join('') : '<div class="s">尚無紀錄</div>'}`;
+  const m = dialog(s.name, html(), { wide: true });
+  m.addEventListener('click', async e => {
+    const b = e.target.closest('button'); if (!b) return;
+    try {
+      if (b.dataset.a === 'topup') { m.remove(); topup(id); }
+      if (b.dataset.a === 'edit') { m.remove(); formDialog('編輯 ' + s.name, [...STU_F(), { k: 'status', label: '狀態', type: 'select', opts: [['在學', '在學'], ['停用', '停用（離開教室）']] }, { k: 'regen', label: '綁定碼', type: 'select', opts: [['', '維持不變'], ['1', '重新產生（舊的失效）']] }], { ...s, courses: d.courses },
+        async o => { await api('a.studentSave', { id, ...o, regenCode: !!o.regen }); toast('已儲存'); show(); openStudent(id); }); }
+      if (b.dataset.unbind) { if (!confirm('確定解除這位家長的綁定？')) return; await api('a.unbind', { userId: b.dataset.unbind, studentId: id }); toast('已解除'); m.remove(); show(); openStudent(id); }
+      if (b.dataset.card) { const c = d.cards.find(x => x.id === b.dataset.card); m.remove();
+        formDialog('調整上課卡', [{ k: 'remain', label: '剩餘堂數', type: 'number', half: 1 }, { k: 'expire', label: '到期日（留白＝無期限）', type: 'date', half: 1 }, { k: 'studentIds', label: '使用這張卡的學生', type: 'checks', opts: A.students.filter(x => x.status !== '停用').map(x => [x.id, x.name]) }, { k: 'status', label: '狀態', type: 'select', opts: [['', '依堂數自動'], ['停用', '停用這張卡']] }],
+          { remain: c.remain, expire: c.expire, studentIds: c.students.map(x => x.id), status: c.status === '停用' ? '停用' : '' }, async o => { await api('a.cardSave', { id: c.id, ...o }); toast('已調整'); show(); openStudent(id); }, { extra: '<p class="s">用於補登、更正或把卡片改成兄弟姊妹共用。</p>' }); }
+    } catch (err) { toast(err.message, true); }
+  });
+}
+function topup(id) {
+  const s = A.students.find(x => x.id === id) || {}, p0 = A.meta.plans[1] || A.meta.plans[0] || {};
+  const fam = (s.family || []).map(f => A.students.find(x => x.id === f)).filter(x => x && x.status !== '停用');
+  const F = [{ k: 'planId', label: '方案', type: 'select', opts: A.meta.plans.map(p => [p.id, `${p.name}｜${p.lessons} 堂｜${money(p.price)}`]) }, { k: 'lessons', label: '堂數', type: 'number', half: 1 }, { k: 'price', label: '實收金額', type: 'number', half: 1 },
+    { k: 'pay', label: '付款方式', type: 'select', opts: ['現金', '轉帳', 'LINE Pay', '信用卡', '其他'].map(x => [x, x]), half: 1 }, { k: 'expire', label: '到期日（留白＝依方案）', type: 'date', half: 1 },
+    { k: 'shareIds', label: '共用這張卡的學生（可不選）', type: 'checks', opts: fam.map(f => [f.id, f.name]) }, { k: 'more', label: '加入其他學生共用', type: 'select', opts: [['', '不加入']].concat(A.students.filter(x => x.id !== id && x.status !== '停用' && !fam.includes(x)).map(x => [x.id, x.name])) }, { k: 'note', label: '備註' }];
+  const m = formDialog('為「' + (s.name || id) + '」儲值', F, { planId: p0.id, lessons: p0.lessons, price: p0.price }, async o => {
+    const share = [...o.shareIds, ...(o.more ? [o.more] : [])];
+    if (!confirm(`確認儲值 ${o.lessons} 堂、實收 ${money(o.price)}？` + (share.length ? '\n共用：' + share.map(x => (A.students.find(y => y.id === x) || {}).name).join('、') : ''))) throw new Error('已取消');
+    const r = await api('a.topup', { studentId: id, planId: o.planId, lessons: o.lessons, price: o.price, pay: o.pay, expire: o.expire, note: o.note, shareIds: share });
+    toast('儲值完成，剩餘 ' + r.remain + ' 堂'); show();
+  }, { saveText: '確認儲值' });
+  $('[name=planId]', m).onchange = e => { const p = A.meta.plans.find(x => x.id === e.target.value); $('[name=lessons]', m).value = p.lessons; $('[name=price]', m).value = p.price; };
+}
+
+/* ---------- 路由與事件 ---------- */
+async function show(page) {
+  if (page) A.page = page;
+  if (!PAGES[A.page] || (A.page === 'settings' && !owner())) A.page = 'home';
+  $$('#side a').forEach(a => a.classList.toggle('on', a.dataset.p === A.page));
+  try { $('#app').innerHTML = await PAGES[A.page](); } catch (e) { $('#app').innerHTML = `<div class="card empty">⚠️ ${esc(e.message)}</div>`; }
+}
+window.addEventListener('hashchange', () => { $$('.mask').forEach(m => m.remove()); show(location.hash.slice(1) || 'home'); });
+let rs; window.addEventListener('resize', () => { clearTimeout(rs); rs = setTimeout(() => { if (A.page === 'schedule' && !$('.mask')) show(); }, 300); });
+document.addEventListener('input', e => {
+  if (e.target.id === 'kw') { A.filter.kw = e.target.value.trim(); clearTimeout(show.h); show.h = setTimeout(async () => { await show(); const i = $('#kw'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }, 350); }
+});
+document.addEventListener('change', async e => {
+  const t = e.target;
+  if (t.id === 'fc') { A.filter.course = t.value; show(); }
+  if (t.dataset.set) { try { const r = await api('a.settingSave', { key: t.dataset.set, value: t.type === 'checkbox' ? (t.checked ? '是' : '否') : t.value }, true); toast('已儲存'); if (t.dataset.set === '教室名稱') A.meta.studio = r.value; } catch (err) { toast(err.message, true); show(); } }
+});
+document.addEventListener('click', async e => {
+  if (e.target.closest('.mask')) return;
+  const el = e.target.closest('button,tr[data-stu]'); if (!el) return;
+  const ds = el.dataset;
+  try {
+    if (ds.sess) { if (!A.students.length) A.students = await api('a.students'); return openSession(ds.sess); }
+    if (ds.wk !== undefined) { A.week = +ds.wk ? dAdd(A.week, +ds.wk) : monday(A.meta.today); return show(); }
+    if ('courses' in ds) return coursesDialog();
+    if ('newcourse' in ds) return editCourse('');
+    if ('newsess' in ds) return editSession(null);
+    if (ds.f) { A.filter.f = ds.f; return show(); }
+    if ('newstu' in ds) return newStudent();
+    if ('import' in ds) return importStudents();
+    if (ds.stu && owner()) return openStudent(ds.stu);
+    if (ds.topup) { if (!A.students.length) A.students = await api('a.students'); return topup(ds.topup); }
+    if ('richmenu' in ds) { if (!confirm('確定重新套用圖文選單？')) return; await api('a.richmenu'); return toast('圖文選單已套用'); }
+    if (ds.export) { const r = await api('a.export', { table: ds.export }); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([r.csv], { type: 'text/csv' })); a.download = r.name; a.click(); return; }
+    if ('plan' in ds) { const p = ds.plan ? (await api('a.plans')).find(x => x.id === ds.plan) : null;
+      return formDialog(p ? '編輯方案' : '新增方案', [{ k: 'name', label: '方案名稱' }, { k: 'lessons', label: '堂數', type: 'number', half: 1 }, { k: 'price', label: '價格', type: 'number', half: 1 }, { k: 'validDays', label: '有效天數（0＝無期限）', type: 'number', half: 1 }, { k: 'active', label: '狀態', type: 'select', opts: [['1', '啟用'], ['0', '停用']], half: 1 }],
+        p ? { ...p, validDays: p.valid_days } : { validDays: 90, active: 1 }, async o => { await api('a.planSave', { id: ds.plan || undefined, ...o, active: o.active === '1' }); A.meta = await api('a.meta'); toast('已儲存'); show(); }); }
+    if ('video' in ds) { const v = ds.video ? (await api('a.videos')).find(x => x.id === ds.video) : null;
+      return formDialog(v ? '編輯影片' : '新增影片', [{ k: 'title', label: '標題' }, { k: 'url', label: '影片連結（YouTube、Google Drive…）', ph: 'https://' }, { k: 'date', label: '日期', type: 'date', half: 1 }, { k: 'status', label: '狀態', type: 'select', opts: [['啟用', '顯示'], ['停用', '隱藏']], half: 1 },
+        { k: 'courseId', label: '誰可以看', type: 'select', opts: [['', '全部家長']].concat(A.meta.courses.map(c => [c.id, '只有「' + c.name + '」的家長'])) }, { k: 'studentId', label: '或只給某位學生（選填，填學生編號）', ph: '例：S0001' }],
+        v ? { ...v, courseId: v.course_id, studentId: v.student_id } : { date: A.meta.today }, async o => { await api('a.videoSave', { id: ds.video || undefined, ...o }); toast('已儲存'); show(); }, v ? { del: { text: '刪除', confirm: '確定刪除這部影片？', run: async () => { await api('a.videoDelete', { id: v.id }); show(); } } } : {}); }
+    if ('admin' in ds) { const a = ds.admin ? (await api('a.admins')).find(x => x.userId === ds.admin) : null;
+      return formDialog(a ? (a.active ? '編輯權限' : '開通「' + (a.name || '') + '」') : '手動新增', [...(a ? [] : [{ k: 'userId', label: 'LINE user ID（U 開頭 33 碼）' }]), { k: 'name', label: '顯示名稱' }, { k: 'role', label: '角色', type: 'select', opts: [['teacher', '老師（課表、點名）'], ['owner', '管理員（全部功能）']] }, { k: 'active', label: '狀態', type: 'select', opts: [['1', '啟用'], ['0', '停用']] }],
+        a ? { ...a, active: 1 } : { role: 'teacher', active: 1 }, async o => { await api('a.adminSave', { userId: a ? a.userId : o.userId.trim(), name: o.name, role: o.role, active: o.active === '1' }); toast('已儲存'); show(); },
+        a ? { del: { text: '移除', confirm: '確定移除？', run: async () => { await api('a.adminSave', { userId: a.userId, remove: true }); show(); } } } : {}); }
+  } catch (err) { toast(err.message, true); }
+});
+
+/* ---------- 啟動 ---------- */
+async function gate() {
+  const st = await api('a.status');
+  document.title = st.studio + '｜後台';
+  if (st.isAdmin) return true;
+  $('#app').innerHTML = `<div class="card" style="max-width:440px;margin:8vh auto"><h1 style="font-size:20px;margin:0 0 6px">${esc(st.studio)}｜後台</h1>
+    ${!st.hasOwner ? `<p>這是第一次啟用。請輸入安裝時顯示的<b>安裝碼</b>，您就會成為管理員。</p><input id="code" placeholder="安裝碼" autocomplete="off"><button class="btn p" id="claim" style="width:100%;margin-top:12px">啟用後台</button>`
+      : st.applied ? `<p>您的申請已送出，請等管理員開通後重新整理這個頁面。</p><button class="btn" onclick="location.reload()">重新整理</button>`
+      : `<p>${esc(st.name)}，您還沒有後台權限。按下申請後，請管理員到「設定 → 管理員與老師」為您開通。</p><button class="btn p" id="apply" style="width:100%">申請開通</button>`}</div>`;
+  const c = $('#claim'), a = $('#apply');
+  if (c) c.onclick = async () => { try { await api('a.claim', { code: $('#code').value.trim() }); location.reload(); } catch (e) { toast(e.message, true); } };
+  if (a) a.onclick = async () => { try { await api('a.apply'); toast('已送出申請'); gate(); } catch (e) { toast(e.message, true); } };
+  return false;
+}
+(async function () {
+  try {
+    await boot();
+    if (!(await gate())) return;
+    A.meta = await api('a.meta');
+    $('#side').innerHTML = `<div class="brand">${esc(A.meta.studio)}<small>管理後台</small></div>` + NAV.filter(n => !n[2] || owner()).map(n => `<a href="#${n[0]}" data-p="${n[0]}">${ICON[n[0]]}<span>${n[1]}</span></a>`).join('') + `<div class="me">${esc(A.meta.name || '')}｜${owner() ? '管理員' : '老師'}</div>`;
+    $('#side').hidden = false;
+    show(location.hash.slice(1) || 'home');
+  } catch (e) { $('#app').innerHTML = `<div class="card empty">⚠️ ${esc(e.message)}</div>`; }
+})();
+</script>
+</body>
+</html>

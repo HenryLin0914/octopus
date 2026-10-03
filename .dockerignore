@@ -1,0 +1,9 @@
+.git
+data
+.env
+test
+*.md
+Code.gs
+/index.html
+/admin.html
+/config.js
