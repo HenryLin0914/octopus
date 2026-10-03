@@ -90,6 +90,21 @@ ok(/自己/.test((await call('boss', 'a.adminSave', { userId: (await call('boss'
 r = await call('boss', 'a.studentImport', { rows: [{ name: '甲' }, { name: '乙', phone: '0912' }, { name: '' }], courseId: 'C01' }); ok(r.data.added === 2, '批次匯入 2 位');
 ok((await call('boss', 'a.unbind', { userId: (await call('dad', 'init')).data.userId, studentId: sid })).data.removed === 1 && (await call('dad', 'init')).data.students.length === 0, '解除綁定');
 
+{ // 帳務：明細、更正、作廢
+  const z = (await call('boss', 'a.studentSave', { name: '帳務生' })).data.id;
+  let g = (await call('boss', 'a.ledger', {})).data; const n0 = g.rows.length, t0 = g.total;
+  ok(n0 >= 2 && t0 === g.rows.reduce((n, x) => n + x.amount, 0) && g.months[0] === g.month && g.rows.some(x => (x.names || '').includes('、')), '帳務明細與合計');
+  ok(/僅限管理員/.test((await call('teacher', 'a.ledger', {})).error), '老師不能看帳務');
+  await call('boss', 'a.topup', { studentId: z, planId: 'P01' });
+  g = (await call('boss', 'a.ledger', {})).data; const row = g.rows.find(x => x.student_id === z);
+  ok(g.total === t0 + 500 && row.card_remain === 1, '儲值進帳');
+  await call('boss', 'a.topupSave', { id: row.id, amount: 450, pay: '轉帳', note: '折扣' });
+  g = (await call('boss', 'a.ledger', {})).data; ok(g.total === t0 + 450 && g.rows.find(x => x.id === row.id).pay === '轉帳', '更正儲值金額');
+  await call('boss', 'a.topupSave', { id: row.id, void: true });
+  g = (await call('boss', 'a.ledger', {})).data;
+  ok(g.total === t0 && g.rows.length === n0 && (await call('boss', 'a.students', {})).data.find(q => q.id === z).remain === 0, '作廢儲值會停用上課卡');
+}
+
 // Webhook
 const body = JSON.stringify({ events: [{ type: 'message', replyToken: 'r', message: { type: 'text', text: '剩幾堂' }, source: { userId: (await call('mom', 'init')).data.userId } }] });
 const sig = crypto.createHmac('sha256', 'sec').update(body).digest('base64');

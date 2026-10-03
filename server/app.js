@@ -64,7 +64,7 @@ const PLANS = [['P01', '單堂', 1, 500, 30], ['P02', '10堂卡', 10, 4500, 90],
 const COLORS = ['#D6336C', '#1971C2', '#2B8A3E', '#E67700', '#7048E8', '#0C8599', '#C2255C', '#5C940D'];
 
 const OWNER_ONLY = new Set(['a.studentSave', 'a.enroll', 'a.unbind', 'a.topup', 'a.cardSave', 'a.courseSave', 'a.sessionSave', 'a.sessionDelete', 'a.genSessions',
-  'a.videoSave', 'a.videoDelete', 'a.planSave', 'a.settingSave', 'a.adminSave', 'a.richmenu', 'a.export', 'a.student', 'a.videos', 'a.plans', 'a.settings', 'a.admins', 'a.cards']);
+  'a.videoSave', 'a.videoDelete', 'a.planSave', 'a.settingSave', 'a.adminSave', 'a.richmenu', 'a.export', 'a.student', 'a.videos', 'a.plans', 'a.settings', 'a.admins', 'a.cards', 'a.ledger', 'a.topupSave']);
 const ASYNC = new Set(['a.richmenu']);
 
 export function createApp(opts = {}) {
@@ -511,8 +511,31 @@ export function createApp(opts = {}) {
       return { deleted: true };
     },
     'a.genSessions'() { return { added: generateSessions() }; },
+    /** 帳務：某月的儲值明細與統計 */
+    'a.ledger'(b) {
+      const month = /^\d{4}-\d{2}$/.test(b.month || '') ? b.month : today().slice(0, 7);
+      const rows = all("SELECT t.*, s.name student, c.remain card_remain, c.total card_total, c.status card_status, c.expire card_expire, (SELECT GROUP_CONCAT(s2.name,'、') FROM card_students cs JOIN students s2 ON s2.id=cs.student_id WHERE cs.card_id=t.card_id) names FROM topups t LEFT JOIN students s ON s.id=t.student_id LEFT JOIN cards c ON c.id=t.card_id WHERE substr(t.time,1,7)=? ORDER BY t.time DESC", month);
+      const byPay = {};
+      rows.forEach(r => { byPay[r.pay || '其他'] = (byPay[r.pay || '其他'] || 0) + r.amount; });
+      return { month, rows, total: rows.reduce((n, r) => n + r.amount, 0), lessons: rows.reduce((n, r) => n + r.lessons, 0), byPay,
+        months: [...new Set([today().slice(0, 7), ...all('SELECT DISTINCT substr(time,1,7) m FROM topups ORDER BY m DESC LIMIT 36').map(r => r.m)])].sort().reverse() };
+    },
+    /** 更正或作廢一筆儲值（作廢會同時停用那張上課卡） */
+    'a.topupSave'(b) {
+      const t = get('SELECT * FROM topups WHERE id=?', b.id);
+      if (!t) throw new Error('找不到這筆儲值');
+      if (b.void) {
+        run("UPDATE cards SET status='停用' WHERE id=?", t.card_id);
+        run('DELETE FROM topups WHERE id=?', b.id);
+        return { voided: true };
+      }
+      const amount = Math.floor(Number(b.amount));
+      if (!(amount >= 0)) throw new Error('金額不正確');
+      run('UPDATE topups SET amount=?, pay=?, note=? WHERE id=?', amount, str(b.pay, 20) || t.pay, str(b.note), b.id);
+      return { ok: true };
+    },
     'a.cards'() {
-      return all("SELECT c.*, (SELECT GROUP_CONCAT(s.name,'、') FROM card_students cs JOIN students s ON s.id=cs.student_id WHERE cs.card_id=c.id) names FROM cards c ORDER BY c.bought DESC, c.id DESC LIMIT 300");
+      return all("SELECT c.*, (SELECT GROUP_CONCAT(s.name,'、') FROM card_students cs JOIN students s ON s.id=cs.student_id WHERE cs.card_id=c.id) names FROM cards c ORDER BY (c.status='啟用') DESC, c.bought DESC, c.id DESC LIMIT 300");
     },
     'a.videos'() { return all('SELECT * FROM videos ORDER BY date DESC, id DESC'); },
     'a.videoSave'(b) {
