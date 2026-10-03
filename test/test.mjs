@@ -121,6 +121,16 @@ ok((await call('boss', 'a.unbind', { userId: (await call('dad', 'init')).data.us
   ok(pushes.length === n + 1 && pushes[n].body.messages[0].contents.type === 'carousel' && pushes[n].body.messages[0].contents.contents.length === 2, 'LINE 輸入「影片」回覆影片卡片');
 }
 
+{ // LINE 關鍵字：課表、請假
+  const uid = (await call('mom', 'init')).data.userId;
+  for (const [w, title] of [['課表', '近期課表'], ['我要請假', '請假'], ['出席', '最近出席紀錄']]) {
+    const bd = JSON.stringify({ events: [{ type: 'message', replyToken: 'r', message: { type: 'text', text: w }, source: { userId: uid } }] });
+    const n = pushes.length; await app.webhook(bd, crypto.createHmac('sha256', 'sec').update(bd).digest('base64'));
+    const c = pushes[n] && pushes[n].body.messages[0].contents, b0 = c && (c.type === 'carousel' ? c.contents[0] : c);
+    ok(b0 && b0.header.contents[1].text === title, 'LINE 輸入「' + w + '」回覆' + title);
+  }
+}
+
 // Webhook
 const body = JSON.stringify({ events: [{ type: 'message', replyToken: 'r', message: { type: 'text', text: '剩幾堂' }, source: { userId: (await call('mom', 'init')).data.userId } }] });
 const sig = crypto.createHmac('sha256', 'sec').update(body).digest('base64');

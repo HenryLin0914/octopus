@@ -708,6 +708,18 @@ export function createApp(opts = {}) {
         if (ev.type !== 'message' || ev.message.type !== 'text') continue;
         const t = ev.message.text.trim(), kids = kidsOf(ev.source.userId);
         if (!kids.length) { await reply([menuFlex('您尚未綁定學生，請點「綁定學生」並輸入教室提供的綁定碼。')]); continue; }
+        if (/請假/.test(t)) {
+          await reply([flexMsg('請假：請點「我要請假」選擇課程', kids.map(s => { const rs = all("SELECT s.date,s.start,COALESCE(c.name,s.course_id) course FROM leaves l JOIN sessions s ON s.id=l.session_id LEFT JOIN courses c ON c.id=s.course_id WHERE l.student_id=? AND l.status<>'取消' AND s.date>=? ORDER BY s.date,s.start LIMIT 5", s.id, today());
+            return flexBubble({ color: C.WARN, title: '請假', name: s.name, rows: rs.map(r => [r.date.slice(5), r.start + ' ' + r.course + '｜已請假']), note: rs.length ? '' : '目前沒有已登記的請假。要請假請點下方按鈕，選擇課程即可。', noteColor: C.SUB, btn: ['我要請假', 'leave'] }); }))]);
+          continue;
+        }
+        if (/課表|上課時間|課程|幾點/.test(t)) {
+          const end = addDays(today(), 14);
+          await reply([flexMsg('近期課表', kids.map(s => { const mine = all('SELECT course_id FROM enrollments WHERE student_id=?', s.id).map(r => r.course_id);
+            const rs = all("SELECT s.*,COALESCE(c.name,s.course_id) course FROM sessions s LEFT JOIN courses c ON c.id=s.course_id WHERE s.date>=? AND s.date<=? AND s.status<>'已結算' ORDER BY s.date,s.start", today(), end).filter(x => !mine.length || mine.includes(x.course_id)).slice(0, 8);
+            return flexBubble({ color: C.INFO, title: '近期課表', name: s.name, rows: rs.map(r => [r.date.slice(5) + '（' + '日一二三四五六'[new Date(r.date + 'T00:00:00Z').getUTCDay()] + '）', r.start + ' ' + r.course + (r.status === '停課' ? '｜停課' : '')]), note: rs.length ? '' : '未來兩週沒有課程', noteColor: C.SUB, btn: ['查看完整課表', 'schedule'] }); }))]);
+          continue;
+        }
         if (/堂數|上課卡|剩|餘額/.test(t)) {
           await reply([flexMsg(kids.map(s => s.name + ' 剩餘 ' + totalRemain(s.id) + ' 堂').join('、'), kids.map(s => { const remain = totalRemain(s.id); return flexBubble({
             color: C.BRAND, title: '上課卡', name: s.name, rows: validCards(s.id).map(c => [c.plan_name, c.remain + ' / ' + c.total + ' 堂' + (c.expire ? '｜到期 ' + c.expire : '')]),
