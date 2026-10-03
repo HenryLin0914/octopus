@@ -459,13 +459,15 @@ function topup(id) {
   const F = [{ k: 'planId', label: '方案', type: 'select', opts: A.meta.plans.map(p => [p.id, `${p.name}｜${p.lessons} 堂｜${money(p.price)}`]) }, { k: 'lessons', label: '堂數', type: 'number', half: 1 }, { k: 'price', label: '實收金額', type: 'number', half: 1 },
     { k: 'pay', label: '付款方式', type: 'select', opts: ['現金', '轉帳', 'LINE Pay', '信用卡', '其他'].map(x => [x, x]), half: 1 }, { k: 'expire', label: '到期日（留白＝依方案）', type: 'date', half: 1 },
     { k: 'shareIds', label: '共用這張卡的學生（可不選）', type: 'checks', opts: fam.map(f => [f.id, f.name]) }, { k: 'more', label: '加入其他學生共用', type: 'select', opts: [['', '不加入']].concat(A.students.filter(x => x.id !== id && x.status !== '停用' && !fam.includes(x)).map(x => [x.id, x.name])) }, { k: 'note', label: '備註' }];
-  const m = formDialog('為「' + (s.name || id) + '」儲值', F, { planId: p0.id, lessons: p0.lessons, price: p0.price }, async o => {
+  const m = formDialog('為「' + (s.name || id) + '」儲值', F, { planId: p0.id, lessons: p0.lessons }, async o => {
+    if (String(o.price).trim() === '' || !(Number(o.price) >= 0)) throw new Error('請輸入實收金額');
     const share = [...o.shareIds, ...(o.more ? [o.more] : [])];
     if (!confirm(`確認儲值 ${o.lessons} 堂、實收 ${money(o.price)}？` + (share.length ? '\n共用：' + share.map(x => (A.students.find(y => y.id === x) || {}).name).join('、') : ''))) throw new Error('已取消');
     const r = await api('a.topup', { studentId: id, planId: o.planId, lessons: o.lessons, price: o.price, pay: o.pay, expire: o.expire, note: o.note, shareIds: share });
     toast('儲值完成，剩餘 ' + r.remain + ' 堂'); show();
   }, { saveText: '確認儲值' });
-  $('[name=planId]', m).onchange = e => { const p = A.meta.plans.find(x => x.id === e.target.value); $('[name=lessons]', m).value = p.lessons; $('[name=price]', m).value = p.price; };
+  $('[name=planId]', m).onchange = e => { const p = A.meta.plans.find(x => x.id === e.target.value); $('[name=lessons]', m).value = p.lessons; $('[name=price]', m).placeholder = '定價 ' + p.price; };
+  $('[name=price]', m).placeholder = '定價 ' + (p0.price ?? '');
 }
 
 /* ---------- 路由與事件 ---------- */
