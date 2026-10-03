@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>教室後台</title>
+<style>
+:root{--bg:#f3f4f6;--card:#fff;--ink:#111827;--sub:#6b7280;--line:#e5e7eb;--brand:#1f2937;--acc:#d6336c;--ok:#2b8a3e;--warn:#e67700;--bad:#c92a2a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 -apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif}
+header{background:var(--brand);color:#fff;padding:12px 16px;font-weight:600}
+nav{display:flex;background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5;overflow-x:auto}
+nav button{flex:1;min-width:72px;border:0;background:none;padding:13px 6px;font-size:15px;color:var(--sub);border-bottom:3px solid transparent}
+nav button.on{color:var(--acc);border-color:var(--acc);font-weight:600}
+main{padding:14px;max-width:760px;margin:0 auto 50px}
+.card{background:var(--card);border-radius:12px;padding:14px;margin-bottom:12px;border:1px solid var(--line)}
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.row:last-child{border-bottom:0}
+.t{font-weight:600}.s{font-size:13px;color:var(--sub)}
+.tag{font-size:13px;border-radius:999px;padding:2px 10px;background:#eee;color:#555}
+.tag.ok{background:#e6f4ea;color:var(--ok)}.tag.warn{background:#fff3e0;color:var(--warn)}.tag.bad{background:#fde8e8;color:var(--bad)}
+.btn{border:0;border-radius:9px;background:var(--acc);color:#fff;font-size:15px;font-weight:600;padding:10px 16px}
+.btn.g{background:#e5e7eb;color:var(--ink)}.btn.sm{padding:6px 11px;font-size:14px}
+.btn.ok{background:var(--ok)}.btn.w{background:var(--warn)}.btn.b{background:var(--bad)}
+.btn.full{display:block;width:100%;margin-top:12px;padding:13px}
+.btn:disabled{opacity:.5}
+.acts{display:flex;gap:6px;flex-wrap:wrap}
+input,select{width:100%;font:inherit;padding:10px;border:1px solid var(--line);border-radius:9px;background:#fff;margin-top:5px}
+label{display:block;font-size:14px;color:var(--sub);margin-top:10px}
+h2{font-size:15px;color:var(--sub);margin:16px 2px 8px}
+.empty{text-align:center;color:var(--sub);padding:24px 0}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+#qrbox{position:fixed;inset:0;background:#fff;z-index:20;display:none;flex-direction:column;align-items:center;justify-content:center;padding:20px;text-align:center}
+#qr{margin:18px 0}
+#toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#222;color:#fff;padding:10px 18px;border-radius:999px;font-size:14px;display:none;z-index:30;max-width:90%}
+#load{position:fixed;inset:0;background:rgba(243,244,246,.7);display:none;align-items:center;justify-content:center;z-index:25;color:var(--sub)}
+code{background:#f3f4f6;padding:2px 6px;border-radius:5px;word-break:break-all}
+</style>
+</head>
+<body>
+<header id="hd">教室後台</header>
+<nav id="nav" hidden>
+  <button data-tab="checkin" class="on">報到</button>
+  <button data-tab="topup">儲值</button>
+  <button data-tab="students">學生</button>
+  <button data-tab="leaves">請假</button>
+  <button data-tab="tools">工具</button>
+</nav>
+<main id="app"></main>
+<div id="qrbox"><h2 id="qr-t" style="font-size:20px;color:#111"></h2><div id="qr"></div><p class="s">家長用 LINE 掃描即可報到｜QR Code 會自動更新</p><button class="btn g" id="qr-x">關閉</button></div>
+<div id="toast"></div><div id="load">處理中…</div>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="config.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const A = { meta: null, students: [], date: '', session: null, tab: 'checkin', kw: '' };
+let qrTimer = null;
+
+function toast(m){ const t=$('#toast'); t.textContent=m; t.style.display='block'; clearTimeout(toast.h); toast.h=setTimeout(()=>t.style.display='none',2800); }
+function loading(on){ $('#load').style.display = on ? 'flex' : 'none'; }
+async function api(action, data, quiet){
+  if(!quiet) loading(true);
+  try{
+    const r = await fetch(CONFIG.GAS_URL, { method:'POST', body: JSON.stringify(Object.assign({ action, idToken: liff.getIDToken() }, data || {})) });
+    const j = await r.json();
+    if(!j.ok){
+      if(j.error === 'AUTH'){ if(!liff.isInClient()){ liff.logout(); liff.login({ redirectUri: location.href }); } throw new Error('登入已過期，請重新開啟'); }
+      throw new Error(j.error);
+    }
+    return j.data;
+  } finally { if(!quiet) loading(false); }
+}
+function tagOf(st){
+  const c = st==='出席'||st==='已核准'||st==='在學' ? 'ok' : st==='請假'||st==='待審核' ? 'warn' : st==='缺席'||st==='已駁回'||st==='停課'||st==='停用' ? 'bad' : '';
+  return st ? `<span class="tag ${c}">${esc(st)}</span>` : '<span class="tag">未到</span>';
+}
+function stuOptions(){ return A.students.filter(s=>s.status!=='停用').map(s=>`<option value="${esc(s.id)}">${esc(s.name)}（${esc(s.id)}｜剩 ${esc(s.remain)}）</option>`).join(''); }
+async function loadStudents(){ A.students = await api('a.students'); }
+
+const TABS = {
+  async checkin(){
+    if(A.session){
+      const d = await api('a.roster', { sessionId: A.session });
+      const done = d.list.filter(x=>x.status==='出席').length;
+      return `<button class="btn g sm" id="ck-back">‹ 返回場次</button>
+        <div class="card" style="margin-top:10px"><div class="t" style="font-size:18px">${esc(d.info.course)}</div>
+          <div class="s">${esc(d.info.date)} ${esc(d.info.start)}–${esc(d.info.end)}｜${esc(d.info.teacher)}｜${esc(d.info.room)}｜已到 ${done}/${d.list.length} ${d.info.status!=='正常'?tagOf(d.info.status):''}</div>
+          <div class="acts" style="margin-top:10px"><button class="btn sm" id="ck-qr" data-name="${esc(d.info.course)} ${esc(d.info.start)}">顯示報到 QR Code</button>
+          <button class="btn g sm" id="ck-close">結算（未到記缺席）</button></div></div>
+        <div class="card">${d.list.length ? d.list.map(x=>`
+          <div class="row"><div><div class="t">${esc(x.name)} ${tagOf(x.status)}</div><div class="s">剩 ${esc(x.remain)} 堂${x.method?'｜'+esc(x.method):''}${x.note?'｜'+esc(x.note):''}</div></div>
+          <div class="acts">
+            <button class="btn ok sm" data-mk="出席" data-id="${esc(x.id)}">出席</button>
+            <button class="btn w sm" data-mk="請假" data-id="${esc(x.id)}">請假</button>
+            <button class="btn b sm" data-mk="缺席" data-id="${esc(x.id)}">缺席</button>
+            ${x.status?`<button class="btn g sm" data-mk="取消" data-id="${esc(x.id)}">取消</button>`:''}
+          </div></div>`).join('') : '<div class="empty">此課程尚無選課學生，可用下方加入</div>'}</div>
+        <div class="card"><label>加入其他學生（臨時上課）</label><select id="ck-add"><option value="">請選擇</option>${stuOptions()}</select>
+          <button class="btn full" id="ck-addgo">報到</button></div>`;
+    }
+    const list = await api('a.sessions', { date: A.date });
+    return `<div class="card"><label style="margin-top:0">日期</label><input type="date" id="ck-date" value="${esc(A.date)}"></div>
+      <div class="card">${list.length ? list.map(s=>`
+        <div class="row"><div><div class="t">${esc(s.start)}–${esc(s.end)} ${esc(s.course)}</div><div class="s">${esc(s.teacher)}｜${esc(s.room)}｜已到 ${s.present} 人 ${s.status!=='正常'?tagOf(s.status):''}</div></div>
+        <button class="btn sm" data-sess="${esc(s.sessionId)}">點名</button></div>`).join('') : '<div class="empty">這天沒有場次<br>（到「工具」產生課表場次）</div>'}</div>`;
+  },
+
+  topup(){
+    return `<div class="card">
+      <label style="margin-top:0">學生</label><select id="tp-s"><option value="">請選擇</option>${stuOptions()}</select>
+      <label>方案</label><select id="tp-p">${A.meta.plans.map(p=>`<option value="${esc(p.id)}" data-l="${esc(p.lessons)}" data-p="${esc(p.price)}">${esc(p.name)}｜${esc(p.lessons)} 堂｜$${esc(p.price)}${Number(p.days)>0?'｜'+esc(p.days)+' 天':''}</option>`).join('')}</select>
+      <div class="two"><div><label>堂數</label><input id="tp-l" type="number" inputmode="numeric"></div><div><label>實收金額</label><input id="tp-m" type="number" inputmode="numeric"></div></div>
+      <label>付款方式</label><select id="tp-pay"><option>現金</option><option>轉帳</option><option>LINE Pay</option><option>信用卡</option><option>其他</option></select>
+      <label>備註</label><input id="tp-n">
+      <button class="btn full" id="tp-go">確認儲值</button></div>`;
+  },
+
+  students(){
+    const kw = A.kw.trim();
+    const list = A.students.filter(s => !kw || (s.name + s.id + s.phone).indexOf(kw) >= 0);
+    return `<div class="card"><input id="st-kw" placeholder="搜尋姓名／編號／電話" value="${esc(A.kw)}" style="margin-top:0"></div>
+      <div class="card" id="st-list">${list.length ? list.map(s=>`
+        <div class="row"><div><div class="t">${esc(s.name)} ${tagOf(s.status)}</div><div class="s">${esc(s.id)}｜綁定碼 <b>${esc(s.code)}</b>｜已綁 ${s.bound} 人${s.phone?'｜'+esc(s.phone):''}</div></div>
+        <div><b>${esc(s.remain)}</b> 堂</div></div>`).join('') : '<div class="empty">沒有符合的學生</div>'}</div>
+      <h2>新增學生</h2>
+      <div class="card"><label style="margin-top:0">姓名</label><input id="st-n">
+        <div class="two"><div><label>生日</label><input id="st-b" type="date"></div><div><label>電話</label><input id="st-p" inputmode="tel"></div></div>
+        <label>加入課程（可不選）</label><select id="st-c"><option value="">不指定</option>${A.meta.courses.map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')}</select>
+        <button class="btn full" id="st-go">新增</button>
+        <p class="s">修改或停用學生、調整選課，請直接在 Google Sheet 編輯。</p></div>`;
+  },
+
+  async leaves(){
+    const d = await api('a.leaves');
+    return `<div class="card">${d.length ? d.map(l=>`
+      <div class="row"><div><div class="t">${esc(l.student)} ${tagOf(l.status)}</div>
+        <div class="s">${esc(l.date)} ${esc(l.start)} ${esc(l.course)}${l.reason?'｜'+esc(l.reason):''}<br>申請：${esc(l.by)} ${esc(l.applied)}</div></div>
+      ${l.status==='待審核'?`<div class="acts"><button class="btn ok sm" data-lv="1" data-id="${esc(l.id)}">核准</button><button class="btn b sm" data-lv="0" data-id="${esc(l.id)}">駁回</button></div>`:''}</div>`).join('') : '<div class="empty">目前沒有請假單</div>'}</div>`;
+  },
+
+  tools(){
+    return `<div class="card"><div class="t">產生課表場次</div><p class="s">依「課程」分頁的星期與時間，產生未來幾週的場次（週數在「系統設定」）。已存在的不會重複。</p>
+      <button class="btn" id="tl-gen">立即產生</button></div>
+      <div class="card"><div class="t">設定都在 Google Sheet</div><p class="s">課程、方案、選單、影片、規則（請假／扣堂／推播）都在對應分頁直接修改，存檔後立即生效。</p></div>`;
+  }
+};
+
+async function show(tab){
+  A.tab = tab || A.tab;
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === A.tab));
+  try{
+    $('#app').innerHTML = await TABS[A.tab]();
+    if(A.tab === 'topup') fillPlan();
+  }catch(e){ $('#app').innerHTML = `<div class="card empty">⚠️ ${esc(e.message)}</div>`; }
+}
+function fillPlan(){ const o = $('#tp-p') && $('#tp-p').selectedOptions[0]; if(o){ $('#tp-l').value = o.dataset.l; $('#tp-m').value = o.dataset.p; } }
+
+async function drawQr(){
+  try{
+    const d = await api('a.qr', { sessionId: A.session }, true);
+    $('#qr').innerHTML = '';
+    new QRCode($('#qr'), { text: d.url, width: 260, height: 260 });
+    clearTimeout(qrTimer);
+    qrTimer = setTimeout(drawQr, d.refresh * 1000);
+  }catch(e){ toast(e.message); }
+}
+
+$('#nav').onclick = e => { const b = e.target.closest('button'); if(b){ A.session = null; show(b.dataset.tab); } };
+$('#qr-x').onclick = () => { clearTimeout(qrTimer); $('#qrbox').style.display = 'none'; show(); };
+document.addEventListener('change', e => {
+  if(e.target.id === 'ck-date'){ A.date = e.target.value; show(); }
+  if(e.target.id === 'tp-p') fillPlan();
+});
+document.addEventListener('input', e => {
+  if(e.target.id === 'st-kw'){ A.kw = e.target.value; clearTimeout(show.h); show.h = setTimeout(async () => { await show(); const i = $('#st-kw'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 400); }
+});
+document.addEventListener('click', async e => {
+  const el = e.target.closest('button'); if(!el || el.closest('nav')) return;
+  try{
+    if(el.dataset.sess){ A.session = el.dataset.sess; return show(); }
+    if(el.id === 'ck-back'){ A.session = null; return show(); }
+    if(el.dataset.mk){
+      const r = await api('a.mark', { sessionId: A.session, studentId: el.dataset.id, status: el.dataset.mk });
+      toast(el.dataset.mk + (r.deduct ? '，扣 ' + r.deduct + ' 堂' : '') + (r.note ? '（' + r.note + '）' : '') + '｜剩 ' + r.remain + ' 堂');
+      loadStudents(); return show();
+    }
+    if(el.id === 'ck-addgo'){
+      const id = $('#ck-add').value; if(!id) return toast('請選擇學生');
+      const r = await api('a.mark', { sessionId: A.session, studentId: id, status: '出席' });
+      toast('已報到' + (r.note ? '（' + r.note + '）' : '') + '｜剩 ' + r.remain + ' 堂');
+      loadStudents(); return show();
+    }
+    if(el.id === 'ck-close'){
+      if(!confirm('確定結算？未報到且未請假的選課學生會記為缺席。')) return;
+      const r = await api('a.close', { sessionId: A.session });
+      toast('已結算，缺席 ' + r.absent + ' 人'); return show();
+    }
+    if(el.id === 'ck-qr'){ $('#qr-t').textContent = el.dataset.name; $('#qrbox').style.display = 'flex'; return drawQr(); }
+    if(el.id === 'tp-go'){
+      const sid = $('#tp-s').value; if(!sid) return toast('請選擇學生');
+      const s = A.students.find(x => x.id === sid);
+      if(!confirm('確認為「' + s.name + '」儲值 ' + $('#tp-l').value + ' 堂，金額 $' + $('#tp-m').value + '？')) return;
+      el.disabled = true;
+      const r = await api('a.topup', { studentId: sid, planId: $('#tp-p').value, lessons: $('#tp-l').value, price: $('#tp-m').value, pay: $('#tp-pay').value, note: $('#tp-n').value });
+      toast('儲值完成，' + s.name + ' 剩餘 ' + r.remain + ' 堂');
+      await loadStudents(); return show();
+    }
+    if(el.id === 'st-go'){
+      const name = $('#st-n').value.trim(); if(!name) return toast('請輸入姓名');
+      el.disabled = true;
+      const r = await api('a.addStudent', { name, birthday: $('#st-b').value, phone: $('#st-p').value, courseId: $('#st-c').value });
+      alert('已新增 ' + name + '\n學生編號：' + r.id + '\n綁定碼：' + r.code + '\n\n請把綁定碼提供給家長。');
+      await loadStudents(); return show();
+    }
+    if(el.dataset.lv !== undefined){
+      const r = await api('a.reviewLeave', { id: el.dataset.id, approve: el.dataset.lv === '1' });
+      toast(r.status); return show();
+    }
+    if(el.id === 'tl-gen'){ const r = await api('a.genSessions'); toast('已新增 ' + r.added + ' 個場次'); }
+  }catch(err){ el.disabled = false; toast(err.message); }
+});
+
+(async function(){
+  try{
+    await liff.init({ liffId: CONFIG.LIFF_ID });
+    if(!liff.isLoggedIn()){ liff.login({ redirectUri: location.href }); return; }
+    const me = await api('init');
+    $('#hd').textContent = me.studio + '｜後台';
+    if(!me.isAdmin){
+      $('#app').innerHTML = `<div class="card"><div class="t">尚未開通後台權限</div>
+        <p>請把下面這串 ID 貼到 Google Sheet「管理員」分頁的 <b>LINE_userId</b> 欄，「啟用」欄填「是」，再重新整理本頁。</p>
+        <p><code>${esc(me.userId)}</code></p><p class="s">LINE 名稱：${esc(me.name)}</p></div>`;
+      return;
+    }
+    A.meta = await api('a.meta');
+    A.date = A.meta.today;
+    await loadStudents();
+    $('#nav').hidden = false;
+    show('checkin');
+  }catch(e){ $('#app').innerHTML = `<div class="card empty">⚠️ ${esc(e.message)}</div>`; }
+})();
+</script>
+</body>
+</html>
