@@ -76,6 +76,11 @@ export function createApp(opts = {}) {
   const db = new DatabaseSync(dataDir === ':memory:' ? ':memory:' : path.join(dataDir, 'octopus.db'));
   db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=OFF;');
   db.exec(SCHEMA);
+  { // 舊資料庫補欄位：課程的開課期間
+    const cols = db.prepare('PRAGMA table_info(courses)').all().map(c => c.name);
+    if (!cols.includes('date_from')) db.exec("ALTER TABLE courses ADD COLUMN date_from TEXT DEFAULT ''");
+    if (!cols.includes('date_to')) db.exec("ALTER TABLE courses ADD COLUMN date_to TEXT DEFAULT ''");
+  }
   const all = (sql, ...a) => db.prepare(sql).all(...a);
   const get = (sql, ...a) => db.prepare(sql).get(...a);
   const run = (sql, ...a) => db.prepare(sql).run(...a);
@@ -228,13 +233,13 @@ export function createApp(opts = {}) {
 
   /* ---------- 排課 ---------- */
   const courseDays = c => String(c.weekdays || '').split('').map(Number).filter(n => n >= 0 && n <= 6);
+  /** 依課程的開課期間排課：有結束日就一次排到結束日；沒有結束日則滾動排出未來幾週 */
+  const courseRange = c => { const t = today(); return { from: c.date_from && c.date_from > t ? c.date_from : t, to: c.date_to || addDays(t, cfgNum('產生場次週數', 8) * 7 - 1) }; };
   function generateSessions() {
-    const weeks = cfgNum('產生場次週數', 8), t = today();
     let n = 0;
     all("SELECT * FROM courses WHERE status='啟用'").forEach(c => {
-      const days = courseDays(c);
-      for (let i = 0; i < weeks * 7; i++) {
-        const d = addDays(t, i);
+      const days = courseDays(c), { from, to } = courseRange(c);
+      for (let d = from, i = 0; d <= to && i < 800; d = addDays(d, 1), i++) {
         if (!days.includes(weekday(d))) continue;
         const r = run('INSERT OR IGNORE INTO sessions(id,course_id,date,start,end,teacher,room,status,manual) VALUES(?,?,?,?,?,?,?,?,0)', c.id + '-' + d.replace(/-/g, ''), c.id, d, c.start, c.end, '', '', '正常');
         n += Number(r.changes);
@@ -242,11 +247,11 @@ export function createApp(opts = {}) {
     });
     return n;
   }
-  /** 課程時間或星期變動後：未來、未點名、非手動調整的場次跟著更新 */
+  /** 課程時間、星期或期間變動後：未來、未點名、非手動調整的場次跟著更新 */
   function syncCourseSessions(c) {
     const t = today(), days = courseDays(c);
     all("SELECT s.* FROM sessions s WHERE s.course_id=? AND s.date>=? AND s.manual=0 AND s.status='正常' AND NOT EXISTS(SELECT 1 FROM attendance a WHERE a.session_id=s.id AND a.status<>'取消')", c.id, t).forEach(s => {
-      if (c.status !== '啟用' || !days.includes(weekday(s.date))) run('DELETE FROM sessions WHERE id=?', s.id);
+      if (c.status !== '啟用' || !days.includes(weekday(s.date)) || (c.date_from && s.date < c.date_from) || (c.date_to && s.date > c.date_to)) run('DELETE FROM sessions WHERE id=?', s.id);
       else run('UPDATE sessions SET start=?, end=? WHERE id=?', c.start, c.end, s.id);
     });
   }
@@ -366,7 +371,7 @@ export function createApp(opts = {}) {
       };
     },
     'a.week'(b) {
-      const start = nd(b.start) || today(), end = addDays(start, (Number(b.days) || 7) - 1);
+      const start = nd(b.start) || today(), end = addDays(start, Math.min(62, Math.max(1, Number(b.days) || 7)) - 1);
       const sessions = all('SELECT * FROM sessions WHERE date>=? AND date<=? ORDER BY date,start', start, end).map(s => {
         const i = sessionInfo(s);
         const cnt = Object.fromEntries(all("SELECT status, COUNT(*) n FROM attendance WHERE session_id=? AND status<>'取消' GROUP BY status", s.id).map(r => [r.status, r.n]));
@@ -515,8 +520,16 @@ export function createApp(opts = {}) {
       const vals = [name, str(b.teacher, 40), weekdays, start, end, str(b.room, 40), Math.max(1, Math.floor(Number(b.deduct)) || 1), Math.max(0, Math.floor(Number(b.capacity)) || 0), COLORS.includes(b.color) ? b.color : COLORS[0], b.status === '停用' ? '停用' : '啟用'];
       if (b.id) { if (!get('SELECT 1 x FROM courses WHERE id=?', id)) throw new Error('找不到課程'); run('UPDATE courses SET name=?,teacher=?,weekdays=?,start=?,end=?,room=?,deduct=?,capacity=?,color=?,status=? WHERE id=?', ...vals, id); }
       else run('INSERT INTO courses(name,teacher,weekdays,start,end,room,deduct,capacity,color,status,id) VALUES(?,?,?,?,?,?,?,?,?,?,?)', ...vals, id);
-      syncCourseSessions(get('SELECT * FROM courses WHERE id=?', id));
-      return { id, added: generateSessions() };
+      if (b.dateFrom !== undefined || b.dateTo !== undefined) {
+        const df = nd(b.dateFrom), dt = nd(b.dateTo);
+        if (df && dt && dt < df) throw new Error('結束日期不能早於開始日期');
+        if (dt && dt > addDays(df && df > today() ? df : today(), 731)) throw new Error('開課期間最長兩年');
+        run('UPDATE courses SET date_from=?, date_to=? WHERE id=?', df, dt, id);
+      }
+      const c = get('SELECT * FROM courses WHERE id=?', id);
+      syncCourseSessions(c);
+      const added = generateSessions();
+      return { id, added, upcoming: get("SELECT COUNT(*) n FROM sessions WHERE course_id=? AND date>=? AND status<>'停課'", id, today()).n };
     },
     /** 單一場次：新增加課（manual）、調整時間／代課老師／教室、停課或恢復 */
     'a.sessionSave'(b) {

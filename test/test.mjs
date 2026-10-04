@@ -139,6 +139,21 @@ ok((await call('boss', 'a.unbind', { userId: (await call('dad', 'init')).data.us
   ok((await call('boss', 'a.attendance', { month: '2000-01' })).data.total.rate === null, '沒有紀錄的月份出席率為空');
 }
 
+{ // 開課期間
+  const { addDays, today } = await import('../server/app.js');
+  const t0 = today(), from = addDays(t0, 7), to = addDays(t0, 34);
+  r = await call('boss', 'a.courseSave', { name: '期間班', weekdays: [0, 1, 2, 3, 4, 5, 6], start: '09:00', end: '10:00', dateFrom: from, dateTo: to });
+  const cid = r.data.id; let ss = (await call('boss', 'a.export', { table: 'sessions' })).data.csv.split('\n').filter(l => l.includes(cid + '-'));
+  ok(r.data.upcoming === 28 && ss.length === 28, '有期間的課程只排期間內的堂數 ' + r.data.upcoming);
+  r = await call('boss', 'a.courseSave', { id: cid, name: '期間班', weekdays: [0, 1, 2, 3, 4, 5, 6], start: '09:00', end: '10:00', dateFrom: from, dateTo: addDays(from, 6) });
+  ok(r.data.upcoming === 7, '縮短期間會移除多出來的堂數');
+  r = await call('boss', 'a.courseSave', { id: cid, name: '期間班', weekdays: [0, 1, 2, 3, 4, 5, 6], start: '09:00', end: '10:00', dateFrom: from, dateTo: addDays(from, 100) });
+  ok(r.data.upcoming === 101, '期間超過 8 週也一次排完');
+  ok(/不能早於/.test((await call('boss', 'a.courseSave', { id: cid, name: '期間班', weekdays: [1], start: '09:00', end: '10:00', dateFrom: to, dateTo: from })).error), '結束早於開始被拒');
+  await call('boss', 'a.courseSave', { id: cid, name: '期間班', weekdays: [1], start: '09:00', end: '10:00', status: '停用' });
+  ok((await call('boss', 'a.week', { start: t0, days: 42 })).data.sessions.every(x => x.courseId !== cid), '月曆查詢 42 天、停開課程不再出現');
+}
+
 // Webhook
 const body = JSON.stringify({ events: [{ type: 'message', replyToken: 'r', message: { type: 'text', text: '剩幾堂' }, source: { userId: (await call('mom', 'init')).data.userId } }] });
 const sig = crypto.createHmac('sha256', 'sec').update(body).digest('base64');
