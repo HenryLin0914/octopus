@@ -65,7 +65,7 @@ const PLANS = [['P01', '單堂', 1, 500, 30], ['P02', '10堂卡', 10, 4500, 90],
 const COLORS = ['#D6336C', '#1971C2', '#2B8A3E', '#E67700', '#7048E8', '#0C8599', '#C2255C', '#5C940D'];
 
 const OWNER_ONLY = new Set(['a.studentSave', 'a.enroll', 'a.unbind', 'a.topup', 'a.cardSave', 'a.courseSave', 'a.sessionSave', 'a.sessionDelete', 'a.genSessions',
-  'a.videoSave', 'a.videoDelete', 'a.planSave', 'a.settingSave', 'a.adminSave', 'a.richmenu', 'a.export', 'a.student', 'a.videos', 'a.plans', 'a.settings', 'a.admins', 'a.cards', 'a.ledger', 'a.topupSave', 'a.videoInfo', 'a.dayOff', 'a.familySave', 'a.courseDelete']);
+  'a.videoSave', 'a.videoDelete', 'a.planSave', 'a.settingSave', 'a.adminSave', 'a.richmenu', 'a.export', 'a.student', 'a.videos', 'a.plans', 'a.settings', 'a.admins', 'a.cards', 'a.ledger', 'a.topupSave', 'a.videoInfo', 'a.dayOff', 'a.familySave', 'a.courseDelete', 'a.courseStudents']);
 const ASYNC = new Set(['a.richmenu', 'a.videoInfo']);
 /** 從各種 YouTube 網址取出影片 ID（watch、youtu.be、shorts、live、embed） */
 export const ytId = url => { const m = String(url || '').match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^#]*&)?v=|shorts\/|live\/|embed\/|v\/))([\w-]{11})(?![\w-])/); return m ? m[1] : ''; };
@@ -486,11 +486,12 @@ export function createApp(opts = {}) {
       const sess = sessRow(b.sessionId);
       if (!sess) throw new Error('找不到場次');
       const ids = all("SELECT e.student_id id FROM enrollments e JOIN students s ON s.id=e.student_id WHERE e.course_id=? AND s.status<>'停用' ORDER BY s.name", sess.course_id).map(r => r.id);
+      const fixedN = ids.length;
       const mk = all('SELECT student_id id FROM makeups WHERE session_id=?', b.sessionId).map(r => r.id);
       mk.forEach(id => { if (!ids.includes(id)) ids.push(id); });
       all("SELECT DISTINCT student_id id FROM attendance WHERE session_id=? AND status<>'取消'", b.sessionId).forEach(r => { if (!ids.includes(r.id)) ids.push(r.id); });
       const list = ids.map(id => { const s = student(id), r = activeRecord(b.sessionId, id), m = get('SELECT s.date,s.start FROM makeups m JOIN sessions s ON s.id=m.session_id WHERE m.student_id=? AND m.from_session_id=?', id, b.sessionId);
-        return s && { id, name: s.name, status: r ? r.status : '', method: r ? r.method : '', note: r ? r.note : '', remain: totalRemain(id), makeup: mk.includes(id), makeupAt: m ? m.date.slice(5).replace('-', '/') + ' ' + m.start : '' }; }).filter(Boolean);
+        return s && { id, name: s.name, status: r ? r.status : '', method: r ? r.method : '', note: r ? r.note : '', remain: totalRemain(id), makeup: mk.includes(id), fixed: fixedN > ids.indexOf(id), makeupAt: m ? m.date.slice(5).replace('-', '/') + ' ' + m.start : '' }; }).filter(Boolean);
       return { info: sessionInfo(sess), list };
     },
     'a.mark'(b, user) {
@@ -499,6 +500,24 @@ export function createApp(opts = {}) {
       if (!student(b.studentId)) throw new Error('找不到學生');
       if (!['出席', '請假', '缺席', '取消'].includes(b.status)) throw new Error('狀態不正確');
       return recordAttendance(sess, b.studentId, b.status, '後台', user.admin.name || user.name);
+    },
+    /** 全部出席：名單上還沒點名的學生（含補課）一次記為出席 */
+    'a.markAll'(b, user) {
+      const sess = sessRow(b.sessionId);
+      if (!sess) throw new Error('找不到場次');
+      if (sess.status === '停課') throw new Error('這堂課已停課');
+      const ids = API['a.roster']({ sessionId: sess.id }).list.filter(x => !x.status).map(x => x.id);
+      ids.forEach(id => recordAttendance(sess, id, '出席', '後台', user.admin.name || user.name));
+      return { marked: ids.length };
+    },
+    /** 課程的固定學生名單（點名單、家長課表與請假都依這份名單） */
+    'a.courseStudents'(b) {
+      if (!get('SELECT 1 x FROM courses WHERE id=?', b.courseId)) throw new Error('找不到課程');
+      if (!Array.isArray(b.studentIds)) return { ids: all("SELECT e.student_id id FROM enrollments e JOIN students s ON s.id=e.student_id WHERE e.course_id=? AND s.status<>'停用'", b.courseId).map(r => r.id) };
+      const want = [...new Set(b.studentIds.filter(student))], old = all('SELECT student_id id FROM enrollments WHERE course_id=?', b.courseId).map(r => r.id);
+      old.filter(id => !want.includes(id)).forEach(id => run('DELETE FROM enrollments WHERE course_id=? AND student_id=?', b.courseId, id));
+      want.filter(id => !old.includes(id)).forEach(id => run('INSERT INTO enrollments VALUES(?,?,?)', id, b.courseId, today()));
+      return { ids: want, added: want.filter(id => !old.includes(id)).length, removed: old.filter(id => !want.includes(id)).length };
     },
     'a.close'(b, user) {
       const sess = sessRow(b.sessionId);

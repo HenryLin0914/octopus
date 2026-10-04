@@ -123,6 +123,11 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 .chip.off{text-decoration:line-through;border-left-color:#b9b0b6;background:#f1eef0;color:var(--sub)}
 .mc .more{font-size:11px;color:var(--sub);padding-left:5px}
 .dots{display:flex;flex-wrap:wrap;gap:3px;justify-content:center;align-items:center;min-height:8px}.dots i{width:6px;height:6px;border-radius:50%}.dots em{font-style:normal;font-size:9px;color:var(--sub)}
+.rhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:4px}.rhead b{font-size:16px}.rhead .sp{flex:1}
+.mk3{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;flex:none}
+.mk3 button{border:0;border-right:1px solid var(--line);background:#fff;padding:8px 14px;font:inherit;font-size:14px;font-weight:600;color:var(--ink)}.mk3 button:last-child{border-right:0}
+.mk3 button.ok{background:var(--ok);color:#fff}.mk3 button.w{background:var(--warn);color:#fff}.mk3 button.b{background:var(--bad);color:#fff}
+.radd{display:flex;gap:8px;align-items:center;margin-top:10px}.radd select{flex:1;min-width:0}.radd .btn{flex:none}
 .abar{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px}.abar .btn{padding:11px 8px}
 .notebox{display:block;width:100%;text-align:left;margin-top:10px;background:var(--soft);border:1px dashed var(--line);border-radius:10px;padding:9px 12px;font:inherit;color:inherit}
 .notebox .s{display:block}.notebox .nt{display:block;white-space:pre-wrap;overflow-wrap:anywhere}.notebox.none .nt{color:var(--brand);font-weight:600;font-size:14px}
@@ -185,7 +190,8 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
   .head .acts,.head>.btn{flex:none}
   .row{gap:8px}
   .row .acts{justify-content:flex-end}
-  .roster .row{flex-wrap:wrap}.roster .row .g{flex:1 1 100%}.roster .row .acts{flex:1;justify-content:flex-start}
+  .roster .row{flex-wrap:wrap}.roster .row .g{flex:1 1 120px}.roster .row .acts{flex:0 1 auto;justify-content:flex-end}
+  .mk3 button{padding:9px 13px}
   .mc{min-height:50px;align-items:center;padding:5px 1px;gap:4px}
   .sch h1{flex:1}
   .sch .snav{width:100%}.sch .snav b{flex:1}
@@ -473,13 +479,16 @@ async function apiConflict(action, data) {
 async function openSession(id) {
   const d = await api('a.roster', { sessionId: id }), i = d.info;
   const off = () => i.status === '停課';
-  const body = () => `<div class="s" style="margin:8px 0 10px">${dLabel(i.date)} ${esc(i.start)}–${esc(i.end)}${i.teacher ? '｜' + esc(i.teacher) : ''}${i.room ? '｜' + esc(i.room) : ''} ${i.status !== '正常' ? tag(i.status) : ''}</div>
-    <div class="abar">${off() ? '' : '<button class="btn p" data-a="qr">報到 QR Code</button>'}${owner() ? `<button class="btn" data-a="edit">調課／代課</button><button class="btn ${off() ? 'ok' : ''}" data-a="${off() ? 'resume' : 'stop'}" ${off() ? '' : 'style="color:var(--bad)"'}>${off() ? '恢復上課' : '停課'}</button>` : ''}${off() ? '' : '<button class="btn" data-a="close">結算</button>'}${owner() ? '<button class="btn" data-a="del" style="color:var(--bad)">刪除這堂</button>' : ''}</div>
+  const body = () => { const here = d.list.filter(x => x.status === '出席').length, todo = d.list.filter(x => !x.status).length;
+    return `<div class="s" style="margin:8px 0 10px">${dLabel(i.date)} ${esc(i.start)}–${esc(i.end)}${i.teacher ? '｜' + esc(i.teacher) : ''}${i.room ? '｜' + esc(i.room) : ''} ${i.status !== '正常' ? tag(i.status) : ''}</div>
+    ${off() ? '' : `<div class="rhead"><b>點名</b><span class="s">已到 ${here}／${d.list.length}${todo ? '｜未點 ' + todo : ''}</span><span class="sp"></span>${todo ? `<button class="btn sm ok" data-a="all">全部出席</button>` : ''}<button class="btn sm" data-a="qr">QR 報到</button></div>
+    <div class="roster">${d.list.length ? d.list.map(x => `<div class="row"><div class="g"><div class="t">${esc(x.name)} ${x.makeup ? '<span class="tag info">補課</span>' : x.fixed ? '' : '<span class="tag">臨時</span>'}</div><div class="s">剩 ${x.remain} 堂${x.method ? '｜' + esc(x.method) : ''}${x.note ? '｜' + esc(x.note) : ''}${x.makeupAt ? '｜已排補課 ' + esc(x.makeupAt) : ''}</div></div>
+      <div class="acts"><div class="mk3">${[['出席', 'ok'], ['請假', 'w'], ['缺席', 'b']].map(b => `<button class="${x.status === b[0] ? b[1] : ''}" data-mk="${x.status === b[0] ? '取消' : b[0]}" data-id="${esc(x.id)}" aria-pressed="${x.status === b[0]}">${b[0]}</button>`).join('')}</div>${x.status === '請假' ? `<button class="btn sm" data-mu="${esc(x.id)}" data-name="${esc(x.name)}">${x.makeupAt ? '改補課' : '排補課'}</button>` : ''}${x.makeup && !x.status ? `<button class="btn sm ghost" data-unmu="${esc(x.id)}">取消補課</button>` : ''}${!x.fixed && !x.makeup && owner() ? `<button class="btn sm ghost" data-fix="${esc(x.id)}">加入固定名單</button>` : ''}</div></div>`).join('') : `<div class="empty">這門課還沒有固定學生名單。${owner() ? '<br><br><button class="btn p" data-a="roster">設定學生名單</button><br><br>' : ''}<span class="s">設定後每堂課都會自動帶出這些學生，家長也才能在 LINE 上看到這門課並請假。</span></div>`}</div>
+    <div class="radd"><select id="adhoc"><option value="">＋ 臨時加入學生（直接記出席）</option>${A.students.filter(s => s.status !== '停用' && !d.list.some(x => x.id === s.id)).map(s => `<option value="${esc(s.id)}">${esc(s.name)}（剩 ${s.remain}）</option>`).join('')}</select>${owner() && d.list.length ? '<button class="btn sm" data-a="roster">管理名單</button>' : ''}</div>
+    <p class="s" style="margin:6px 0 0">再按一次已選的狀態可以取消。</p>`}
     <button class="notebox ${i.note ? '' : 'none'}" data-a="note"><span class="s">${off() ? '停課原因' : '老師備註'}（家長在課表看得到）</span><span class="nt">${i.note ? esc(i.note) : '＋ 寫給家長的提醒，例如要帶的東西、今天的進度'}</span></button>
-    ${off() ? '' : `<div class="s" style="margin:12px 0 2px">已到 ${d.list.filter(x => x.status === '出席').length}／${d.list.length} 人　<span style="opacity:.8">「結算」會把還沒到、也沒請假的學生記為缺席</span></div>
-    <div class="roster">${d.list.length ? d.list.map(x => `<div class="row"><div class="g"><div class="t">${esc(x.name)} ${x.makeup ? '<span class="tag info">補課</span>' : ''} ${x.status ? tag(x.status) : '<span class="tag">未到</span>'}</div><div class="s">剩 ${x.remain} 堂${x.method ? '｜' + esc(x.method) : ''}${x.note ? '｜' + esc(x.note) : ''}${x.makeupAt ? '｜已排補課 ' + esc(x.makeupAt) : ''}</div></div>
-      <div class="acts">${[['出席', 'ok'], ['請假', 'w'], ['缺席', 'b']].map(b => `<button class="btn sm ${x.status === b[0] ? b[1] : ''}" data-mk="${b[0]}" data-id="${esc(x.id)}">${b[0]}</button>`).join('')}${x.status === '請假' ? `<button class="btn sm" data-mu="${esc(x.id)}" data-name="${esc(x.name)}">${x.makeupAt ? '改補課' : '排補課'}</button>` : ''}${x.makeup && !x.status ? `<button class="btn sm ghost" data-unmu="${esc(x.id)}">取消補課</button>` : ''}${x.status ? `<button class="btn sm ghost" data-mk="取消" data-id="${esc(x.id)}">清除</button>` : ''}</div></div>`).join('') : '<div class="empty">這門課還沒有排入學生，可在下方加入臨時上課的學生</div>'}</div>
-    <label class="f">加入其他學生（臨時上課）<select id="adhoc"><option value="">請選擇學生</option>${A.students.filter(s => s.status !== '停用' && !d.list.some(x => x.id === s.id)).map(s => `<option value="${esc(s.id)}">${esc(s.name)}（剩 ${s.remain}）</option>`).join('')}</select></label>`}`;
+    <div class="s" style="margin:14px 0 6px">課堂操作</div>
+    <div class="abar">${owner() ? `<button class="btn" data-a="edit">調課／代課</button><button class="btn ${off() ? 'ok' : ''}" data-a="${off() ? 'resume' : 'stop'}" ${off() ? '' : 'style="color:var(--bad)"'}>${off() ? '恢復上課' : '停課'}</button>` : ''}${off() ? '' : '<button class="btn" data-a="close">結算（未到記缺席）</button>'}${owner() ? '<button class="btn" data-a="del" style="color:var(--bad)">刪除這堂</button>' : ''}</div>`; };
   const m = dialog(i.course + (i.seq ? '' : ''), body(), { wide: true });
   const refresh = async () => { const n = await api('a.roster', { sessionId: id }); d.list = n.list; Object.assign(i, n.info); $('.bd', m).innerHTML = body(); };
   m.addEventListener('change', async e => { if (e.target.id !== 'adhoc' || !e.target.value) return; try { const r = await api('a.mark', { sessionId: id, studentId: e.target.value, status: '出席' }); toast('已報到' + (r.note ? '（' + r.note + '）' : '')); await refresh(); } catch (err) { toast(err.message, true); } });
@@ -492,6 +501,9 @@ async function openSession(id) {
       if (b.dataset.unmu) { await api('a.makeupDelete', { studentId: b.dataset.unmu, sessionId: id }); toast('已取消補課'); await refresh(); }
       if (b.dataset.a === 'close') { if (!confirm('確定結算？未報到且未請假的學生會記為缺席' + '。')) return; const r = await api('a.close', { sessionId: id }); toast('已結算，缺席 ' + r.absent + ' 人'); await refresh(); }
       if (b.dataset.a === 'qr') showQr(id, i);
+      if (b.dataset.a === 'all') { const r = await api('a.markAll', { sessionId: id }); toast('已將 ' + r.marked + ' 位學生記為出席'); await refresh(); }
+      if (b.dataset.a === 'roster') rosterDialog(i.courseId, i.course, refresh);
+      if (b.dataset.fix) { const cur = (await api('a.courseStudents', { courseId: i.courseId })).ids; await api('a.courseStudents', { courseId: i.courseId, studentIds: [...cur, b.dataset.fix] }); toast('已加入這門課的固定名單'); await refresh(); }
       if (b.dataset.a === 'edit') { m.remove(); editSession(i); }
       if (b.dataset.a === 'note') formDialog(off() ? '停課原因' : '老師備註', [{ k: 'note', label: '內容（家長在 LINE 課表看得到）', type: 'textarea', rows: 3, ph: '例：下週驗收，請穿黑色上衣' }, NOTIFY()], { note: i.note, notify: '' },
         async o => { const r = await api('a.sessionNote', { id, note: o.note, notify: !!o.notify }); toast('已儲存' + notiMsg(r)); await refresh(); });
@@ -505,6 +517,20 @@ async function openSession(id) {
     } catch (err) { toast(err.message, true); }
   });
   const ob = new MutationObserver(() => { if (!document.body.contains(m)) { ob.disconnect(); show(); } }); ob.observe(document.body, { childList: true });
+}
+/** 課程的固定學生名單 */
+async function rosterDialog(courseId, name, done) {
+  if (!A.students.length) A.students = await api('a.students');
+  const cur = (await api('a.courseStudents', { courseId })).ids, list = A.students.filter(x => x.status !== '停用' || cur.includes(x.id));
+  if (!list.length) return toast('請先到「學生」新增學生', true);
+  const m = formDialog('學生名單｜' + name, [{ k: 'studentIds', label: '勾選固定上這門課的學生', type: 'checks', opts: list.map(x => [x.id, x.name]) }], { studentIds: cur },
+    async o => { const r = await api('a.courseStudents', { courseId, studentIds: o.studentIds }); A.students = await api('a.students'); toast(`名單共 ${r.ids.length} 位` + (r.added ? `，新增 ${r.added}` : '') + (r.removed ? `，移出 ${r.removed}` : '')); if (done) await done(); else show(); },
+    { saveText: '儲存名單', extra: '<p class="s">名單上的學生每堂課都會自動出現在點名單；家長在 LINE 課表只會看到孩子有排入的課，並可線上請假。移出名單不會刪除已經點過的出席紀錄。</p>' });
+  const box = $('[data-f="studentIds"]', m), cnt = document.createElement('div');
+  cnt.innerHTML = `<input placeholder="搜尋學生姓名" style="margin:6px 0 2px"><div class="s" data-n></div>`; box.insertBefore(cnt, $('.chk', box));
+  const upd = () => { $('[data-n]', cnt).textContent = '已選 ' + $$('input:checked', box).length + ' 位'; };
+  $('input', cnt).oninput = e => { const k = e.target.value.trim(); $$('.chk label', box).forEach(l => { l.hidden = !!k && !l.textContent.includes(k); }); };
+  box.addEventListener('change', upd); upd();
 }
 /** 安排補課：請假的學生排到另一堂課 */
 async function makeupDialog(sid, name, fromSessionId, done) {
@@ -584,7 +610,8 @@ function editCourse(id, renew) {
     const r = await apiConflict('a.courseSave', { id: id || undefined, ...o, copyStudentsFrom: src && o.copy ? src.id : undefined }); A.meta = await api('a.meta');
     toast('已儲存' + (o.status === '停用' || one ? '' : o.dateTo ? `，整期共 ${r.past + r.upcoming} 堂（已過 ${r.past}、接下來 ${r.upcoming}）` : '，接下來共 ' + r.upcoming + ' 堂課') + (r.copied ? `，帶入 ${r.copied} 位學生` : '')); show(); },
     { del: c ? { text: '刪除課程', confirm: '確定刪除「' + c.name + '」？這門課排好的堂數、請假與補課安排都會一併刪除。\n（已經有出席紀錄的課程不能刪除，請改成「停開」。）', run: async () => { const r = await api('a.courseDelete', { id }); A.meta = await api('a.meta'); toast('已刪除課程與 ' + r.sessions + ' 堂課'); show(); } } : undefined,
-      extra: one ? '<p class="s">這是單次課程，只上一天。要改日期或時間，請到課表點那堂課按「調課／代課」。</p>' : (c && c.date_to ? '<button class="btn" data-renew style="margin-top:14px;width:100%">續開下一期（沿用時間、老師與學生）</button>' : '') + '<p class="s">有結束日期：只排到那一天為止，一次排完整期；開課日期在過去時，已經上過的堂數也會排出來，可以補點名。留白：持續開課，自動往後排（週數可在「設定」調整）。修改期間、時間或上課日時，尚未點名的未來課程會一起更新；已點名的不會動。</p>' });
+      extra: (c ? '<button class="btn" data-roster style="margin-top:14px;width:100%">學生名單（' + A.students.filter(x => x.status !== '停用' && x.courses.includes(id)).length + ' 位）</button>' : '') + (one ? '<p class="s">這是單次課程，只上一天。要改日期或時間，請到課表點那堂課按「調課／代課」。</p>' : (c && c.date_to ? '<button class="btn" data-renew style="margin-top:14px;width:100%">續開下一期（沿用時間、老師與學生）</button>' : '') + '<p class="s">有結束日期：只排到那一天為止，一次排完整期；開課日期在過去時，已經上過的堂數也會排出來，可以補點名。留白：持續開課，自動往後排（週數可在「設定」調整）。修改期間、時間或上課日時，尚未點名的未來課程會一起更新；已點名的不會動。</p>') });
+  const rb = $('[data-roster]', m); if (rb) rb.onclick = () => { m.remove(); rosterDialog(id, c.name); };
   const rn = $('[data-renew]', m); if (rn) rn.onclick = () => { m.remove(); editCourse('', id); };
 }
 
@@ -714,7 +741,7 @@ document.addEventListener('click', async e => {
       if (A.view === 'month') { A.mon = n ? dAdd(A.mon + '-15', n * 30).slice(0, 7) : T.slice(0, 7); A.day = ''; } else A.week = n ? dAdd(A.week, n * 7) : monday(T);
       return show(); }
     if (ds.day) { A.day = ds.day; if (ds.day.slice(0, 7) !== A.mon) A.mon = ds.day.slice(0, 7); return show(); }
-    if ('courses' in ds) return coursesDialog();
+    if ('courses' in ds) { if (!A.students.length) A.students = await api('a.students'); return coursesDialog(); }
     if ('newcourse' in ds) return editCourse('');
     if ('newsess' in ds) { if (!A.students.length) A.students = await api('a.students'); return editSession(null); }
     if (ds.dayoff) return dayOff(ds.dayoff);

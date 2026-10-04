@@ -273,6 +273,23 @@ ok((await call('boss', 'a.unbind', { userId: (await call('dad', 'init')).data.us
   ok((await say('選單')).length === 1, '傳「選單」才回功能選單');
 }
 
+{ // 課程固定名單、全部出席
+  const { addDays, today } = await import('../server/app.js');
+  const t0 = today();
+  const c = (await call('boss', 'a.courseSave', { name: '名單班', weekdays: [0, 1, 2, 3, 4, 5, 6], start: '06:00', end: '06:30', dateFrom: t0, dateTo: addDays(t0, 3) })).data;
+  const ks = []; for (const n of ['甲生', '乙生', '丙生']) ks.push((await call('boss', 'a.studentSave', { name: n })).data.id);
+  r = await call('boss', 'a.courseStudents', { courseId: c.id, studentIds: ks });
+  ok(r.data.added === 3 && (await call('boss', 'a.courseStudents', { courseId: c.id })).data.ids.length === 3 && /僅限管理員/.test((await call('teacher', 'a.courseStudents', { courseId: c.id, studentIds: [] })).error), '設定課程固定名單');
+  const sidX = (await call('boss', 'a.week', { start: t0, days: 2 })).data.sessions.find(q => q.courseId === c.id).sessionId;
+  await call('boss', 'a.mark', { sessionId: sidX, studentId: ks[0], status: '請假' });
+  r = await call('teacher', 'a.markAll', { sessionId: sidX });
+  const ro = (await call('boss', 'a.roster', { sessionId: sidX })).data.list;
+  ok(r.data.marked === 2 && ro.filter(x => x.status === '出席').length === 2 && ro.find(x => x.id === ks[0]).status === '請假' && ro.every(x => x.fixed), '全部出席不會覆蓋已請假的學生');
+  r = await call('boss', 'a.courseStudents', { courseId: c.id, studentIds: [ks[0]] });
+  ok(r.data.removed === 2 && (await call('boss', 'a.roster', { sessionId: sidX })).data.list.length === 3, '移出名單後，已點名的紀錄仍保留在該堂點名單');
+  await call('boss', 'a.courseSave', { id: c.id, name: 'x', weekdays: [1], start: '06:00', end: '06:30', status: '停用' });
+}
+
 // Webhook
 const body = JSON.stringify({ events: [{ type: 'message', replyToken: 'r', message: { type: 'text', text: '剩幾堂' }, source: { userId: (await call('mom', 'init')).data.userId } }] });
 const sig = crypto.createHmac('sha256', 'sec').update(body).digest('base64');
