@@ -44,6 +44,14 @@ h2{font-size:15px;color:var(--sub);margin:18px 4px 8px;font-weight:600}
 .stats{display:flex;text-align:center}
 .stats div{flex:1}.stats b{display:block;font-size:24px}
 .big{text-align:center;padding:26px 10px}.big .i{font-size:56px}
+.kids{display:flex;flex-direction:column;gap:8px;margin-bottom:6px}
+.kid{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:var(--card);border:1.500px solid var(--line);border-radius:14px;padding:13px 16px;font:inherit;color:inherit}
+.kid.on{border-color:var(--brand);background:linear-gradient(135deg,#d6336c,#f06595);color:#fff}
+.kid .g{flex:1;min-width:0}.kid .t{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-weight:700;font-size:17px}.kid .s{display:block;font-size:13px;color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kid.on .s{color:rgba(255,255,255,.9)}.kid.on .tag{background:rgba(255,255,255,.25);color:#fff}
+.kid .n{font-size:30px;font-weight:700;line-height:1;flex:none}.kid .n small{font-size:13px;font-weight:400;margin-left:2px}.kid:not(.on) .n.low{color:var(--bad)}
+.kid.add{justify-content:center;border-style:dashed;color:var(--brand);font-weight:600;font-size:15px;padding:10px}
+.hint{font-size:13px;color:var(--sub);margin:4px 4px 0}
 .seg{display:flex;background:var(--line);border-radius:12px;padding:3px;gap:2px;margin-bottom:4px}.seg button{flex:1;border:0;background:none;border-radius:10px;padding:8px;font:inherit;font-size:15px;font-weight:600;color:var(--sub)}.seg button.on{background:#fff;color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.12)}
 .sc{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:13px 14px;margin-bottom:10px}
 .sc .strip{width:4px;align-self:stretch;border-radius:2px;flex:none}.sc .g{flex:1;min-width:0}.sc .t{font-weight:600}.sc .s{font-size:13px;color:var(--sub)}
@@ -86,10 +94,16 @@ function curStu(){ return S.students.find(s=>s.id===S.cur) || {}; }
 
 const PAGES = {
   home(){
-    const s = curStu();
-    return `${chips()}
-      <div class="card hero"><small>${esc(s.name||'')} 剩餘堂數</small><div class="n">${esc(s.remain)}</div>
-        <small>${s.remain <= S.lowAt ? '堂數即將用完，請記得儲值' : '歡迎來上課！'}</small></div>
+    const s = curStu(), many = S.students.length > 1;
+    const nx = k => k.next ? `下一堂 ${dLabel(k.next.date)} ${esc(k.next.start)} ${esc(k.next.course)}` : '近期沒有排課';
+    const kids = many ? `<div class="kids">${S.students.map(k => `<button class="kid ${k.id === S.cur ? 'on' : ''}" data-stu="${esc(k.id)}">
+        <span class="g"><span class="t">${esc(k.name)}${k.sharedWith.length ? `<span class="tag ok">與${esc(k.sharedWith.join('、'))}共用</span>` : ''}</span><span class="s">${nx(k)}</span></span>
+        <span class="n ${k.remain <= S.lowAt ? 'low' : ''}">${esc(k.remain)}<small>堂</small></span></button>`).join('')}
+        <button class="kid add" data-go="bind">＋ 綁定其他孩子</button></div>`
+      : `<div class="card hero"><small>${esc(s.name||'')} 剩餘堂數</small><div class="n">${esc(s.remain)}</div>
+        <small>${s.remain <= S.lowAt ? '堂數即將用完，請記得儲值' : nx(s)}</small></div>`;
+    const shareNote = many && S.students.some(k => k.sharedWith.length) ? '<p class="hint">標示「共用」的孩子用同一張上課卡，顯示的是合計剩餘堂數，誰來上課就扣一堂。</p>' : '';
+    return `${kids}${shareNote}${many ? `<h2>${esc(s.name)} 的功能</h2>` : ''}
       <div class="grid">${S.menu.map(m=>`<button class="tile" data-go="${esc(m.code)}"><b>${esc(m.icon)}</b>${esc(m.name)}</button>`).join('')}</div>`;
   },
 
@@ -99,7 +113,7 @@ const PAGES = {
     return `${chips()}
       <div class="card hero"><small>可用堂數</small><div class="n">${esc(d.remain)}</div></div>
       <h2>上課卡</h2><div class="card">${d.cards.length ? d.cards.map(c=>`
-        <div class="row"><div><div class="t">${esc(c.plan)}</div><div class="s">購買 ${esc(c.buy)}${c.expire?'｜到期 '+esc(c.expire):''}${c.shared&&c.shared.length?'<br>與 '+esc(c.shared.join('、'))+' 共用':''}</div></div>
+        <div class="row"><div><div class="t">${esc(c.plan)}</div><div class="s">購買 ${esc(c.buy)}${c.expire?'｜到期 '+esc(c.expire):''}${c.shared&&c.shared.length?'<br><span class="tag ok" style="font-size:12px">與 '+esc(c.shared.join('、'))+' 共用</span>':''}${c.shared&&c.shared.length&&c.usage.length?'<br>已使用：'+c.usage.map(u=>esc(u.name)+' '+u.n+' 堂').join('、'):''}</div></div>
         <div style="text-align:right"><b>${esc(c.remain)}</b> / ${esc(c.total)}<br>${tagOf(c.status)}</div></div>`).join('') : '<div class="empty">尚無上課卡</div>'}</div>
       <h2>儲值紀錄</h2><div class="card">${d.topups.length ? d.topups.map(t=>`
         <div class="row"><div><div class="t">${esc(t.plan)}</div><div class="s">${esc(t.time)}</div></div><div>${esc(t.lessons)} 堂｜$${esc(t.amount)}</div></div>`).join('') : '<div class="empty">尚無紀錄</div>'}</div>`;
@@ -182,12 +196,13 @@ const PAGES = {
 
   bind(){
     return `<div class="card">
-        <p style="margin-top:0">請輸入教室提供的 <b>6 位數綁定碼</b>，一位學生一組。</p>
+        <p style="margin-top:0">請輸入教室提供的 <b>6 位數綁定碼</b>。</p>
+        <p class="hint" style="margin:0 0 4px">有兄弟姊妹一起上課？輸入其中一位的綁定碼，教室設定為同一家庭的孩子會一起綁定；沒有一起出現的話，再輸入另一位的綁定碼即可。爸爸、媽媽可以各自用自己的 LINE 綁定。</p>
         <label>綁定碼</label><input id="bd-c" inputmode="numeric" maxlength="6" placeholder="000000">
         <label>您是學生的</label><select id="bd-r"><option>母親</option><option>父親</option><option>本人</option><option>其他家人</option></select>
         <button class="btn" id="bd-go">綁定</button></div>
-      <h2>已綁定的學生</h2>
-      <div class="card">${S.students.length ? S.students.map(s=>`<div class="row"><div class="t">${esc(s.name)}</div><span class="tag ok">已綁定</span></div>`).join('') : '<div class="empty">尚未綁定</div>'}</div>`;
+      <h2>已綁定的孩子（${S.students.length}）</h2>
+      <div class="card">${S.students.length ? S.students.map(s=>`<div class="row"><div><div class="t">${esc(s.name)}</div><div class="s">剩 ${esc(s.remain)} 堂${s.sharedWith.length ? '｜與' + esc(s.sharedWith.join('、')) + '共用上課卡' : ''}</div></div><span class="tag ok">已綁定</span></div>`).join('') : '<div class="empty">尚未綁定</div>'}</div>`;
   }
 };
 
@@ -224,8 +239,8 @@ document.addEventListener('click', async e => {
     if(el.dataset.url){ const urls = JSON.parse($('#vd').textContent); return openUrl(urls[+el.dataset.url]); }
     if(el.id === 'bd-go'){
       const r = await api('bind', { code: $('#bd-c').value.trim(), relation: $('#bd-r').value });
-      toast(r.already ? r.name + ' 已綁定過了' : '已綁定：' + r.name);
-      await refreshInit(); S.cur = (S.students.find(x => x.name === r.name) || {}).id || S.cur; return go('home');
+      toast(r.already ? r.name + ' 已綁定過了' : '已綁定：' + [r.name, ...(r.also || [])].join('、'));
+      await refreshInit(); S.cur = (S.students.find(x => x.id === r.id) || {}).id || S.cur; return go('home');
     }
     if(el.id === 'lv-go'){
       el.disabled = true;

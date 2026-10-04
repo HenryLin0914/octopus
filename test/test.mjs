@@ -214,6 +214,27 @@ ok((await call('boss', 'a.unbind', { userId: (await call('dad', 'init')).data.us
   await call('boss', 'a.unbind', { userId: (await call('mom', 'init')).data.userId, studentId: kid.id });
 }
 
+{ // 家庭：兄弟姊妹一次綁定、共用卡用量
+  const k1 = (await call('boss', 'a.studentSave', { name: '大寶' })).data, k2 = (await call('boss', 'a.studentSave', { name: '二寶', familyWith: k1.id })).data, k3 = (await call('boss', 'a.studentSave', { name: '三寶' })).data;
+  let L = (await call('boss', 'a.students')).data;
+  ok(L.find(x => x.id === k1.id).family.includes(k2.id) && L.find(x => x.id === k2.id).family.includes(k1.id) && !L.find(x => x.id === k3.id).family.length, '新增學生時可指定兄弟姊妹');
+  r = await call('fam', 'bind', { code: k1.code, relation: '父親' });
+  ok(r.data.also.join() === '二寶' && (await call('fam', 'init')).data.students.length === 2, '輸入一位的綁定碼，兄弟姊妹一起綁定');
+  r = await call('fam', 'bind', { code: k3.code, relation: '父親' });
+  ok((await call('boss', 'a.student', { id: k3.id })).data.family.length === 2, '同一位家長再綁第三位，自動併入同一家庭');
+  await call('boss', 'a.topup', { studentId: k1.id, planId: 'P02', price: 4500, shareIds: [k2.id] });
+  const i2 = (await call('fam', 'init')).data.students;
+  ok(i2.find(x => x.id === k1.id).sharedWith.join() === '二寶' && i2.find(x => x.id === k1.id).remain === 10 && i2.find(x => x.id === k3.id).remain === 0, '家長首頁資料帶出共用對象');
+  r = await call('boss', 'a.familySave', { studentId: k3.id, memberIds: [] });
+  L = (await call('boss', 'a.students')).data;
+  ok(!L.find(x => x.id === k3.id).family.length && L.find(x => x.id === k1.id).family.join() === k2.id && L.find(x => x.id === k1.id).shared, '可把學生移出家庭');
+  const k4 = (await call('boss', 'a.studentSave', { name: '四寶' })).data;
+  r = await call('boss', 'a.familySave', { studentId: k4.id, memberIds: [k1.id, k2.id], syncParents: true });
+  ok(r.data.family.length === 2 && r.data.bound === 1 && (await call('fam', 'init')).data.students.some(x => x.id === k4.id), '加入家庭時幫已綁定的家長補綁');
+  const uidF = (await call('fam', 'init')).data.userId;
+  for (const k of [k1, k2, k3, k4]) await call('boss', 'a.unbind', { userId: uidF, studentId: k.id });
+}
+
 // Webhook
 const body = JSON.stringify({ events: [{ type: 'message', replyToken: 'r', message: { type: 'text', text: '剩幾堂' }, source: { userId: (await call('mom', 'init')).data.userId } }] });
 const sig = crypto.createHmac('sha256', 'sec').update(body).digest('base64');

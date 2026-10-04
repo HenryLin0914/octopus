@@ -64,7 +64,7 @@ const PLANS = [['P01', '單堂', 1, 500, 30], ['P02', '10堂卡', 10, 4500, 90],
 const COLORS = ['#D6336C', '#1971C2', '#2B8A3E', '#E67700', '#7048E8', '#0C8599', '#C2255C', '#5C940D'];
 
 const OWNER_ONLY = new Set(['a.studentSave', 'a.enroll', 'a.unbind', 'a.topup', 'a.cardSave', 'a.courseSave', 'a.sessionSave', 'a.sessionDelete', 'a.genSessions',
-  'a.videoSave', 'a.videoDelete', 'a.planSave', 'a.settingSave', 'a.adminSave', 'a.richmenu', 'a.export', 'a.student', 'a.videos', 'a.plans', 'a.settings', 'a.admins', 'a.cards', 'a.ledger', 'a.topupSave', 'a.videoInfo', 'a.dayOff']);
+  'a.videoSave', 'a.videoDelete', 'a.planSave', 'a.settingSave', 'a.adminSave', 'a.richmenu', 'a.export', 'a.student', 'a.videos', 'a.plans', 'a.settings', 'a.admins', 'a.cards', 'a.ledger', 'a.topupSave', 'a.videoInfo', 'a.dayOff', 'a.familySave']);
 const ASYNC = new Set(['a.richmenu', 'a.videoInfo']);
 /** 從各種 YouTube 網址取出影片 ID（watch、youtu.be、shorts、live、embed） */
 export const ytId = url => { const m = String(url || '').match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^#]*&)?v=|shorts\/|live\/|embed\/|v\/))([\w-]{11})(?![\w-])/); return m ? m[1] : ''; };
@@ -80,6 +80,7 @@ export function createApp(opts = {}) {
     const cols = db.prepare('PRAGMA table_info(courses)').all().map(c => c.name);
     if (!cols.includes('date_from')) db.exec("ALTER TABLE courses ADD COLUMN date_from TEXT DEFAULT ''");
     if (!cols.includes('date_to')) db.exec("ALTER TABLE courses ADD COLUMN date_to TEXT DEFAULT ''");
+    if (!db.prepare('PRAGMA table_info(students)').all().some(c => c.name === 'family')) db.exec("ALTER TABLE students ADD COLUMN family TEXT DEFAULT ''");
     db.exec("CREATE TABLE IF NOT EXISTS makeups(id TEXT PRIMARY KEY, student_id TEXT, session_id TEXT, from_session_id TEXT DEFAULT '', created_at TEXT, by_name TEXT)");
   }
   const all = (sql, ...a) => db.prepare(sql).all(...a);
@@ -305,7 +306,33 @@ export function createApp(opts = {}) {
 
   const nextId = (table, prefix, width) => { const r = get(`SELECT MAX(CAST(SUBSTR(id,${prefix.length + 1}) AS INTEGER)) m FROM ${table} WHERE id LIKE ?`, prefix + '%'); return prefix + String((r.m || 0) + 1).padStart(width, '0'); };
   const newBindCode = () => { let c; do { c = String(crypto.randomInt(0, 1e6)).padStart(6, '0'); } while (get('SELECT 1 x FROM students WHERE bind_code=?', c)); return c; };
-  const studentBrief = s => ({ id: s.id, name: s.name, remain: totalRemain(s.id) });
+  /* ---------- 家庭（兄弟姊妹）：共用上課卡、家長一次綁定 ---------- */
+  const siblingsOf = sid => { const s = student(sid); return s && s.family ? all("SELECT * FROM students WHERE family=? AND id<>? AND status<>'停用' ORDER BY id", s.family, sid) : []; };
+  /** 把幾位學生併成同一個家庭（沿用已有的家庭編號） */
+  function linkFamily(ids) {
+    ids = [...new Set(ids)].filter(student);
+    if (ids.length < 2) return '';
+    const fams = [...new Set(ids.map(id => student(id).family).filter(Boolean))];
+    const fam = fams[0] || uid('F');
+    fams.slice(1).forEach(f => run('UPDATE students SET family=? WHERE family=?', fam, f));
+    ids.forEach(id => run('UPDATE students SET family=? WHERE id=?', fam, id));
+    return fam;
+  }
+  if (!get("SELECT 1 x FROM meta WHERE key='family_backfill'")) { // 舊資料：共用上課卡或同一位家長綁定的學生，視為同一家庭
+    all('SELECT card_id k, GROUP_CONCAT(student_id) ids FROM card_students GROUP BY card_id HAVING COUNT(*)>1').forEach(r => linkFamily(r.ids.split(',')));
+    all('SELECT user_id k, GROUP_CONCAT(student_id) ids FROM bindings GROUP BY user_id HAVING COUNT(*)>1').forEach(r => linkFamily(r.ids.split(',')));
+    run("INSERT OR IGNORE INTO meta VALUES('family_backfill','1')");
+  }
+  /** 上課卡共用時，每位學生各用了幾堂 */
+  const cardUsage = cardId => all("SELECT st.name, SUM(a.deduct) n FROM attendance a JOIN students st ON st.id=a.student_id WHERE a.card_id=? AND a.status<>'取消' AND a.deduct>0 GROUP BY a.student_id ORDER BY st.id", cardId);
+  const studentBrief = s => {
+    const next = all("SELECT s.* FROM sessions s WHERE s.date>=? AND s.status='正常' AND (s.course_id IN (SELECT course_id FROM enrollments WHERE student_id=?) OR s.id IN (SELECT session_id FROM makeups WHERE student_id=?)) ORDER BY s.date,s.start LIMIT 6", today(), s.id, s.id)
+      .find(x => toDate(x.date, x.end) > new Date() && !['請假'].includes((activeRecord(x.id, s.id) || {}).status));
+    const ni = next ? sessionInfo(next) : null;
+    return { id: s.id, name: s.name, remain: totalRemain(s.id),
+      sharedWith: all("SELECT DISTINCT st.name FROM card_students a JOIN card_students o ON o.card_id=a.card_id AND o.student_id<>a.student_id JOIN cards c ON c.id=a.card_id JOIN students st ON st.id=o.student_id WHERE a.student_id=? AND c.status='啟用' AND c.remain>0", s.id).map(r => r.name),
+      next: ni ? { date: ni.date, start: ni.start, course: ni.course } : null };
+  };
 
   /* ============================== API ============================== */
   const API = {
@@ -318,14 +345,16 @@ export function createApp(opts = {}) {
       if (!code) throw new Error('請輸入綁定碼');
       const stu = get("SELECT * FROM students WHERE bind_code=? AND status<>'停用'", code);
       if (!stu) throw new Error('綁定碼不正確，請向教室確認');
-      const r = run('INSERT OR IGNORE INTO bindings(user_id,line_name,student_id,relation,created_at) VALUES(?,?,?,?,?)', user.userId, user.name, stu.id, str(b.relation, 20), now());
-      return { name: stu.name, already: Number(r.changes) === 0 };
+      const add = x => Number(run('INSERT OR IGNORE INTO bindings(user_id,line_name,student_id,relation,created_at) VALUES(?,?,?,?,?)', user.userId, user.name, x.id, str(b.relation, 20), now()).changes);
+      const fresh = add(stu), also = siblingsOf(stu.id).filter(add).map(x => x.name); // 同家庭的兄弟姊妹一起綁定
+      linkFamily(kidsOf(user.userId).map(x => x.id)); // 同一位家長綁定的孩子，自動視為同一家庭
+      return { id: stu.id, name: stu.name, already: !fresh && !also.length, also };
     },
     card(b, user) {
       assertOwns(user, b.studentId);
       const cards = all('SELECT c.* FROM cards c JOIN card_students cs ON cs.card_id=c.id WHERE cs.student_id=? ORDER BY c.bought DESC, c.id DESC', b.studentId).map(c => ({
         id: c.id, plan: c.plan_name, total: c.total, remain: c.remain, buy: c.bought, expire: c.expire, status: c.status,
-        shared: all('SELECT s.name FROM card_students cs JOIN students s ON s.id=cs.student_id WHERE cs.card_id=? AND cs.student_id<>?', c.id, b.studentId).map(r => r.name) }));
+        shared: all('SELECT s.name FROM card_students cs JOIN students s ON s.id=cs.student_id WHERE cs.card_id=? AND cs.student_id<>?', c.id, b.studentId).map(r => r.name), usage: cardUsage(c.id) }));
       const topups = all('SELECT time,plan_name plan,lessons,amount FROM topups WHERE student_id=? ORDER BY time DESC LIMIT 10', b.studentId);
       return { remain: totalRemain(b.studentId), cards, topups };
     },
@@ -472,7 +501,8 @@ export function createApp(opts = {}) {
     'a.students'() {
       return all('SELECT * FROM students ORDER BY status, id').map(s => ({ id: s.id, name: s.name, birthday: s.birthday, phone: s.phone, code: s.bind_code, status: s.status, note: s.note, remain: totalRemain(s.id),
         bound: get('SELECT COUNT(*) n FROM bindings WHERE student_id=?', s.id).n, courses: all('SELECT course_id FROM enrollments WHERE student_id=?', s.id).map(r => r.course_id),
-        family: all('SELECT DISTINCT student_id id FROM bindings WHERE student_id<>? AND user_id IN (SELECT user_id FROM bindings WHERE student_id=?) UNION SELECT DISTINCT student_id FROM card_students WHERE student_id<>? AND card_id IN (SELECT card_id FROM card_students WHERE student_id=?)', s.id, s.id, s.id, s.id).map(r => r.id) }));
+        family: siblingsOf(s.id).map(r => r.id), parents: all('SELECT line_name n, relation r FROM bindings WHERE student_id=?', s.id).map(r => (r.n || '家長') + (r.r ? '（' + r.r + '）' : '')),
+        shared: !!get("SELECT 1 x FROM card_students a JOIN card_students o ON o.card_id=a.card_id AND o.student_id<>a.student_id JOIN cards c ON c.id=a.card_id WHERE a.student_id=? AND c.status='啟用' AND c.remain>0", s.id) }));
     },
     /** 出席總表：某月（可再依課程、學生篩選）的明細、統計與每位學生出席率 */
     'a.attendance'(b) {
@@ -498,8 +528,9 @@ export function createApp(opts = {}) {
       if (!s) throw new Error('找不到學生');
       return { info: { id: s.id, name: s.name, birthday: s.birthday, phone: s.phone, code: s.bind_code, status: s.status, note: s.note }, remain: totalRemain(s.id),
         courses: all('SELECT course_id FROM enrollments WHERE student_id=?', s.id).map(r => r.course_id),
-        parents: all('SELECT user_id userId,line_name name,relation,created_at at FROM bindings WHERE student_id=?', s.id),
-        cards: all('SELECT c.* FROM cards c JOIN card_students cs ON cs.card_id=c.id WHERE cs.student_id=? ORDER BY c.bought DESC, c.id DESC', s.id).map(c => ({ ...c, students: all('SELECT s.id,s.name FROM card_students cs JOIN students s ON s.id=cs.student_id WHERE cs.card_id=?', c.id) })),
+        parents: all('SELECT user_id userId,line_name name,relation,created_at at FROM bindings WHERE student_id=?', s.id).map(p => ({ ...p, kids: all('SELECT st.name FROM bindings b JOIN students st ON st.id=b.student_id WHERE b.user_id=? AND b.student_id<>?', p.userId, s.id).map(r => r.name) })),
+        cards: all('SELECT c.* FROM cards c JOIN card_students cs ON cs.card_id=c.id WHERE cs.student_id=? ORDER BY c.bought DESC, c.id DESC', s.id).map(c => ({ ...c, students: all('SELECT s.id,s.name FROM card_students cs JOIN students s ON s.id=cs.student_id WHERE cs.card_id=?', c.id), usage: cardUsage(c.id) })),
+        family: siblingsOf(s.id).map(x => ({ id: x.id, name: x.name, remain: totalRemain(x.id), bound: get('SELECT COUNT(*) n FROM bindings WHERE student_id=?', x.id).n })),
         topups: all('SELECT * FROM topups WHERE student_id=? ORDER BY time DESC LIMIT 20', s.id),
         attendance: all("SELECT a.status,a.deduct,a.method,a.time,s.date,s.start,COALESCE(c.name,s.course_id) course FROM attendance a JOIN sessions s ON s.id=a.session_id LEFT JOIN courses c ON c.id=s.course_id WHERE a.student_id=? AND a.status<>'取消' ORDER BY s.date DESC, s.start DESC LIMIT 30", s.id) };
     },
@@ -516,6 +547,7 @@ export function createApp(opts = {}) {
         run('INSERT INTO students(id,name,birthday,phone,bind_code,status,note,created_at) VALUES(?,?,?,?,?,?,?,?)', id, name, nd(b.birthday), str(b.phone, 30), newBindCode(), '在學', str(b.note), now());
       }
       if (Array.isArray(b.courses)) API['a.enroll']({ studentId: id, courseIds: b.courses });
+      if (b.familyWith && student(b.familyWith)) linkFamily([id, b.familyWith]);
       return { id, code: student(id).bind_code };
     },
     /** 批次新增：b.rows = [{name, birthday, phone}] */
@@ -530,6 +562,21 @@ export function createApp(opts = {}) {
       ids.forEach(id => run('INSERT INTO enrollments VALUES(?,?,?)', b.studentId, id, today()));
       return { courses: ids };
     },
+    /** 設定兄弟姊妹：memberIds 為同一家庭的其他學生（空陣列＝移出家庭） */
+    'a.familySave'(b) {
+      const me = student(b.studentId);
+      if (!me) throw new Error('找不到學生');
+      const want = [...new Set((b.memberIds || []).filter(id => id !== me.id && student(id)))];
+      const old = me.family ? all('SELECT id FROM students WHERE family=? AND id<>?', me.family, me.id).map(r => r.id) : [];
+      if (!want.length) run("UPDATE students SET family='' WHERE id=?", me.id); // 只把自己移出，其他兄弟姊妹維持
+      else { old.filter(id => !want.includes(id)).forEach(id => run("UPDATE students SET family='' WHERE id=?", id)); linkFamily([me.id, ...want]); }
+      const left = me.family ? all('SELECT id FROM students WHERE family=?', me.family) : [];
+      if (left.length === 1) run("UPDATE students SET family='' WHERE id=?", left[0].id);
+      let bound = 0; // 已綁定其中一位的家長，其他兄弟姊妹一起補綁
+      if (b.syncParents && want.length) { const ids = [me.id, ...want];
+        all(`SELECT DISTINCT user_id,line_name,relation FROM bindings WHERE student_id IN (${ids.map(() => '?').join(',')})`, ...ids).forEach(p => ids.forEach(id => { bound += Number(run('INSERT OR IGNORE INTO bindings(user_id,line_name,student_id,relation,created_at) VALUES(?,?,?,?,?)', p.user_id, p.line_name, id, p.relation, now()).changes); })); }
+      return { family: siblingsOf(me.id).map(x => x.id), bound };
+    },
     'a.unbind'(b) { return { removed: Number(run('DELETE FROM bindings WHERE user_id=? AND student_id=?', b.userId, b.studentId).changes) }; },
     'a.topup'(b, user) {
       const stu = student(b.studentId);
@@ -543,6 +590,7 @@ export function createApp(opts = {}) {
       const t = today(), expire = nd(b.expire) || (plan.valid_days > 0 ? addDays(t, plan.valid_days) : ''), cardId = uid('K');
       run('INSERT INTO cards(id,plan_name,total,remain,bought,expire,status) VALUES(?,?,?,?,?,?,?)', cardId, plan.name, lessons, lessons, t, expire, '啟用');
       owners.forEach(id => run('INSERT INTO card_students VALUES(?,?)', cardId, id));
+      linkFamily(owners);
       run('INSERT INTO topups(id,time,student_id,plan_name,lessons,amount,pay,operator,card_id,note) VALUES(?,?,?,?,?,?,?,?,?,?)', uid('T'), now(), b.studentId, plan.name, lessons, price, str(b.pay, 20) || '現金', user.admin.name || user.name, cardId, str(b.note));
       const remain = totalRemain(b.studentId);
       if (cfgOn('儲值推播')) {
@@ -565,6 +613,7 @@ export function createApp(opts = {}) {
         if (!ids.length) throw new Error('至少要有一位學生');
         run('DELETE FROM card_students WHERE card_id=?', b.id);
         ids.forEach(id => run('INSERT OR IGNORE INTO card_students VALUES(?,?)', b.id, id));
+        linkFamily(ids);
       }
       return { ok: true };
     },

@@ -58,6 +58,8 @@ main{padding:22px 26px 60px;min-width:0}
 .vcard .t{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .vcard .acts{margin-top:auto;padding-top:4px}
 .arow{width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);font:inherit;color:inherit;cursor:pointer}.arow:hover{background:var(--soft)}
+.fam{color:var(--info)}
+.fbox{background:#eef5fc;border:1px solid #cfe2f5;border-radius:10px;padding:10px 12px;margin-top:10px}.fbox .row{padding:7px 0;border-color:#cfe2f5}
 .amt{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
 .t{font-weight:600}.s{font-size:13px;color:var(--sub)}
 .dot{width:10px;height:10px;border-radius:50%;flex:none;display:inline-block}
@@ -358,10 +360,10 @@ const PAGES = {
       <select id="fc"><option value="">全部課程</option>${A.meta.courses.filter(c => c.status === '啟用').map(c => `<option value="${esc(c.id)}" ${f.course === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>
       <div class="acts" style="margin-top:10px">${[['all', '在學'], ['low', '堂數不足'], ['unbound', '未綁定家長'], ['off', '已停用']].map(x => `<button class="btn sm ${f.f === x[0] ? 'p' : ''}" data-f="${x[0]}">${x[1]} ${cnt(x[0])}</button>`).join('')}</div></div>
     <div class="card" style="padding:4px 6px;overflow:auto">${list.length ? `<table><thead><tr><th>姓名</th><th class="hide-m">課程</th><th class="n">剩餘堂數</th><th>家長</th><th class="hide-m">綁定碼</th></tr></thead><tbody>${list.map(s => `
-      <tr class="${owner() ? 'click' : ''}" data-stu="${esc(s.id)}"><td><div class="t">${esc(s.name)}</div><div class="s">${esc(s.id)}${s.phone ? '｜' + esc(s.phone) : ''}</div></td>
+      <tr class="${owner() ? 'click' : ''}" data-stu="${esc(s.id)}"><td><div class="t">${esc(s.name)}</div><div class="s">${esc(s.id)}${s.phone ? '｜' + esc(s.phone) : ''}</div>${s.family.length ? `<div class="s fam">👪 ${s.family.map(f => esc((A.students.find(x => x.id === f) || {}).name || f)).join('、')}</div>` : ''}</td>
       <td class="hide-m">${s.courses.map(c => `<span class="tag info">${esc(courseOf(c).name || c)}</span>`).join(' ') || '<span class="s">未排課</span>'}</td>
-      <td class="n"><span class="tag ${s.remain <= 0 ? 'bad' : s.remain <= low ? 'warn' : 'ok'}">${s.remain}</span></td>
-      <td>${s.bound ? `<span class="tag ok">已綁 ${s.bound}</span>` : '<span class="tag">未綁定</span>'}</td><td class="hide-m" style="font-variant-numeric:tabular-nums;letter-spacing:1px">${esc(s.code)}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">沒有符合的學生</div>'}</div>`;
+      <td class="n"><span class="tag ${s.remain <= 0 ? 'bad' : s.remain <= low ? 'warn' : 'ok'}">${s.remain}</span>${s.shared ? '<div class="s" style="font-size:11px">共用卡</div>' : ''}</td>
+      <td>${s.bound ? `<span class="tag ok">已綁 ${s.bound}</span><div class="s hide-m" style="font-size:12px">${s.parents.map(esc).join('、')}</div>` : '<span class="tag">未綁定</span>'}</td><td class="hide-m" style="font-variant-numeric:tabular-nums;letter-spacing:1px">${esc(s.code)}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">沒有符合的學生</div>'}</div>`;
   },
 
   async money() {
@@ -563,7 +565,9 @@ function editCourse(id, renew) {
 const STU_F = () => [{ k: 'name', label: '姓名' }, { k: 'birthday', label: '生日', type: 'date', half: 1 }, { k: 'phone', label: '家長電話', half: 1 },
   { k: 'courses', label: '排入課程（點名單會出現這位學生）', type: 'checks', opts: A.meta.courses.filter(c => c.status === '啟用').map(c => [c.id, c.name]) }, { k: 'note', label: '備註' }];
 function newStudent() {
-  formDialog('新增學生', STU_F(), {}, async o => { const r = await api('a.studentSave', o); show(); setTimeout(() => dialog('已新增 ' + o.name, `<p>學生編號：<b>${esc(r.id)}</b></p><p>綁定碼：<b style="font-size:28px;letter-spacing:4px">${esc(r.code)}</b></p><p class="s">請把綁定碼交給家長。家長在 LINE 點選單任一格，輸入綁定碼即可；爸爸媽媽可以各自綁定。</p>`), 50); }, { saveText: '新增' });
+  const F = [...STU_F().slice(0, 3), { k: 'familyWith', label: '兄弟姊妹（同一家庭，可不選）', type: 'select', opts: [['', '沒有／之後再設定']].concat(A.students.filter(x => x.status !== '停用').map(x => [x.id, x.name + '（' + x.id + '）'])) }, ...STU_F().slice(3)];
+  formDialog('新增學生', F, {}, async o => { const r = await api('a.studentSave', o); const sib = o.familyWith && (A.students.find(x => x.id === o.familyWith) || {}); await show(); setTimeout(() => dialog('已新增 ' + o.name, `<p>學生編號：<b>${esc(r.id)}</b></p><p>綁定碼：<b style="font-size:28px;letter-spacing:4px">${esc(r.code)}</b></p>
+    ${sib && sib.name ? `<p class="s">已和 <b>${esc(sib.name)}</b> 設為同一家庭。${sib.bound ? '點學生 →「兄弟姊妹」可以幫已綁定的家長直接補綁，家長不用再輸入綁定碼。' : '家長輸入其中一位的綁定碼，兩位會一起綁定。'}</p>` : '<p class="s">請把綁定碼交給家長。家長在 LINE 點選單任一格，輸入綁定碼即可；爸爸媽媽可以各自綁定。</p>'}`), 50); }, { saveText: '新增', extra: '<p class="s">設為同一家庭後：家長輸入其中一位的綁定碼就會全部綁定，儲值時也會優先列出兄弟姊妹供勾選共用上課卡。</p>' });
 }
 function importStudents() {
   const F = [{ k: 'text', label: '每行一位：姓名,生日,電話（生日、電話可省略）', type: 'textarea', rows: 8, ph: '王小明,2018-03-15,0912345678\n李小華' },
@@ -578,15 +582,21 @@ async function openStudent(id) {
   const d = await api('a.student', { id }), s = d.info;
   const html = () => `<div class="row"><div class="g"><div class="s">${esc(s.id)}${s.birthday ? '｜' + esc(s.birthday) : ''}${s.phone ? '｜' + esc(s.phone) : ''} ${tag(s.status)}</div>
       <div style="margin-top:4px">綁定碼 <b style="font-size:20px;letter-spacing:3px">${esc(s.code)}</b></div></div><div style="text-align:right"><b style="font-size:30px;line-height:1">${d.remain}</b><div class="s">剩餘堂數</div></div></div>
-    <div class="acts" style="margin:12px 0"><button class="btn p" data-a="topup">儲值</button><button class="btn" data-a="edit">編輯資料與排課</button></div>
-    <h4 style="margin:16px 0 4px">上課卡</h4>${d.cards.length ? d.cards.map(c => `<div class="row"><div class="g"><div class="t">${esc(c.plan_name)} ${tag(c.status)}</div><div class="s">購買 ${esc(c.bought)}${c.expire ? '｜到期 ' + esc(c.expire) : ''}${c.students.length > 1 ? '｜共用：' + esc(c.students.map(x => x.name).join('、')) : ''}</div></div><b>${c.remain}／${c.total}</b><button class="btn sm" data-card="${esc(c.id)}">調整</button></div>`).join('') : '<div class="s">尚無上課卡</div>'}
-    <h4 style="margin:16px 0 4px">已綁定的家長</h4>${d.parents.length ? d.parents.map(p => `<div class="row"><div class="g"><div class="t">${esc(p.name || '（未命名）')} <span class="s">${esc(p.relation || '')}</span></div><div class="s">${esc(p.at || '')}</div></div><button class="btn sm ghost" style="color:var(--bad)" data-unbind="${esc(p.userId)}">解除</button></div>`).join('') : '<div class="s">尚未有家長綁定</div>'}
+    <div class="acts" style="margin:12px 0"><button class="btn p" data-a="topup">儲值</button><button class="btn" data-a="edit">編輯資料與排課</button><button class="btn" data-a="family">兄弟姊妹</button></div>
+    ${d.family.length ? `<div class="fbox"><div class="s">👪 同一家庭｜家長輸入任一位的綁定碼，會一起綁定</div>${d.family.map(f => `<div class="row"><div class="g"><span class="t">${esc(f.name)}</span> <span class="s">${esc(f.id)}｜${f.bound ? '已綁 ' + f.bound : '未綁定'}</span></div><span class="tag ${f.remain <= 0 ? 'bad' : 'ok'}">剩 ${f.remain}</span><button class="btn sm" data-sib="${esc(f.id)}">查看</button></div>`).join('')}</div>` : ''}
+    <h4 style="margin:16px 0 4px">上課卡</h4>${d.cards.length ? d.cards.map(c => `<div class="row"><div class="g"><div class="t">${esc(c.plan_name)} ${tag(c.status)}</div><div class="s">購買 ${esc(c.bought)}${c.expire ? '｜到期 ' + esc(c.expire) : ''}</div>${c.students.length > 1 ? `<div class="s"><span class="tag info">共用</span> ${esc(c.students.map(x => x.name).join('、'))}${c.usage.length ? '｜已用：' + c.usage.map(u => esc(u.name) + ' ' + u.n).join('、') : ''}</div>` : ''}</div><b>${c.remain}／${c.total}</b><button class="btn sm" data-card="${esc(c.id)}">調整</button></div>`).join('') : '<div class="s">尚無上課卡</div>'}
+    <h4 style="margin:16px 0 4px">已綁定的家長</h4>${d.parents.length ? d.parents.map(p => `<div class="row"><div class="g"><div class="t">${esc(p.name || '（未命名）')} <span class="s">${esc(p.relation || '')}</span></div><div class="s">${esc((p.at || '').slice(0, 10))}${p.kids.length ? '｜也綁定了 ' + esc(p.kids.join('、')) : ''}</div></div><button class="btn sm ghost" style="color:var(--bad)" data-unbind="${esc(p.userId)}">解除</button></div>`).join('') : '<div class="s">尚未有家長綁定</div>'}
     <h4 style="margin:16px 0 4px">最近出席</h4>${d.attendance.length ? d.attendance.slice(0, 10).map(a => `<div class="row"><div class="g"><span class="t">${esc(a.course)}</span> <span class="s">${dLabel(a.date)} ${esc(a.start)}${a.deduct ? '｜扣 ' + a.deduct + ' 堂' : ''}</span></div>${tag(a.status)}</div>`).join('') : '<div class="s">尚無紀錄</div>'}`;
   const m = dialog(s.name, html(), { wide: true });
   m.addEventListener('click', async e => {
     const b = e.target.closest('button'); if (!b) return;
     try {
       if (b.dataset.a === 'topup') { m.remove(); topup(id); }
+      if (b.dataset.sib) { m.remove(); openStudent(b.dataset.sib); }
+      if (b.dataset.a === 'family') { m.remove();
+        formDialog('兄弟姊妹｜' + s.name, [{ k: 'memberIds', label: '和 ' + s.name + ' 同一家庭的學生', type: 'checks', opts: A.students.filter(x => x.id !== id && x.status !== '停用').map(x => [x.id, x.name]) }, { k: 'sync', label: '家長綁定', type: 'select', opts: [['1', '已綁定其中一位的家長，其他人也一起綁定'], ['', '不動家長綁定']] }],
+          { memberIds: d.family.map(f => f.id), sync: '1' }, async o => { const r = await api('a.familySave', { studentId: id, memberIds: o.memberIds, syncParents: !!o.sync }); toast('已儲存' + (r.bound ? '，補綁 ' + r.bound + ' 筆家長綁定' : '')); await show(); openStudent(id); },
+          { extra: '<p class="s">同一家庭的好處：家長輸入任一位的綁定碼就全部綁定；儲值時可直接勾選共用上課卡。全部取消勾選＝把這位學生移出家庭。</p>' }); }
       if (b.dataset.a === 'edit') { m.remove(); formDialog('編輯 ' + s.name, [...STU_F(), { k: 'status', label: '狀態', type: 'select', opts: [['在學', '在學'], ['停用', '停用（離開教室）']] }, { k: 'regen', label: '綁定碼', type: 'select', opts: [['', '維持不變'], ['1', '重新產生（舊的失效）']] }], { ...s, courses: d.courses },
         async o => { await api('a.studentSave', { id, ...o, regenCode: !!o.regen }); toast('已儲存'); show(); openStudent(id); }); }
       if (b.dataset.unbind) { if (!confirm('確定解除這位家長的綁定？')) return; await api('a.unbind', { userId: b.dataset.unbind, studentId: id }); toast('已解除'); m.remove(); show(); openStudent(id); }
@@ -601,7 +611,7 @@ function topup(id) {
   const fam = (s.family || []).map(f => A.students.find(x => x.id === f)).filter(x => x && x.status !== '停用');
   const F = [{ k: 'planId', label: '方案', type: 'select', opts: A.meta.plans.map(p => [p.id, `${p.name}｜${p.lessons} 堂｜${money(p.price)}`]) }, { k: 'lessons', label: '堂數', type: 'number', half: 1 }, { k: 'price', label: '實收金額', type: 'number', half: 1 },
     { k: 'pay', label: '付款方式', type: 'select', opts: ['現金', '轉帳', 'LINE Pay', '信用卡', '其他'].map(x => [x, x]), half: 1 }, { k: 'expire', label: '到期日（留白＝依方案）', type: 'date', half: 1 },
-    { k: 'shareIds', label: '共用這張卡的學生（可不選）', type: 'checks', opts: fam.map(f => [f.id, f.name]) }, { k: 'more', label: '加入其他學生共用', type: 'select', opts: [['', '不加入']].concat(A.students.filter(x => x.id !== id && x.status !== '停用' && !fam.includes(x)).map(x => [x.id, x.name])) }, { k: 'note', label: '備註' }];
+    { k: 'shareIds', label: fam.length ? '兄弟姊妹共用這張卡（勾選後一起扣同一張）' : '共用這張卡的學生（尚未設定兄弟姊妹）', type: 'checks', opts: fam.map(f => [f.id, f.name]) }, { k: 'more', label: '加入其他學生共用', type: 'select', opts: [['', '不加入']].concat(A.students.filter(x => x.id !== id && x.status !== '停用' && !fam.includes(x)).map(x => [x.id, x.name])) }, { k: 'note', label: '備註' }];
   const m = formDialog('為「' + (s.name || id) + '」儲值', F, { planId: p0.id, lessons: p0.lessons }, async o => {
     if (String(o.price).trim() === '' || !(Number(o.price) >= 0)) throw new Error('請輸入實收金額');
     const share = [...o.shareIds, ...(o.more ? [o.more] : [])];
