@@ -116,7 +116,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 .mc.today .dn{background:var(--brand);color:#fff}
 .mc.sel{box-shadow:inset 0 0 0 2px var(--brand)}
 .mc:hover{background:var(--soft)}
-.chip{display:block;font-size:11.5px;line-height:1.35;padding:1px 5px;border-radius:5px;border-left:3px solid var(--c);background:color-mix(in srgb,var(--c) 14%,#fff);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chip{display:block;font-size:11.5px;line-height:1.35;padding:1px 5px;border-radius:5px;border-left:3px solid var(--c);background:color-mix(in srgb,var(--c) 14%,#fff);white-space:normal;overflow-wrap:anywhere}
 .chip.todo{box-shadow:inset 0 0 0 1px var(--warn)}.chip.todo:after{content:" ●";color:var(--warn)}
 .dots i.todo{box-shadow:0 0 0 2px var(--warn)}
 .note{background:var(--warn2);color:#8a4b00;border-radius:10px;padding:9px 13px;font-size:13.5px;margin:-4px 0 12px}
@@ -130,12 +130,12 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 .snav{display:flex;align-items:center;gap:6px}.snav b{min-width:112px;text-align:center;white-space:nowrap}
 .tools{display:flex;gap:8px;align-items:center}.tools select{width:auto;max-width:160px}
 .dbar{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.dbar .sp{flex:1}
-.sess .g .s{white-space:nowrap}
 .agenda .dayh{font-size:13px;color:var(--sub);font-weight:600;margin:16px 2px 6px}
 .agenda .dayh.today{color:var(--brand)}
 .sess{display:flex;gap:12px;align-items:center;width:100%;text-align:left;background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:12px;margin-bottom:8px}
 .sess .tm{font-weight:700;font-variant-numeric:tabular-nums;width:52px;flex:none}
-.sess .g .s{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sess .g .s{display:block;white-space:normal;overflow-wrap:anywhere}
+.sess .pt{display:inline-block}.sess .sepr{opacity:.6}
 .sess .strip{width:4px;align-self:stretch;border-radius:2px;flex:none}
 /* 對話框 */
 .mask{position:fixed;inset:0;background:rgba(35,26,32,.45);z-index:50;display:flex;align-items:flex-start;justify-content:center;padding:5vh 14px;overflow:auto}
@@ -454,7 +454,7 @@ const PAGES = {
 function sessRow(s) {
   const pct = s.enrolled ? Math.min(100, Math.round(s.present / s.enrolled * 100)) : 0;
   return `<button class="sess" data-sess="${esc(s.sessionId)}"><span class="strip" style="background:${s.status === '停課' ? '#b9b0b6' : esc(s.color)}"></span><span class="tm">${esc(s.start)}</span>
-    <span class="g" style="flex:1;min-width:0"><span class="t" style="display:block">${esc(s.course)} ${s.status !== '正常' ? tag(s.status) : ''}${s.unmarked ? '<span class="tag warn">未點名</span>' : ''}</span><span class="s">${esc(s.start)}–${esc(s.end)}${s.seq ? '｜第 ' + s.seq + '／' + s.total + ' 堂' : ''}${s.teacher ? '｜' + esc(s.teacher) : ''}${s.room ? '｜' + esc(s.room) : ''}</span>${s.note ? `<span class="s" style="color:var(--ink)">📝 ${esc(s.note)}</span>` : ''}</span>
+    <span class="g" style="flex:1;min-width:0"><span class="t" style="display:block">${esc(s.course)} ${s.status !== '正常' ? tag(s.status) : ''}${s.unmarked ? '<span class="tag warn">未點名</span>' : ''}</span><span class="s">${[esc(s.start) + '–' + esc(s.end), s.seq ? '第 ' + s.seq + '／' + s.total + ' 堂' : '', esc(s.teacher), esc(s.room)].filter(Boolean).map(x => `<span class="pt">${x}</span>`).join('<span class="sepr">｜</span>')}</span>${s.note ? `<span class="s" style="color:var(--ink)">📝 ${esc(s.note)}</span>` : ''}</span>
     ${s.status === '停課' ? '' : `<span style="text-align:right;flex:none"><span class="s">到 ${s.present}／${s.enrolled}${s.leave ? '｜假 ' + s.leave : ''}</span><span class="bar"><i style="width:${pct}%"></i></span></span>`}</button>`;
 }
 
