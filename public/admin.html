@@ -440,7 +440,11 @@ const PAGES = {
       <div class="card"><h2>管理員與老師<span class="sp"></span><button class="btn sm" data-admin="">＋ 手動新增</button></h2>
         ${pending.length ? `<div class="s" style="color:var(--warn);margin-bottom:6px">有 ${pending.length} 位申請開通，按「開通」即可</div>` : ''}
         ${admins.map(a => `<div class="row"><div class="g"><div class="t">${esc(a.name || '（未命名）')} ${a.active ? `<span class="tag ${a.role === 'owner' ? 'info' : ''}">${a.role === 'owner' ? '管理員' : '老師'}</span>` : '<span class="tag warn">待開通</span>'}</div><div class="s" style="word-break:break-all">${esc(a.userId)}</div></div><button class="btn sm ${a.active ? '' : 'p'}" data-admin="${esc(a.userId)}">${a.active ? '編輯' : '開通'}</button></div>`).join('')}
-        <p class="s" style="margin-bottom:0">老師用 LINE 開啟後台網址並按「申請開通」，就會出現在這裡。老師只能看課表與點名，不能儲值或改設定。</p></div>
+        <div class="fbox" style="margin-top:12px"><div class="t" style="font-size:14px">邀請老師或其他管理員加入</div>
+          <div class="s" style="margin:2px 0 8px">把邀請訊息傳給對方 → 對方用 LINE 開啟連結、按「申請開通」→ 回到這裡按「開通」並選擇角色。</div>
+          <input id="invurl" readonly value="${esc(location.origin + '/admin.html')}" onclick="this.select()" style="font-size:13px;margin-bottom:8px">
+          <div class="acts"><button class="btn sm p" data-copy="msg">複製邀請訊息</button><button class="btn sm" data-copy="url">只複製網址</button></div></div>
+        <p class="s" style="margin-bottom:0">老師只能看課表、點名與出席；儲值、帳務、影片與設定只有管理員能用。</p></div>
       <div class="card"><h2>LINE 圖文選單</h2><p class="s" style="margin-top:0">把六格功能選單套用到官方帳號聊天室下方。</p><button class="btn" data-richmenu>重新套用圖文選單</button></div>
       <div class="card"><h2>匯出資料（CSV，可用 Excel 開啟）</h2><div class="acts">${[['students', '學生'], ['attendance', '出席紀錄'], ['topups', '儲值紀錄'], ['cards', '上課卡'], ['sessions', '課表'], ['leaves', '請假']].map(x => `<button class="btn sm" data-export="${x[0]}">${x[1]}</button>`).join('')}</div>
         <p class="s" style="margin-bottom:0">資料庫每天自動備份，保留最近 14 天。</p></div>
@@ -707,6 +711,10 @@ document.addEventListener('click', async e => {
         async o => { await api('a.topupSave', { id: r.id, ...o }); toast('已更正'); show(); },
         { extra: `<p class="s">${esc(r.time.slice(0, 16))}｜${esc(r.plan_name)} ${r.lessons} 堂｜這張卡目前剩 ${r.card_remain ?? '—'} 堂。堂數要更正請到學生的上課卡按「調整」。</p>`, del: { text: '作廢這筆', confirm: '確定作廢？這筆收入會刪除，對應的上課卡會停用。', run: async () => { await api('a.topupSave', { id: r.id, void: true }); toast('已作廢'); show(); } } }); }
     if (ds.topup) { if (!A.students.length) A.students = await api('a.students'); return topup(ds.topup); }
+    if (ds.copy) { const url = location.origin + '/admin.html';
+      const text = ds.copy === 'url' ? url : `【${A.meta.studio}】後台邀請\n1. 用 LINE 開啟這個連結：${url}\n2. 按「申請開通」\n3. 跟我說一聲，我幫您開通後重新整理就能使用`;
+      let ok = false; try { await navigator.clipboard.writeText(text); ok = true; } catch { const t = document.createElement('textarea'); t.value = text; t.style.cssText = 'position:fixed;opacity:0'; document.body.appendChild(t); t.select(); try { ok = document.execCommand('copy'); } catch { /* 不支援 */ } t.remove(); }
+      return toast(ok ? '已複製，貼到 LINE 傳給對方即可' : '無法自動複製，請長按上方網址手動複製', !ok); }
     if ('richmenu' in ds) { if (!confirm('確定重新套用圖文選單？')) return; await api('a.richmenu'); return toast('圖文選單已套用'); }
     if (ds.export) { const r = await api('a.export', { table: ds.export }); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([r.csv], { type: 'text/csv' })); a.download = r.name; a.click(); return; }
     if ('plan' in ds) { const p = ds.plan ? (await api('a.plans')).find(x => x.id === ds.plan) : null;
