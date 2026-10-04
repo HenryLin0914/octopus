@@ -262,6 +262,17 @@ ok((await call('boss', 'a.unbind', { userId: (await call('dad', 'init')).data.us
   ok(sc.info.C01 && sc.info.C01.intro.includes('6–10 歲') && sc.info.C01.videos === 1 && 'botId' in (await call('mom', 'init')).data, '家長課表帶出課程介紹與影片數');
 }
 
+{ // 一般聊天不回選單；諮詢回覆已收到並通知管理員
+  const uidM = (await call('mom', 'init')).data.userId;
+  const say = async text => { const bd = JSON.stringify({ events: [{ type: 'message', replyToken: 'r', message: { type: 'text', text }, source: { userId: uidM } }] }); const n = pushes.length; await app.webhook(bd, crypto.createHmac('sha256', 'sec').update(bd).digest('base64')); return pushes.slice(n); };
+  ok((await say('老師好，今天會晚 10 分鐘到')).length === 0, '一般聊天訊息不自動回覆');
+  let p = await say('您好，我想詢問「Hit Hop 10/05（一）19:00」');
+  ok(p.length === 2 && /reply/.test(p[0].url) && /已收到/.test(p[0].body.messages[0].text) && /multicast/.test(p[1].url) && p[1].body.messages[0].contents.header.contents[1].text === '家長諮詢', '諮詢：回覆已收到並通知管理員');
+  p = await say('您好，我想詢問「另一堂課」');
+  ok(p.length === 1 && /multicast/.test(p[0].url), '10 分鐘內再次諮詢不重複回覆，但仍通知管理員');
+  ok((await say('選單')).length === 1, '傳「選單」才回功能選單');
+}
+
 // Webhook
 const body = JSON.stringify({ events: [{ type: 'message', replyToken: 'r', message: { type: 'text', text: '剩幾堂' }, source: { userId: (await call('mom', 'init')).data.userId } }] });
 const sig = crypto.createHmac('sha256', 'sec').update(body).digest('base64');

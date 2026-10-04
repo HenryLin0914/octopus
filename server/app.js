@@ -58,7 +58,8 @@ const SETTINGS = {
   '報到推播': ['是', '報到後通知家長', 'bool'],
   '低堂數推播': ['是', '堂數不足時通知家長', 'bool'],
   '請假推播': ['是', '家長線上請假後，回覆「已收到請假」', 'bool'],
-  '請假通知管理員': ['是', '家長線上請假後通知管理員與老師', 'bool']
+  '請假通知管理員': ['是', '家長線上請假後通知管理員與老師', 'bool'],
+  '諮詢通知管理員': ['是', '家長從課表按「諮詢」留言時，用 LINE 通知管理員', 'bool']
 };
 const PLANS = [['P01', '單堂', 1, 500, 30], ['P02', '10堂卡', 10, 4500, 90], ['P03', '20堂卡', 20, 8000, 180]];
 const COLORS = ['#D6336C', '#1971C2', '#2B8A3E', '#E67700', '#7048E8', '#0C8599', '#C2255C', '#5C940D'];
@@ -922,6 +923,7 @@ export function createApp(opts = {}) {
       { type: 'text', text: title || '請選擇功能', size: 'sm', color: '#888888', wrap: true },
       ...items.map(m => ({ type: 'button', style: m[1] === 'checkin' ? 'primary' : 'secondary', color: m[1] === 'checkin' ? C.BRAND : undefined, height: 'sm', action: { type: 'uri', label: m[0], uri: liffUrl(m[1]) } }))] } } };
   }
+  const askSeen = new Map(); // 諮詢的「已收到」回覆：同一人 10 分鐘內只回一次
   async function webhook(rawBody, signature) {
     const secret = env.LINE_CHANNEL_SECRET || '';
     const expect = crypto.createHmac('sha256', secret).update(rawBody).digest('base64');
@@ -934,6 +936,15 @@ export function createApp(opts = {}) {
         if (ev.type === 'follow') { await reply([menuFlex('歡迎加入！請先點「綁定學生」，輸入教室提供的綁定碼。')]); continue; }
         if (ev.type !== 'message' || ev.message.type !== 'text') continue;
         const t = ev.message.text.trim(), kids = kidsOf(ev.source.userId);
+        const isFn = /堂數|上課卡|剩|餘額|請假|課表|上課時間|出席|出缺|紀錄|影片|影音|video|youtube|報到|綁定/i.test(t), wantMenu = /^(選單|功能|功能選單|menu|help|\?|？)$/i.test(t);
+        if (/^您好，我想詢問/.test(t)) { // 從課表按「諮詢」帶進來的訊息：回覆已收到，並通知管理員由真人回覆
+          const last = askSeen.get(ev.source.userId) || 0; askSeen.set(ev.source.userId, Date.now());
+          if (Date.now() - last > 10 * 60e3) await reply([{ type: 'text', text: '已收到您的訊息，老師看到後會盡快回覆您 🙏' }]);
+          if (cfgOn('諮詢通知管理員')) { const who = (get('SELECT line_name n FROM bindings WHERE user_id=?', ev.source.userId) || {}).n || '', to = all("SELECT user_id FROM admins WHERE active=1 AND role='owner'").map(r => r.user_id).filter(u => u !== ev.source.userId);
+            if (to.length) await lineMsg('multicast', { to, messages: [flexMsg('💬 家長諮詢｜' + t.slice(0, 60), [flexBubble({ color: C.INK, title: '家長諮詢', name: who || (kids.length ? kids.map(k => k.name).join('、') + ' 的家長' : '尚未綁定的訪客'), rows: [['學生', kids.map(k => k.name).join('、')], ['內容', t.slice(0, 300)]], note: '請到 LINE 官方帳號管理後台的聊天室回覆。', noteColor: C.SUB })])] }); }
+          continue;
+        }
+        if (!isFn && !wantMenu) continue; // 一般聊天：不自動回覆，留給真人回（下方已有圖文選單）
         if (!kids.length) { await reply([menuFlex('您尚未綁定學生，請點「綁定學生」並輸入教室提供的綁定碼。')]); continue; }
         if (/請假/.test(t)) {
           await reply([flexMsg('請假：請點「我要請假」選擇課程', kids.map(s => { const rs = all("SELECT s.date,s.start,COALESCE(c.name,s.course_id) course FROM leaves l JOIN sessions s ON s.id=l.session_id LEFT JOIN courses c ON c.id=s.course_id WHERE l.student_id=? AND l.status<>'取消' AND s.date>=? ORDER BY s.date,s.start LIMIT 5", s.id, today());
