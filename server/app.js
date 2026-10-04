@@ -260,7 +260,14 @@ export function createApp(opts = {}) {
     return all("SELECT * FROM sessions WHERE date=? AND id<>? AND status<>'停課' AND start<? AND end>?", s.date, s.id, s.end, s.start).map(o => {
       const i = sessionInfo(o), why = [me.room && me.room === i.room ? '同教室 ' + i.room : '', me.teacher && me.teacher === i.teacher ? '同老師 ' + i.teacher : ''].filter(Boolean).join('、');
       return why && o.course_id !== s.course_id ? { text: `${s.date.slice(5).replace('-', '/')}（${'日一二三四五六'[weekday(s.date)]}）${i.start}–${i.end}「${i.course}」${why}`, key: i.courseId + weekday(s.date) + why } : null;
-    }).filter(Boolean);
+    }).filter(Boolean).concat(rentHits(s, me));
+  }
+  /** 這堂課的教室在同一時間已被租借（待確認或已確認） */
+  function rentHits(s, me) {
+    const room = me.room && get('SELECT * FROM rooms WHERE name=?', me.room);
+    if (!room) return [];
+    return all("SELECT * FROM bookings WHERE room_id=? AND date=? AND status IN ('待確認','已確認') AND start<? AND end>?", room.id, s.date, s.end, s.start)
+      .map(b => ({ text: `${s.date.slice(5).replace('-', '/')}（${'日一二三四五六'[weekday(s.date)]}）${b.start}–${b.end} ${room.name} 已被租借：${b.name}（${b.status}）`, key: 'rent' + b.id }));
   }
   const conflictError = list => { const seen = new Set(), out = []; list.forEach(c => { if (!seen.has(c.key)) { seen.add(c.key); out.push(c.text); } }); return new Error('CONFLICT:' + out.slice(0, 5).join('\n') + (out.length > 5 ? '\n…還有 ' + (out.length - 5) + ' 個時段' : '')); };
   /** 停課順延：把課程的結束日期延到下一個上課日，整期堂數不變 */
@@ -595,7 +602,8 @@ export function createApp(opts = {}) {
         }
         return i;
       });
-      return { start, end, sessions };
+      const rentals = all("SELECT b.id,b.date,b.start,b.end,b.name,b.status,r.name room FROM bookings b JOIN rooms r ON r.id=b.room_id WHERE b.date>=? AND b.date<=? AND b.status IN ('待確認','已確認') ORDER BY b.date,b.start", start, end);
+      return { start, end, sessions, rentals };
     },
     'a.roster'(b) {
       const sess = sessRow(b.sessionId);

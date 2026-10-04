@@ -149,6 +149,8 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 .snav{display:flex;align-items:center;gap:6px}.snav b{min-width:112px;text-align:center;white-space:nowrap}
 .tools{display:flex;gap:8px;align-items:center}.tools select{width:auto;max-width:160px}
 .dbar{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.dbar .sp{flex:1}
+.rrow{display:block;background:#eef5fc;border:1px solid #cfe2f5;border-radius:10px;padding:8px 12px;margin-bottom:8px;font-size:13.500px;color:var(--ink);text-decoration:none}
+.mc .dn{position:relative}.mc .rm{position:absolute;left:100%;top:-2px;font-style:normal;font-size:9px;line-height:14px;width:14px;height:14px;border-radius:4px;background:var(--info);color:#fff;font-weight:400}
 .agenda .dayh{font-size:13px;color:var(--sub);font-weight:600;margin:16px 2px 6px}
 .agenda .dayh.today{color:var(--brand)}
 .sess{display:flex;gap:12px;align-items:center;width:100%;text-align:left;background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:12px;margin-bottom:8px}
@@ -337,6 +339,8 @@ const PAGES = {
     const days = [...Array(isM ? nWeeks * 7 : 7)].map((_, i) => dAdd(isM ? gridStart : A.week, i));
     const by = Object.fromEntries(days.map(x => [x, []]));
     d.sessions.forEach(s => by[s.date] && (!A.cf || s.courseId === A.cf) && by[s.date].push(s));
+    const rentBy = {}; (d.rentals || []).forEach(b => (rentBy[b.date] = rentBy[b.date] || []).push(b));
+    const rentRows = x => (rentBy[x] || []).map(b => `<a class="rrow" href="#rent">🏠 <b>${esc(b.start)}–${esc(b.end)}</b> ${esc(b.room)} 租借｜${esc(b.name)} <span class="tag ${b.status === '已確認' ? 'ok' : 'warn'}">${esc(b.status)}</span></a>`).join('');
     const todo = days.reduce((n, x) => n + by[x].filter(e => e.unmarked).length, 0);
     const head = `<div class="head sch"><h1>課表</h1>
       <div class="seg"><button class="${isM ? '' : 'on'}" data-view="week">週</button><button class="${isM ? 'on' : ''}" data-view="month">月</button></div>
@@ -350,15 +354,15 @@ const PAGES = {
       const small = window.innerWidth <= 860;
       if (!A.day || A.day.slice(0, 7) !== A.mon) A.day = T.slice(0, 7) === A.mon ? T : first;
       const cell = x => { const L = by[x], out = x.slice(0, 7) !== A.mon;
-        return `<button class="mc ${out ? 'out' : ''} ${x === T ? 'today' : ''} ${x === A.day ? 'sel' : ''}" data-day="${x}"><span class="dn">${+x.slice(8)}</span>${small
+        return `<button class="mc ${out ? 'out' : ''} ${x === T ? 'today' : ''} ${x === A.day ? 'sel' : ''}" data-day="${x}"><span class="dn">${+x.slice(8)}${rentBy[x] ? '<em class="rm" title="有教室租借">租</em>' : ''}</span>${small
           ? `<span class="dots">${L.slice(0, 4).map(e => `<i class="${e.unmarked ? 'todo' : ''}" style="background:${e.status === '停課' ? '#b9b0b6' : esc(e.color)}"></i>`).join('')}${L.length > 4 ? '<em>+' + (L.length - 4) + '</em>' : ''}</span>`
           : L.slice(0, 4).map(e => `<span class="chip ${e.status === '停課' ? 'off' : ''} ${e.unmarked ? 'todo' : ''}" style="--c:${esc(e.color)}">${esc(e.start)} ${esc(e.course)}</span>`).join('') + (L.length > 4 ? `<span class="more">還有 ${L.length - 4} 堂</span>` : '')}</button>`; };
       const sel = by[A.day] || [], total = days.filter(x => x.slice(0, 7) === A.mon).reduce((n, x) => n + by[x].filter(e => e.status !== '停課').length, 0);
       return head + `<div class="mcal"><div class="mh">${[1, 2, 3, 4, 5, 6, 0].map(w => `<span>${WD[w]}</span>`).join('')}</div><div class="mg">${days.map(cell).join('')}</div></div>
-        <div class="agenda"><div class="dayh dbar ${A.day === T ? 'today' : ''}"><span>${dLabel(A.day)}${A.day === T ? '｜今天' : ''}　<span style="font-weight:400">${sel.length ? sel.length + ' 堂課' : '沒有課程'}</span></span><span class="sp"></span>${owner() ? `${sel.some(e => e.status === '正常') ? `<button class="btn sm" data-dayoff="${A.day}" style="color:var(--bad)">整天停課</button>` : ''}<button class="btn sm" data-newsess>＋ 這天加課</button>` : ''}</div>${sel.map(sessRow).join('')}</div>
+        <div class="agenda"><div class="dayh dbar ${A.day === T ? 'today' : ''}"><span>${dLabel(A.day)}${A.day === T ? '｜今天' : ''}　<span style="font-weight:400">${sel.length ? sel.length + ' 堂課' : '沒有課程'}</span></span><span class="sp"></span>${owner() ? `${sel.some(e => e.status === '正常') ? `<button class="btn sm" data-dayoff="${A.day}" style="color:var(--bad)">整天停課</button>` : ''}<button class="btn sm" data-newsess>＋ 這天加課</button>` : ''}</div>${sel.map(sessRow).join('')}${rentRows(A.day)}</div>
         <p class="s">這個月共 ${total} 堂課。點日期看當天的課，點課程可點名、調課或停課。</p>`;
     }
-    if (window.innerWidth <= 860) return head + `<div class="agenda">${days.map(x => `<div class="dayh ${x === A.meta.today ? 'today' : ''}">${dLabel(x)}${x === A.meta.today ? '｜今天' : ''}</div>${by[x].length ? by[x].map(sessRow).join('') : '<div class="s" style="padding:2px 4px 6px">沒有課程</div>'}`).join('')}</div>`;
+    if (window.innerWidth <= 860) return head + `<div class="agenda">${days.map(x => `<div class="dayh ${x === A.meta.today ? 'today' : ''}">${dLabel(x)}${x === A.meta.today ? '｜今天' : ''}</div>${by[x].length ? by[x].map(sessRow).join('') : '<div class="s" style="padding:2px 4px 6px">沒有課程</div>'}${rentRows(x)}`).join('')}</div>`;
     const mins = t => +t.slice(0, 2) * 60 + +t.slice(3);
     const h0 = Math.min(9, ...d.sessions.map(s => Math.floor(mins(s.start) / 60))), h1 = Math.max(21, ...d.sessions.map(s => Math.ceil(mins(s.end) / 60))), HH = 54;
     const col = x => {

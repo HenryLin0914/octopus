@@ -350,6 +350,10 @@ ok((await call('boss', 'a.unbind', { userId: (await call('dad', 'init')).data.us
   const c = (await call('boss', 'a.courseSave', { name: '租借衝突班', room: 'A教室', weekdays: [wd], start: '09:00', end: '10:30', dateFrom: today(), dateTo: addDays(today(), 7), force: true })).data;
   sl = (await call('guest2', 'rentSlots', { roomId: rid, date: d1 })).data.slots;
   ok(sl.find(x => x.start === '09:00').why === '上課' && !sl.find(x => x.start === '10:00').free && sl.find(x => x.start === '11:00').free, '同教室有課的時段自動不開放');
+  r = await call('boss', 'a.sessionSave', { date: d1, start: '16:30', end: '17:30', newCourse: { name: '撞租借的課', room: 'A教室' } });
+  ok(r.ok === false && /^CONFLICT:/.test(r.error) && /已被租借：舞團保留/.test(r.error) && !(await call('boss', 'a.meta')).data.courses.some(q => q.name === '撞租借的課'), '排課時提醒教室已被租借');
+  r = await call('boss', 'a.courseSave', { name: '撞租借的固定課', room: 'A教室', weekdays: [wd], start: '14:30', end: '15:30', dateFrom: today(), dateTo: addDays(today(), 7) });
+  ok(r.ok === false && /已被租借：阿明/.test(r.error), '開固定課程時也會檢查租借');
   await call('boss', 'a.rentBlockSave', { roomId: '', date: d1, start: '', end: '', note: '整修' });
   ok((await call('guest2', 'rentSlots', { roomId: rid, date: d1 })).data.slots.every(x => !x.free), '管理員可關閉整天');
   { // 月曆式開放時段：單日設定與每週固定
