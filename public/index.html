@@ -260,8 +260,17 @@ const PAGES = {
     const d = await api('rentInfo'); S.rent = d;
     const R = S.r = S.r || {}, T = d.today;
     const stTag = st => `<span class="tag ${st === '已確認' ? 'ok' : st === '待確認' ? 'warn' : ''}">${st === '待確認' ? '等待教室確認' : esc(st)}</span>`;
-    const mine = d.mine.filter(b => b.date >= T || b.status === '待確認');
-    const mineHtml = mine.length ? `<h2>我的預約（${mine.length}）</h2>${mine.map(b => `<div class="sc"><span class="strip" style="background:${b.status === '已確認' ? 'var(--ok)' : b.status === '待確認' ? 'var(--warn)' : '#b9b0b6'}"></span><div class="g"><div class="t">${esc(b.room)} ${stTag(b.status)}</div><div class="s">${dLabel(b.date)} ${esc(b.start)}–${esc(b.end)}${b.amount ? '｜' + b.amount + ' 元' : ''}</div></div>${['待確認', '已確認'].includes(b.status) ? `<button class="btn sm ghost" data-rcancel="${esc(b.id)}">取消預約</button>` : ''}</div>`).join('')}` : '';
+    const live = b => ['待確認', '已確認'].includes(b.status) && b.date >= T;
+    const act = d.mine.filter(live), old = d.mine.filter(b => !live(b)).reverse();
+    const bcard = b => `<div class="sc ${live(b) ? '' : 'other'}"><span class="strip" style="background:${b.status === '已確認' ? 'var(--ok)' : b.status === '待確認' ? 'var(--warn)' : '#b9b0b6'}"></span><div class="g"><div class="t">${esc(b.room)} ${stTag(b.status)}</div><div class="s">${dLabel(b.date)} ${esc(b.start)}–${esc(b.end)}${b.amount ? '｜' + b.amount + ' 元' : ''}</div>${b.people || b.purpose ? `<div class="s">${[b.people ? b.people + ' 人' : '', esc(b.purpose)].filter(Boolean).join('｜')}</div>` : ''}</div>${live(b) ? `<button class="btn sm ghost" data-rcancel="${esc(b.id)}">取消預約</button>` : ''}</div>`;
+    S.rt = S.rt || 'book';
+    const tabs = `<div class="seg" style="margin-bottom:10px"><button class="${S.rt === 'book' ? 'on' : ''}" data-rt="book">預約教室</button><button class="${S.rt === 'mine' ? 'on' : ''}" data-rt="mine">我的預約${act.length ? '（' + act.length + '）' : ''}</button></div>`;
+    if (S.rt === 'mine') return `${tabs}
+      <h2>進行中的預約（${act.length}）</h2>${act.length ? act.map(bcard).join('') : '<div class="card"><div class="empty" style="padding:16px 0">目前沒有進行中的預約<br><br><button class="btn sm" data-rt="book">去預約教室</button></div></div>'}
+      ${old.length ? `<h2>過去與已取消（${old.length}）</h2>${old.map(bcard).join('')}` : ''}
+      <p class="hint">「等待教室確認」的預約，確認結果會用 LINE 通知您。要改時間請先取消再重新預約，或直接問我們。</p>
+      <div style="height:10px"></div><button class="btn ghost" data-ask="教室租借">💬 有問題？直接問我們</button>`;
+    const mineHtml = tabs;
     if (!d.open || !d.rooms.length) return `<div class="card big"><div class="i">🏠</div><p>${d.open ? '目前沒有開放租借的教室' : '目前沒有開放線上租借'}</p><p class="hint">想租借請按下方按鈕直接詢問我們。</p><button class="btn" data-ask="教室租借">💬 詢問租借</button></div>${mineHtml}`;
     if (!d.rooms.find(r => r.id === R.roomId)) { R.roomId = d.rooms.length === 1 ? d.rooms[0].id : ''; R.date = ''; }
     const room = d.rooms.find(r => r.id === R.roomId);
@@ -358,6 +367,7 @@ document.addEventListener('click', async e => {
         ${c.videos ? `<button class="btn ghost" data-cv="${esc(c.id)}">🎬 看這門課的影片（${c.videos}）</button>` : ''}
         <button class="btn ${c.canSignup ? 'ghost' : ''}" data-ask="${esc(c.name)}">💬 諮詢這門課</button>`); }
     if(el.id === 'sheet-x') return closeSheet();
+    if(el.dataset.rt){ keepForm(); S.rt = el.dataset.rt; return go('rent'); }
     if(el.dataset.rroom){ S.r = { roomId: el.dataset.rroom }; return keep('rent'); }
     if(el.dataset.rdate){ keepForm(); Object.assign(S.r, { date: el.dataset.rdate, start: '', end: '' }); return keep('rent'); }
     if(el.dataset.rslot){ keepForm(); const R = S.r, sl = R.slots, i = sl.findIndex(k => k.start === el.dataset.rslot);
@@ -376,7 +386,7 @@ document.addEventListener('click', async e => {
     if(el.id === 'r-clear'){ keepForm(); S.r.start = S.r.end = ''; return keep('rent'); }
     if(el.id === 'r-go'){ keepForm(); const R = S.r; el.disabled = true;
       try { const r = await api('rentBook', { roomId: R.roomId, date: R.date, start: R.start, end: R.end, name: R.name, phone: R.phone, people: R.people, purpose: R.purpose });
-        S.r = { roomId: R.roomId }; toast(r.status === '待確認' ? '已送出申請，確認後會用 LINE 通知您' : '預約成功'); return go('rent'); }
+        S.r = { roomId: R.roomId }; S.rt = 'mine'; toast(r.status === '待確認' ? '已送出申請，確認後會用 LINE 通知您' : '預約成功'); return go('rent'); }
       catch(e){ el.disabled = false; toast(e.message, true); if(/被預約走/.test(e.message)){ S.r.start = S.r.end = ''; keep('rent'); } return; } }
     if(el.dataset.rcancel){ return sheet(`<h3>取消這筆預約？</h3><p class="hint" style="margin:8px 0">取消後時段會開放給其他人預約。</p><button class="btn" data-rcgo="${esc(el.dataset.rcancel)}">確定取消預約</button>`); }
     if(el.dataset.rcgo){ await api('rentCancel', { id: el.dataset.rcgo }); closeSheet(); toast('已取消預約'); return go('rent'); }
