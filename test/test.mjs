@@ -285,8 +285,16 @@ ok((await call('boss', 'a.unbind', { userId: (await call('dad', 'init')).data.us
   r = await call('teacher', 'a.markAll', { sessionId: sidX });
   const ro = (await call('boss', 'a.roster', { sessionId: sidX })).data.list;
   ok(r.data.marked === 2 && ro.filter(x => x.status === '出席').length === 2 && ro.find(x => x.id === ks[0]).status === '請假' && ro.every(x => x.fixed), '全部出席不會覆蓋已請假的學生');
+  const extra = []; for (const n of ['丁生', '戊生']) extra.push((await call('boss', 'a.studentSave', { name: n })).data.id);
+  r = await call('boss', 'a.markMany', { sessionId: sidX, studentIds: extra, addToRoster: true });
+  const ro2 = (await call('boss', 'a.roster', { sessionId: sidX })).data.list;
+  ok(r.data.marked === 2 && r.data.added === 2 && r.data.noCard === 2 && extra.every(id => ro2.find(x => x.id === id && x.status === '出席' && x.fixed)), '多選學生一次報到並加入固定名單');
+  r = await call('teacher', 'a.markMany', { sessionId: sidX, studentIds: [ks[0]], addToRoster: true });
+  ok(r.data.marked === 1 && r.data.added === 0, '老師可多選報到，但不能改固定名單');
+  await call('boss', 'a.courseStudents', { courseId: c.id, studentIds: ks });
+  await call('boss', 'a.mark', { sessionId: sidX, studentId: ks[0], status: '請假' });
   r = await call('boss', 'a.courseStudents', { courseId: c.id, studentIds: [ks[0]] });
-  ok(r.data.removed === 2 && (await call('boss', 'a.roster', { sessionId: sidX })).data.list.length === 3, '移出名單後，已點名的紀錄仍保留在該堂點名單');
+  ok(r.data.removed === 2 && (await call('boss', 'a.roster', { sessionId: sidX })).data.list.length === 5, '移出名單後，已點名的紀錄仍保留在該堂點名單');
   await call('boss', 'a.courseSave', { id: c.id, name: 'x', weekdays: [1], start: '06:00', end: '06:30', status: '停用' });
 }
 

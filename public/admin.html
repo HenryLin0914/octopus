@@ -485,7 +485,7 @@ async function openSession(id) {
     ${off() ? '' : `<div class="rhead"><b>點名</b><span class="s">已到 ${here}／${d.list.length}${todo ? '｜未點 ' + todo : ''}</span><span class="sp"></span>${todo ? `<button class="btn sm ok" data-a="all">全部出席</button>` : ''}<button class="btn sm" data-a="qr">QR 報到</button></div>
     <div class="roster">${d.list.length ? d.list.map(x => `<div class="row"><div class="g"><div class="t">${esc(x.name)} ${x.makeup ? '<span class="tag info">補課</span>' : x.fixed ? '' : '<span class="tag">臨時</span>'}</div><div class="s">剩 ${x.remain} 堂${x.method ? '｜' + esc(x.method) : ''}${x.note ? '｜' + esc(x.note) : ''}${x.makeupAt ? '｜已排補課 ' + esc(x.makeupAt) : ''}</div></div>
       <div class="acts"><div class="mk3">${[['出席', 'ok'], ['請假', 'w'], ['缺席', 'b']].map(b => `<button class="${x.status === b[0] ? b[1] : ''}" data-mk="${x.status === b[0] ? '取消' : b[0]}" data-id="${esc(x.id)}" aria-pressed="${x.status === b[0]}">${b[0]}</button>`).join('')}</div>${x.status === '請假' ? `<button class="btn sm" data-mu="${esc(x.id)}" data-name="${esc(x.name)}">${x.makeupAt ? '改補課' : '排補課'}</button>` : ''}${x.makeup && !x.status ? `<button class="btn sm ghost" data-unmu="${esc(x.id)}">取消補課</button>` : ''}${!x.fixed && !x.makeup && owner() ? `<button class="btn sm ghost" data-fix="${esc(x.id)}">加入固定名單</button>` : ''}</div></div>`).join('') : `<div class="empty">這門課還沒有固定學生名單。${owner() ? '<br><br><button class="btn p" data-a="roster">設定學生名單</button><br><br>' : ''}<span class="s">設定後每堂課都會自動帶出這些學生，家長也才能在 LINE 上看到這門課並請假。</span></div>`}</div>
-    <div class="radd"><select id="adhoc"><option value="">＋ 臨時加入學生（直接記出席）</option>${A.students.filter(s => s.status !== '停用' && !d.list.some(x => x.id === s.id)).map(s => `<option value="${esc(s.id)}">${esc(s.name)}（剩 ${s.remain}）</option>`).join('')}</select>${owner() && d.list.length ? '<button class="btn sm" data-a="roster">管理名單</button>' : ''}</div>
+    <div class="radd"><button class="btn" data-a="many" style="flex:1">＋ 加入學生報到（可多選）</button>${owner() && d.list.length ? '<button class="btn" data-a="roster">管理名單</button>' : ''}</div>
     <p class="s" style="margin:6px 0 0">再按一次已選的狀態可以取消。</p>`}
     <button class="notebox ${i.note ? '' : 'none'}" data-a="note"><span class="s">${off() ? '停課原因' : '老師備註'}（家長在課表看得到）</span><span class="nt">${i.note ? esc(i.note) : '＋ 寫給家長的提醒，例如要帶的東西、今天的進度'}</span></button>
     <div class="s" style="margin:14px 0 6px">課堂操作</div>
@@ -504,6 +504,18 @@ async function openSession(id) {
       if (b.dataset.a === 'qr') showQr(id, i);
       if (b.dataset.a === 'all') { const r = await api('a.markAll', { sessionId: id }); toast('已將 ' + r.marked + ' 位學生記為出席'); await refresh(); }
       if (b.dataset.a === 'roster') rosterDialog(i.courseId, i.course, refresh);
+      if (b.dataset.a === 'many') { const list = A.students.filter(x => x.status !== '停用' && !d.list.some(y => y.id === x.id));
+        if (!list.length) return toast('所有學生都已經在這堂課的名單上了');
+        const fm = formDialog('加入學生報到｜' + i.course, [{ k: 'studentIds', label: '勾選今天來上課的學生（可多選）', type: 'checks', opts: list.map(x => [x.id, `${x.name}（剩 ${x.remain}）`]) },
+          ...(owner() ? [{ k: 'fix', label: '之後也固定上這門課嗎', type: 'select', opts: [['', '只有這一堂（臨時上課）'], ['1', '是，一起加入固定名單']] }] : [])], { studentIds: [], fix: '' },
+          async o => { if (!o.studentIds.length) throw new Error('請至少勾選一位學生'); const r = await api('a.markMany', { sessionId: id, studentIds: o.studentIds, addToRoster: !!o.fix });
+            A.students = await api('a.students'); toast(`已報到 ${r.marked} 位` + (r.added ? `，${r.added} 位加入固定名單` : '') + (r.noCard ? `；其中 ${r.noCard} 位沒有可用上課卡，未扣堂` : '')); await refresh(); },
+          { saveText: '報到', extra: '<p class="s">勾選的學生會直接記為出席並扣堂，家長會收到報到通知。</p>' });
+        const box = $('[data-f="studentIds"]', fm), cnt = document.createElement('div'), sv = $('[data-save]', fm);
+        cnt.innerHTML = '<input placeholder="搜尋學生姓名" style="margin:6px 0 2px"><div class="s" data-n></div>'; box.insertBefore(cnt, $('.chk', box));
+        const upd = () => { const n = $$('input:checked', box).length; $('[data-n]', cnt).textContent = '已選 ' + n + ' 位'; sv.textContent = n ? '報到 ' + n + ' 位' : '報到'; };
+        $('input', cnt).oninput = e => { const k = e.target.value.trim(); $$('.chk label', box).forEach(l => { l.hidden = !!k && !l.textContent.includes(k); }); };
+        box.addEventListener('change', upd); upd(); }
       if (b.dataset.fix) { const cur = (await api('a.courseStudents', { courseId: i.courseId })).ids; await api('a.courseStudents', { courseId: i.courseId, studentIds: [...cur, b.dataset.fix] }); toast('已加入這門課的固定名單'); await refresh(); }
       if (b.dataset.a === 'edit') { m.remove(); editSession(i); }
       if (b.dataset.a === 'note') formDialog(off() ? '停課原因' : '老師備註', [{ k: 'note', label: '內容（家長在 LINE 課表看得到）', type: 'textarea', rows: 3, ph: '例：下週驗收，請穿黑色上衣' }, NOTIFY()], { note: i.note, notify: '' },

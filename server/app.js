@@ -542,6 +542,18 @@ export function createApp(opts = {}) {
       ids.forEach(id => recordAttendance(sess, id, '出席', '後台', user.admin.name || user.name));
       return { marked: ids.length };
     },
+    /** 多選學生一次報到；管理員可順便把他們加入這門課的固定名單 */
+    'a.markMany'(b, user) {
+      const sess = sessRow(b.sessionId);
+      if (!sess) throw new Error('找不到場次');
+      if (sess.status === '停課') throw new Error('這堂課已停課');
+      const ids = [...new Set((b.studentIds || []).filter(student))];
+      if (!ids.length) throw new Error('請至少選一位學生');
+      let noCard = 0, added = 0;
+      ids.forEach(id => { const r = recordAttendance(sess, id, '出席', '後台', user.admin.name || user.name); if (!r.dup && !r.deduct) noCard++; });
+      if (b.addToRoster && user.admin.role === 'owner') ids.forEach(id => { if (!get('SELECT 1 x FROM enrollments WHERE student_id=? AND course_id=?', id, sess.course_id)) { run('INSERT INTO enrollments VALUES(?,?,?)', id, sess.course_id, today()); added++; } });
+      return { marked: ids.length, noCard, added };
+    },
     /** 課程的固定學生名單（點名單、家長課表與請假都依這份名單） */
     'a.courseStudents'(b) {
       if (!get('SELECT 1 x FROM courses WHERE id=?', b.courseId)) throw new Error('找不到課程');
