@@ -44,6 +44,18 @@ h2{font-size:15px;color:var(--sub);margin:18px 4px 8px;font-weight:600}
 .stats{display:flex;text-align:center}
 .stats div{flex:1}.stats b{display:block;font-size:24px}
 .big{text-align:center;padding:26px 10px}.big .i{font-size:56px}
+.seg{display:flex;background:var(--line);border-radius:12px;padding:3px;gap:2px;margin-bottom:4px}.seg button{flex:1;border:0;background:none;border-radius:10px;padding:8px;font:inherit;font-size:15px;font-weight:600;color:var(--sub)}.seg button.on{background:#fff;color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.sc{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:13px 14px;margin-bottom:10px}
+.sc .strip{width:4px;align-self:stretch;border-radius:2px;flex:none}.sc .g{flex:1;min-width:0}.sc .t{font-weight:600}.sc .s{font-size:13px;color:var(--sub)}
+.sc.off .t{color:var(--sub)}
+.sc .nt{margin-top:8px;background:#fff8e6;border:1px solid #f3dca6;border-radius:10px;padding:8px 10px;font-size:14px;white-space:pre-wrap;overflow-wrap:anywhere}.sc .nt b{display:block;font-size:12px;color:#8a4b00;font-weight:600}
+.mnav{display:flex;align-items:center;justify-content:space-between;margin:12px 0 8px}.mnav b{font-size:17px}.mnav .btn{font-size:18px;padding:5px 16px}
+.mcal{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.mh,.mg{display:grid;grid-template-columns:repeat(7,minmax(0,1fr))}.mh{border-bottom:1px solid var(--line)}.mh span{text-align:center;font-size:12px;color:var(--sub);padding:7px 0}
+.mc{min-height:52px;border:0;border-right:1px solid var(--line);border-bottom:1px solid var(--line);background:#fff;padding:5px 1px;display:flex;flex-direction:column;align-items:center;gap:4px;font:inherit;color:inherit;min-width:0}
+.mc:nth-child(7n){border-right:0}.mc:nth-last-child(-n+7){border-bottom:0}.mc.out{background:#faf8f5}.mc.out .dn{opacity:.4}
+.mc .dn{font-size:14px;font-weight:600;width:26px;height:26px;line-height:26px;text-align:center;border-radius:50%}.mc.today .dn{background:var(--brand);color:#fff}.mc.sel{box-shadow:inset 0 0 0 2px var(--brand)}
+.dots{display:flex;gap:3px;justify-content:center;min-height:7px}.dots i{width:7px;height:7px;border-radius:50%}
 #toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:#222;color:#fff;padding:10px 18px;border-radius:999px;font-size:14px;display:none;z-index:9;max-width:90%}
 #toast.show{display:block}#toast.bad{background:var(--bad)}
 #load{position:fixed;inset:0;background:rgba(246,244,241,.6);display:none;align-items:center;justify-content:center;z-index:8}
@@ -102,15 +114,33 @@ const PAGES = {
   },
 
   async schedule(){
-    const d = await api('schedule', { studentId: S.cur });
-    return `${chips()}
-      <h2>${d.enrolledOnly ? '我的近期課程' : '近期課程'}</h2>
-      <div class="card">${d.upcoming.length ? d.upcoming.map(u=>`
-        <div class="row"><div><div class="t">${esc(u.course)}</div><div class="s">${dLabel(u.date)} ${esc(u.start)}–${esc(u.end)}｜${esc(u.teacher)}｜${esc(u.room)}</div></div>
-        ${u.status!=='正常' ? tagOf(u.status) : (u.my ? tagOf(u.my) : '')}</div>`).join('') : '<div class="empty">近期沒有課程</div>'}</div>
-      <h2>教室全部課程</h2>
+    S.sv = S.sv || 'list';
+    const d = await api('schedule', S.sv === 'month' ? { studentId: S.cur, month: S.mon || '' } : { studentId: S.cur });
+    const T = d.today;
+    const card = u => `<div class="sc ${u.status === '停課' ? 'off' : ''}"><span class="strip" style="background:${u.status === '停課' ? '#b9b0b6' : esc(u.color)}"></span><div class="g">
+        <div class="t">${esc(u.course)} ${u.makeup ? '<span class="tag ok">補課</span>' : ''} ${u.status === '停課' ? tagOf('停課') : (u.my ? tagOf(u.my) : '')}</div>
+        <div class="s">${dLabel(u.date)} ${esc(u.start)}–${esc(u.end)}</div><div class="s">${[u.teacher, u.room].filter(Boolean).map(esc).join('｜')}</div>
+        ${u.note ? `<div class="nt"><b>${u.status === '停課' ? '停課原因' : '老師備註'}</b>${esc(u.note)}</div>` : ''}</div>
+        ${u.canLeave ? `<button class="btn sm ghost" data-lvs="${esc(u.sessionId)}">請假</button>` : ''}</div>`;
+    const seg = `<div class="seg"><button class="${S.sv === 'list' ? 'on' : ''}" data-sv="list">近期</button><button class="${S.sv === 'month' ? 'on' : ''}" data-sv="month">月曆</button></div>`;
+    const all = `<h2>教室全部課程</h2>
       <div class="card">${d.courses.map(c=>`
-        <div class="row"><div><div class="t">${esc(c.name)}</div><div class="s">每週${esc(c.day)} ${esc(c.start)}–${esc(c.end)}｜${esc(c.teacher)}｜${esc(c.room)}</div></div>${c.enrolled?'<span class="tag ok">已報名</span>':''}</div>`).join('') || '<div class="empty">尚無課程</div>'}</div>`;
+        <div class="row"><div><div class="t">${esc(c.name)}</div><div class="s">每週${esc(c.day)} ${esc(c.start)}–${esc(c.end)}${c.teacher ? '｜' + esc(c.teacher) : ''}${c.room ? '｜' + esc(c.room) : ''}</div>${c.to ? `<div class="s">${esc((c.from || '').slice(5).replace('-', '/'))} – ${esc(c.to.slice(5).replace('-', '/'))}</div>` : ''}</div>${c.enrolled?'<span class="tag ok">已報名</span>':''}</div>`).join('') || '<div class="empty">尚無課程</div>'}</div>`;
+    if (S.sv === 'list') return `${chips()}${seg}
+      <h2>${d.enrolledOnly ? '我的近期課程' : '近期課程'}</h2>
+      ${d.upcoming.length ? d.upcoming.map(card).join('') : '<div class="card"><div class="empty">近期沒有課程</div></div>'}${all}`;
+    S.mon = d.month;
+    const first = S.mon + '-01', start = dAdd(first, -((dDay(first) + 6) % 7)), next = dAdd(first, 32).slice(0, 7) + '-01';
+    const n = Math.ceil(((new Date(next) - new Date(start)) / 864e5) / 7) * 7, days = [...Array(n)].map((_, k) => dAdd(start, k));
+    const by = {}; d.monthSessions.forEach(u => (by[u.date] = by[u.date] || []).push(u));
+    if (!S.day || S.day.slice(0, 7) !== S.mon) S.day = T.slice(0, 7) === S.mon ? T : ((d.monthSessions.find(u => u.date >= T) || d.monthSessions[0] || {}).date || first);
+    const sel = by[S.day] || [];
+    return `${chips()}${seg}
+      <div class="mnav"><button class="btn sm ghost" data-mnav="-1">‹</button><b>${S.mon.replace('-', ' 年 ')} 月</b><button class="btn sm ghost" data-mnav="1">›</button></div>
+      <div class="mcal"><div class="mh">${[1,2,3,4,5,6,0].map(w => `<span>${WD[w]}</span>`).join('')}</div><div class="mg">${days.map(x => { const L = by[x] || []; return `<button class="mc ${x.slice(0, 7) !== S.mon ? 'out' : ''} ${x === T ? 'today' : ''} ${x === S.day ? 'sel' : ''}" data-day="${x}"><span class="dn">${+x.slice(8)}</span><span class="dots">${L.slice(0, 4).map(u => `<i style="background:${u.status === '停課' ? '#b9b0b6' : u.my === '請假' ? '#e67700' : esc(u.color)}"></i>`).join('')}</span></button>`; }).join('')}</div></div>
+      <h2>${dLabel(S.day)}${S.day === T ? '｜今天' : ''}</h2>
+      ${sel.length ? sel.map(card).join('') : '<div class="card"><div class="empty" style="padding:14px 0">這天沒有課</div></div>'}
+      <p class="s" style="font-size:13px;color:var(--sub);margin:4px 4px 0">這個月共 ${d.monthSessions.filter(u => u.status !== '停課').length} 堂課。灰點是停課，橘點是已請假。</p>${all}`;
   },
 
   async leave(){
@@ -119,7 +149,7 @@ const PAGES = {
     return `${chips()}
       <h2>申請請假</h2>
       <div class="card">${can.length ? `
-        <label>選擇課程</label><select id="lv-s">${can.map(u=>`<option value="${esc(u.sessionId)}">${dLabel(u.date)} ${esc(u.start)} ${esc(u.course)}</option>`).join('')}</select>
+        <label>選擇課程</label><select id="lv-s">${can.map(u=>`<option value="${esc(u.sessionId)}" ${S.lvPre === u.sessionId ? 'selected' : ''}>${dLabel(u.date)} ${esc(u.start)} ${esc(u.course)}</option>`).join('')}</select>
         <label>請假原因</label><textarea id="lv-r" rows="2" placeholder="例：生病、學校活動"></textarea>
         <button class="btn" id="lv-go">送出請假</button>` : '<div class="empty">目前沒有可請假的課程</div>'}</div>
       <h2>請假紀錄</h2>
@@ -187,6 +217,10 @@ document.addEventListener('click', async e => {
   try{
     if(el.dataset.go) return go(el.dataset.go);
     if(el.dataset.stu){ S.cur = el.dataset.stu; return go(page); }
+    if(el.dataset.sv){ S.sv = el.dataset.sv; return go('schedule'); }
+    if(el.dataset.mnav){ S.mon = dAdd(S.mon + '-15', +el.dataset.mnav * 30).slice(0, 7); S.day = ''; return go('schedule'); }
+    if(el.dataset.day){ S.day = el.dataset.day; if(S.day.slice(0, 7) !== S.mon) S.mon = S.day.slice(0, 7); const y = window.scrollY; await go('schedule'); return window.scrollTo(0, y); }
+    if(el.dataset.lvs){ S.lvPre = el.dataset.lvs; return go('leave'); }
     if(el.dataset.url){ const urls = JSON.parse($('#vd').textContent); return openUrl(urls[+el.dataset.url]); }
     if(el.id === 'bd-go'){
       const r = await api('bind', { code: $('#bd-c').value.trim(), relation: $('#bd-r').value });

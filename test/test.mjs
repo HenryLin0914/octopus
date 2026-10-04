@@ -166,6 +166,54 @@ ok((await call('boss', 'a.unbind', { userId: (await call('dad', 'init')).data.us
   await call('boss', 'a.courseSave', { id: r.data.id, name: '回溯班', weekdays: [1], start: '09:00', end: '10:00', status: '停用' });
 }
 
+{ // 停課／調課通知、整天停課順延、衝堂、續開、補課、家長月曆與老師備註
+  const { addDays, today } = await import('../server/app.js');
+  const t0 = today(), d1 = addDays(t0, 3), wd = new Date(d1 + 'T12:00:00+08:00').getUTCDay();
+  const A1 = (await call('boss', 'a.courseSave', { name: '甲班', teacher: '章魚', room: 'R1', weekdays: [wd], start: '11:00', end: '12:00', dateFrom: t0, dateTo: addDays(t0, 30) })).data;
+  const kid = (await call('boss', 'a.studentSave', { name: '通知生', courses: [A1.id] })).data;
+  await call('mom', 'bind', { code: kid.code, relation: '母親' });
+  const ses = () => call('boss', 'a.week', { start: t0, days: 60 }).then(x => x.data.sessions.filter(q => q.courseId === A1.id));
+  let L = await ses(); const n0 = L.length, s1 = L[0];
+  // 衝堂
+  r = await call('boss', 'a.courseSave', { name: '乙班', teacher: '別人', room: 'R1', weekdays: [wd], start: '11:30', end: '12:30', dateFrom: t0, dateTo: addDays(t0, 30) });
+  ok(r.ok === false && /^CONFLICT:/.test(r.error) && /甲班/.test(r.error) && /同教室 R1/.test(r.error) && (await call('boss', 'a.meta')).data.courses.every(c => c.name !== '乙班'), '課程衝堂會先警告且不儲存');
+  r = await call('boss', 'a.courseSave', { name: '乙班', teacher: '別人', room: 'R1', weekdays: [wd], start: '11:30', end: '12:30', dateFrom: t0, dateTo: addDays(t0, 30), force: true });
+  ok(r.ok && r.data.id, '確認後可強制儲存'); const B1 = r.data.id;
+  await call('boss', 'a.courseSave', { id: B1, name: '乙班', weekdays: [wd], start: '11:30', end: '12:30', status: '停用' });
+  // 調課通知＋老師備註
+  let p0 = pushes.length;
+  r = await call('boss', 'a.sessionSave', { id: s1.sessionId, date: s1.date, start: '13:00', end: '14:00', teacher: '', room: '', status: '正常', note: '請帶室內鞋', notify: true });
+  let m = pushes[pushes.length - 1].body.messages[0];
+  ok(r.data.kind === '調課' && r.data.notified === 1 && pushes.length === p0 + 1 && m.contents.header.contents[1].text === '調課通知' && JSON.stringify(m).includes('請帶室內鞋') && JSON.stringify(m).includes('原時間'), '調課會通知家長並附老師備註');
+  // 停課＋順延
+  r = await call('boss', 'a.sessionSave', { id: s1.sessionId, date: s1.date, start: '13:00', end: '14:00', status: '停課', note: '颱風', notify: true, postpone: true });
+  L = await ses(); m = pushes[pushes.length - 1].body.messages[0];
+  ok(r.data.kind === '停課' && r.data.postponed && L.length === n0 + 1 && L.filter(q => q.status !== '停課').length === n0 && m.contents.header.contents[1].text === '停課通知', '停課順延：整期堂數不變並通知家長');
+  // 整天停課
+  const s2 = L.find(q => q.status === '正常');
+  r = await call('boss', 'a.dayOff', { date: s2.date, reason: '國定假日', notify: true });
+  ok(r.data.stopped >= 1 && r.data.notified >= 1 && (await ses()).find(q => q.sessionId === s2.sessionId).status === '停課' && /僅限管理員/.test((await call('teacher', 'a.dayOff', { date: s2.date })).error), '整天停課（僅管理員）');
+  // 家長月曆與備註
+  const sc = (await call('mom', 'schedule', { studentId: kid.id, month: s1.date.slice(0, 7) })).data;
+  ok(sc.monthSessions.some(q => q.sessionId === s1.sessionId && q.status === '停課' && q.note === '颱風') && sc.month === s1.date.slice(0, 7), '家長月曆看得到停課與老師備註');
+  // 補課
+  const s3 = (await ses()).find(q => q.status === '正常');
+  await call('boss', 'a.mark', { sessionId: s3.sessionId, studentId: kid.id, status: '請假' });
+  const opt = (await call('teacher', 'a.makeupOptions', { studentId: kid.id, fromSessionId: s3.sessionId })).data;
+  const tgt = opt.find(q => !q.own) || opt[0]; p0 = pushes.length;
+  r = await call('teacher', 'a.makeupSave', { studentId: kid.id, sessionId: tgt.sessionId, fromSessionId: s3.sessionId, notify: true });
+  const ro = (await call('boss', 'a.roster', { sessionId: tgt.sessionId })).data.list.find(q => q.id === kid.id);
+  const fromRo = (await call('boss', 'a.roster', { sessionId: s3.sessionId })).data.list.find(q => q.id === kid.id);
+  ok(opt.length > 0 && r.data.notified === 1 && pushes.length === p0 + 1 && ro && ro.makeup && fromRo.makeupAt && (await call('mom', 'schedule', { studentId: kid.id, month: tgt.date.slice(0, 7) })).data.monthSessions.some(q => q.sessionId === tgt.sessionId && q.makeup), '補課：出現在點名單與家長課表，並通知家長');
+  ok((await call('boss', 'a.leaves')).data.some(q => q.sid === kid.id && q.makeup), '請假清單顯示已安排補課');
+  ok((await call('boss', 'a.makeupDelete', { studentId: kid.id, sessionId: tgt.sessionId })).data.removed === 1, '取消補課');
+  // 續開下一期
+  r = await call('boss', 'a.courseSave', { name: '甲班（第二期）', teacher: '章魚', room: 'R1', weekdays: [wd], start: '11:00', end: '12:00', dateFrom: addDays(t0, 60), dateTo: addDays(t0, 90), copyStudentsFrom: A1.id });
+  ok(r.data.copied === 1 && (await call('boss', 'a.student', { id: kid.id })).data.courses.includes(r.data.id), '續開下一期會帶入原班學生');
+  for (const id of [A1.id, r.data.id]) await call('boss', 'a.courseSave', { id, name: 'x', weekdays: [wd], start: '11:00', end: '12:00', status: '停用' });
+  await call('boss', 'a.unbind', { userId: (await call('mom', 'init')).data.userId, studentId: kid.id });
+}
+
 // Webhook
 const body = JSON.stringify({ events: [{ type: 'message', replyToken: 'r', message: { type: 'text', text: '剩幾堂' }, source: { userId: (await call('mom', 'init')).data.userId } }] });
 const sig = crypto.createHmac('sha256', 'sec').update(body).digest('base64');

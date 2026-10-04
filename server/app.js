@@ -64,7 +64,7 @@ const PLANS = [['P01', '單堂', 1, 500, 30], ['P02', '10堂卡', 10, 4500, 90],
 const COLORS = ['#D6336C', '#1971C2', '#2B8A3E', '#E67700', '#7048E8', '#0C8599', '#C2255C', '#5C940D'];
 
 const OWNER_ONLY = new Set(['a.studentSave', 'a.enroll', 'a.unbind', 'a.topup', 'a.cardSave', 'a.courseSave', 'a.sessionSave', 'a.sessionDelete', 'a.genSessions',
-  'a.videoSave', 'a.videoDelete', 'a.planSave', 'a.settingSave', 'a.adminSave', 'a.richmenu', 'a.export', 'a.student', 'a.videos', 'a.plans', 'a.settings', 'a.admins', 'a.cards', 'a.ledger', 'a.topupSave', 'a.videoInfo']);
+  'a.videoSave', 'a.videoDelete', 'a.planSave', 'a.settingSave', 'a.adminSave', 'a.richmenu', 'a.export', 'a.student', 'a.videos', 'a.plans', 'a.settings', 'a.admins', 'a.cards', 'a.ledger', 'a.topupSave', 'a.videoInfo', 'a.dayOff']);
 const ASYNC = new Set(['a.richmenu', 'a.videoInfo']);
 /** 從各種 YouTube 網址取出影片 ID（watch、youtu.be、shorts、live、embed） */
 export const ytId = url => { const m = String(url || '').match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^#]*&)?v=|shorts\/|live\/|embed\/|v\/))([\w-]{11})(?![\w-])/); return m ? m[1] : ''; };
@@ -80,6 +80,7 @@ export function createApp(opts = {}) {
     const cols = db.prepare('PRAGMA table_info(courses)').all().map(c => c.name);
     if (!cols.includes('date_from')) db.exec("ALTER TABLE courses ADD COLUMN date_from TEXT DEFAULT ''");
     if (!cols.includes('date_to')) db.exec("ALTER TABLE courses ADD COLUMN date_to TEXT DEFAULT ''");
+    db.exec("CREATE TABLE IF NOT EXISTS makeups(id TEXT PRIMARY KEY, student_id TEXT, session_id TEXT, from_session_id TEXT DEFAULT '', created_at TEXT, by_name TEXT)");
   }
   const all = (sql, ...a) => db.prepare(sql).all(...a);
   const get = (sql, ...a) => db.prepare(sql).get(...a);
@@ -183,7 +184,7 @@ export function createApp(opts = {}) {
   function sessionInfo(s) {
     const c = get('SELECT * FROM courses WHERE id=?', s.course_id) || {};
     return { sessionId: s.id, courseId: s.course_id, course: c.name || s.course_id, color: c.color || C.BRAND, teacher: s.teacher || c.teacher || '', room: s.room || c.room || '',
-      date: s.date, start: s.start, end: s.end, status: s.status || '正常', note: s.note || '', manual: !!s.manual, deduct: c.deduct || 1, capacity: c.capacity || 0 };
+      date: s.date, start: s.start, end: s.end, status: s.status || '正常', note: s.note || '', manual: !!s.manual, deduct: c.deduct || 1, capacity: c.capacity || 0, term: !!c.date_to, rawTeacher: s.teacher || '', rawRoom: s.room || '' };
   }
   const activeRecord = (sessionId, sid) => get("SELECT * FROM attendance WHERE session_id=? AND student_id=? AND status<>'取消' ORDER BY time DESC", sessionId, sid) || null;
   const qrToken = (sessionId, offset = 0) => crypto.createHmac('sha256', QR_SECRET).update(sessionId + '|' + (Math.floor(Date.now() / 1000 / cfgNum('QR更新秒數', 60)) + offset)).digest('hex').slice(0, 10);
@@ -221,6 +222,42 @@ export function createApp(opts = {}) {
       color: C.WARN, title: '堂數即將用完', name, rows: [['提醒', '請記得到櫃檯儲值']], big: { label: '剩餘堂數', value: remain, unit: '堂' }, btn: ['查看上課卡', 'card'] })]);
     if (msg) pushMsg(parentsOf(sid), msg);
   }
+  const whenOf = s => s.date.slice(5).replace('-', '/') + '（' + '日一二三四五六'[weekday(s.date)] + '）' + s.start + '–' + s.end;
+  /** 這堂課要通知的家長：排入該課程的學生＋安排到這堂補課的學生 */
+  const sessionParents = s => [...new Set([...all("SELECT b.user_id FROM bindings b JOIN enrollments e ON e.student_id=b.student_id JOIN students st ON st.id=b.student_id WHERE e.course_id=? AND st.status<>'停用'", s.course_id),
+    ...all('SELECT b.user_id FROM bindings b JOIN makeups m ON m.student_id=b.student_id WHERE m.session_id=?', s.id)].map(r => r.user_id))];
+  /** 停課、調課、加課、復課、老師備註 → 通知家長。回傳通知人數 */
+  function notifySession(kind, before, after) {
+    const i = sessionInfo(after), to = sessionParents(after), o = before ? sessionInfo(before) : null;
+    if (!to.length) return 0;
+    const T = { 停課: ['停課通知', C.WARN, '⚠️'], 調課: ['調課通知', C.INFO, '🔄'], 加課: ['加課通知', C.OK, '➕'], 復課: ['恢復上課', C.OK, '✅'], 備註: ['老師的話', C.BRAND, '💬'] }[kind];
+    const rows = kind === '調課' && o && (o.date !== i.date || o.start !== i.start || o.end !== i.end) ? [['原時間', whenOf(o)], ['新時間', whenOf(i)]] : [['時間', whenOf(i)]];
+    if (kind !== '停課') { rows.push(['老師', i.teacher + (o && o.teacher !== i.teacher ? '（代課）' : '')]); rows.push(['教室', i.room]); }
+    if (after.postponed) rows.push(['順延', '整期往後順延，最後一堂改到 ' + after.postponed.slice(5).replace('-', '/')]);
+    pushMsg(to, flexMsg(T[2] + ' ' + T[0] + '｜' + i.course + ' ' + whenOf(kind === '調課' && o ? o : i), [flexBubble({ color: T[1], title: T[0], name: i.course, rows, note: i.note ? (kind === '停課' ? '原因：' : '老師備註：') + i.note : '', noteColor: C.INK, btn: ['查看課表', 'schedule'] })]));
+    return to.length;
+  }
+  /** 同一時段、同教室或同老師的其他課 */
+  function conflictsOf(s) {
+    const me = sessionInfo(s);
+    return all("SELECT * FROM sessions WHERE date=? AND id<>? AND status<>'停課' AND start<? AND end>?", s.date, s.id, s.end, s.start).map(o => {
+      const i = sessionInfo(o), why = [me.room && me.room === i.room ? '同教室 ' + i.room : '', me.teacher && me.teacher === i.teacher ? '同老師 ' + i.teacher : ''].filter(Boolean).join('、');
+      return why && o.course_id !== s.course_id ? { text: `${s.date.slice(5).replace('-', '/')}（${'日一二三四五六'[weekday(s.date)]}）${i.start}–${i.end}「${i.course}」${why}`, key: i.courseId + weekday(s.date) + why } : null;
+    }).filter(Boolean);
+  }
+  const conflictError = list => { const seen = new Set(), out = []; list.forEach(c => { if (!seen.has(c.key)) { seen.add(c.key); out.push(c.text); } }); return new Error('CONFLICT:' + out.slice(0, 5).join('\n') + (out.length > 5 ? '\n…還有 ' + (out.length - 5) + ' 個時段' : '')); };
+  /** 停課順延：把課程的結束日期延到下一個上課日，整期堂數不變 */
+  function extendTerm(courseId) {
+    const c = get('SELECT * FROM courses WHERE id=?', courseId), days = c ? courseDays(c) : [];
+    if (!c || !c.date_to || !days.length) return '';
+    const last = (get('SELECT MAX(date) d FROM sessions WHERE course_id=? AND manual=0', courseId) || {}).d || '';
+    let d = last > c.date_to ? last : c.date_to;
+    for (let i = 0; i < 14; i++) { d = addDays(d, 1); if (days.includes(weekday(d))) break; }
+    run('UPDATE courses SET date_to=? WHERE id=?', d, courseId);
+    generateSessions();
+    return d;
+  }
+
   function notifyLeave(info, sid, reason, byName) {
     const name = (student(sid) || {}).name || sid;
     const rows = [['課程', info.course], ['時間', info.date + ' ' + info.start], ['原因', reason], ['申請人', byName]];
@@ -302,16 +339,26 @@ export function createApp(opts = {}) {
     schedule(b, user) {
       assertOwns(user, b.studentId);
       const mine = all('SELECT course_id FROM enrollments WHERE student_id=?', b.studentId).map(r => r.course_id);
+      const mk = all('SELECT session_id id FROM makeups WHERE student_id=?', b.studentId).map(r => r.id);
       const t = today(), end = addDays(t, cfgNum('課表顯示天數', 28)), cutoff = cfgNum('請假截止小時', 2) * 3600e3;
-      const upcoming = all('SELECT * FROM sessions WHERE date>=? AND date<=? ORDER BY date,start', t, end).filter(s => !mine.length || mine.includes(s.course_id)).map(s => {
+      const visible = s => !mine.length || mine.includes(s.course_id) || mk.includes(s.id);
+      const view = s => {
         const i = sessionInfo(s), rec = activeRecord(s.id, b.studentId);
         i.my = rec ? rec.status : '';
+        i.makeup = mk.includes(s.id);
         i.canLeave = !i.my && i.status === '正常' && toDate(i.date, i.start).getTime() - Date.now() > cutoff;
+        delete i.capacity; delete i.manual; delete i.rawTeacher; delete i.rawRoom; delete i.deduct;
         return i;
-      });
+      };
+      const upcoming = all('SELECT * FROM sessions WHERE date>=? AND date<=? ORDER BY date,start', t, end).filter(visible).map(view);
       const wd = '日一二三四五六';
-      const courses = all("SELECT * FROM courses WHERE status='啟用' ORDER BY start").map(c => ({ id: c.id, name: c.name, teacher: c.teacher, day: courseDays(c).map(d => wd[d]).join('、'), start: c.start, end: c.end, room: c.room, enrolled: mine.includes(c.id) }));
-      return { upcoming, courses, enrolledOnly: mine.length > 0 };
+      const courses = all("SELECT * FROM courses WHERE status='啟用' ORDER BY start").map(c => ({ id: c.id, name: c.name, teacher: c.teacher, day: courseDays(c).map(d => wd[d]).join('、'), start: c.start, end: c.end, room: c.room, enrolled: mine.includes(c.id), from: c.date_from || '', to: c.date_to || '' }));
+      const out = { upcoming, courses, enrolledOnly: mine.length > 0, today: t };
+      if (b.month !== undefined) { // 月曆：整個月（含過去）的課
+        out.month = /^\d{4}-\d{2}$/.test(b.month || '') ? b.month : t.slice(0, 7);
+        out.monthSessions = all('SELECT * FROM sessions WHERE substr(date,1,7)=? ORDER BY date,start', out.month).filter(visible).map(view);
+      }
+      return out;
     },
     leave(b, user) {
       assertOwns(user, b.studentId);
@@ -393,8 +440,11 @@ export function createApp(opts = {}) {
       const sess = sessRow(b.sessionId);
       if (!sess) throw new Error('找不到場次');
       const ids = all("SELECT e.student_id id FROM enrollments e JOIN students s ON s.id=e.student_id WHERE e.course_id=? AND s.status<>'停用' ORDER BY s.name", sess.course_id).map(r => r.id);
+      const mk = all('SELECT student_id id FROM makeups WHERE session_id=?', b.sessionId).map(r => r.id);
+      mk.forEach(id => { if (!ids.includes(id)) ids.push(id); });
       all("SELECT DISTINCT student_id id FROM attendance WHERE session_id=? AND status<>'取消'", b.sessionId).forEach(r => { if (!ids.includes(r.id)) ids.push(r.id); });
-      const list = ids.map(id => { const s = student(id), r = activeRecord(b.sessionId, id); return s && { id, name: s.name, status: r ? r.status : '', method: r ? r.method : '', note: r ? r.note : '', remain: totalRemain(id) }; }).filter(Boolean);
+      const list = ids.map(id => { const s = student(id), r = activeRecord(b.sessionId, id), m = get('SELECT s.date,s.start FROM makeups m JOIN sessions s ON s.id=m.session_id WHERE m.student_id=? AND m.from_session_id=?', id, b.sessionId);
+        return s && { id, name: s.name, status: r ? r.status : '', method: r ? r.method : '', note: r ? r.note : '', remain: totalRemain(id), makeup: mk.includes(id), makeupAt: m ? m.date.slice(5).replace('-', '/') + ' ' + m.start : '' }; }).filter(Boolean);
       return { info: sessionInfo(sess), list };
     },
     'a.mark'(b, user) {
@@ -438,8 +488,8 @@ export function createApp(opts = {}) {
         students: [...by].map(([id, list]) => ({ id, name: list[0].student || id, ...count(list) })).sort((x, y) => (x.rate ?? 101) - (y.rate ?? 101) || y.total - x.total),
         months: [...new Set([today().slice(0, 7), ...all("SELECT DISTINCT substr(s.date,1,7) m FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE a.status<>'取消' ORDER BY m DESC LIMIT 36").map(r => r.m)])].sort().reverse() };
     },
-    'a.leaves'() {
-      return all('SELECT l.id,st.name student,l.reason,l.status,l.applied_at applied,l.by_name by,s.date,s.start,COALESCE(c.name,s.course_id) course FROM leaves l JOIN sessions s ON s.id=l.session_id JOIN students st ON st.id=l.student_id LEFT JOIN courses c ON c.id=s.course_id WHERE s.date>=? ORDER BY s.date,s.start LIMIT 200', addDays(today(), -30));
+    'a.leaves'() { // 家長線上請假＋老師在點名單標的請假
+      return all("SELECT a.id,a.student_id sid,a.session_id sessionId,(SELECT s2.date||' '||s2.start FROM makeups m JOIN sessions s2 ON s2.id=m.session_id WHERE m.student_id=a.student_id AND m.from_session_id=a.session_id) makeup,st.name student,COALESCE(l.reason,'') reason,'已登記' status,COALESCE(l.applied_at,a.time) applied,COALESCE(l.by_name,a.operator,'') by,s.date,s.start,COALESCE(c.name,s.course_id) course FROM attendance a JOIN sessions s ON s.id=a.session_id JOIN students st ON st.id=a.student_id LEFT JOIN leaves l ON l.student_id=a.student_id AND l.session_id=a.session_id LEFT JOIN courses c ON c.id=s.course_id WHERE a.status='請假' AND s.date>=? GROUP BY a.id ORDER BY s.date,s.start LIMIT 300", addDays(today(), -30));
     },
 
     /* ---------- 後台：僅管理員 ---------- */
@@ -538,7 +588,10 @@ export function createApp(opts = {}) {
       const c = get('SELECT * FROM courses WHERE id=?', id);
       syncCourseSessions(c);
       const added = generateSessions();
-      return { id, added, upcoming: get("SELECT COUNT(*) n FROM sessions WHERE course_id=? AND date>=? AND status<>'停課'", id, today()).n,
+      let copied = 0;
+      if (!b.id && b.copyStudentsFrom) all("SELECT e.student_id sid FROM enrollments e JOIN students st ON st.id=e.student_id WHERE e.course_id=? AND st.status='在學'", str(b.copyStudentsFrom, 20)).forEach(r => { run('INSERT INTO enrollments VALUES(?,?,?)', r.sid, id, today()); copied++; });
+      if (c.status === '啟用' && !b.force) { const cf = all("SELECT * FROM sessions WHERE course_id=? AND date>=? AND status<>'停課' ORDER BY date LIMIT 400", id, today()).flatMap(conflictsOf); if (cf.length) throw conflictError(cf); }
+      return { id, added, copied, upcoming: get("SELECT COUNT(*) n FROM sessions WHERE course_id=? AND date>=? AND status<>'停課'", id, today()).n,
         past: get("SELECT COUNT(*) n FROM sessions WHERE course_id=? AND date<? AND status<>'停課'", id, today()).n };
     },
     /** 單一場次：新增加課（manual）、調整時間／代課老師／教室、停課或恢復 */
@@ -546,21 +599,68 @@ export function createApp(opts = {}) {
       const date = nd(b.date), start = nt(b.start), end = nt(b.end);
       if (!date || !start || !end || end <= start) throw new Error('日期或時間不正確');
       const status = ['正常', '停課', '已結算'].includes(b.status) ? b.status : '正常';
+      const old = b.id ? sessRow(b.id) : null;
+      let id = b.id;
       if (b.id) {
-        if (!sessRow(b.id)) throw new Error('找不到場次');
+        if (!old) throw new Error('找不到場次');
         run('UPDATE sessions SET date=?,start=?,end=?,teacher=?,room=?,status=?,note=?,manual=1 WHERE id=?', date, start, end, str(b.teacher, 40), str(b.room, 40), status, str(b.note), b.id);
-        return { id: b.id };
+      } else {
+        if (!get('SELECT 1 x FROM courses WHERE id=?', b.courseId)) throw new Error('請選擇課程');
+        id = uid('X');
+        run('INSERT INTO sessions(id,course_id,date,start,end,teacher,room,status,note,manual) VALUES(?,?,?,?,?,?,?,?,?,1)', id, b.courseId, date, start, end, str(b.teacher, 40), str(b.room, 40), status, str(b.note));
       }
-      if (!get('SELECT 1 x FROM courses WHERE id=?', b.courseId)) throw new Error('請選擇課程');
-      const id = uid('X');
-      run('INSERT INTO sessions(id,course_id,date,start,end,teacher,room,status,note,manual) VALUES(?,?,?,?,?,?,?,?,?,1)', id, b.courseId, date, start, end, str(b.teacher, 40), str(b.room, 40), status, str(b.note));
-      return { id };
+      const cur = sessRow(id);
+      if (status !== '停課' && !b.force) { const cf = conflictsOf(cur); if (cf.length) throw conflictError(cf); }
+      const stopped = status === '停課' && (!old || old.status !== '停課');
+      const postponed = stopped && b.postpone ? extendTerm(cur.course_id) : '';
+      const kind = !old ? '加課' : stopped ? '停課' : old.status === '停課' && status !== '停課' ? '復課'
+        : old.date !== date || old.start !== start || old.end !== end || old.teacher !== cur.teacher || old.room !== cur.room ? '調課' : (old.note || '') !== cur.note && cur.note ? '備註' : '';
+      const notified = b.notify && kind ? notifySession(kind, old, { ...cur, postponed }) : 0;
+      return { id, kind, notified, postponed };
     },
+    /** 老師備註（老師也能寫），可順便通知家長 */
+    'a.sessionNote'(b) {
+      const old = sessRow(b.id);
+      if (!old) throw new Error('找不到場次');
+      run('UPDATE sessions SET note=? WHERE id=?', str(b.note, 300), b.id);
+      const cur = sessRow(b.id);
+      return { ok: true, notified: b.notify && cur.note ? notifySession('備註', old, cur) : 0 };
+    },
+    /** 整天停課（颱風假、國定假日）：當天還沒點名的課全部停課 */
+    'a.dayOff'(b) {
+      const date = nd(b.date);
+      if (!date) throw new Error('日期不正確');
+      const list = all("SELECT s.* FROM sessions s WHERE s.date=? AND s.status='正常' AND NOT EXISTS(SELECT 1 FROM attendance a WHERE a.session_id=s.id AND a.status IN ('出席','缺席'))", date);
+      let notified = 0; const postponed = [];
+      list.forEach(x => { const r = API['a.sessionSave']({ id: x.id, date: x.date, start: x.start, end: x.end, teacher: x.teacher, room: x.room, status: '停課', note: str(b.reason) || x.note, postpone: !!b.postpone, notify: !!b.notify, force: true }); notified += r.notified; if (r.postponed) postponed.push(r.postponed); });
+      return { stopped: list.length, notified, postponed: postponed.length };
+    },
+    /** 補課：可安排的場次 */
+    'a.makeupOptions'(b) {
+      if (!student(b.studentId)) throw new Error('找不到學生');
+      const mine = all('SELECT course_id FROM enrollments WHERE student_id=?', b.studentId).map(r => r.course_id);
+      return all("SELECT * FROM sessions WHERE date>=? AND date<=? AND status='正常' ORDER BY date,start LIMIT 300", today(), addDays(today(), 60))
+        .filter(x => x.id !== b.fromSessionId && !activeRecord(x.id, b.studentId) && !get('SELECT 1 x FROM makeups WHERE student_id=? AND session_id=?', b.studentId, x.id))
+        .map(x => { const i = sessionInfo(x); return { sessionId: x.id, date: x.date, start: x.start, end: x.end, course: i.course, teacher: i.teacher, own: mine.includes(x.course_id) }; });
+    },
+    'a.makeupSave'(b, user) {
+      const stu = student(b.studentId), sess = sessRow(b.sessionId);
+      if (!stu || !sess) throw new Error('找不到學生或場次');
+      if (sess.status !== '正常') throw new Error('這堂課已' + sess.status);
+      if (get('SELECT 1 x FROM makeups WHERE student_id=? AND session_id=?', stu.id, sess.id)) throw new Error('已經安排過這堂補課');
+      if (b.fromSessionId) run('DELETE FROM makeups WHERE student_id=? AND from_session_id=?', stu.id, b.fromSessionId);
+      run('INSERT INTO makeups(id,student_id,session_id,from_session_id,created_at,by_name) VALUES(?,?,?,?,?,?)', uid('M'), stu.id, sess.id, str(b.fromSessionId, 40), now(), user.admin.name || user.name);
+      const i = sessionInfo(sess), from = b.fromSessionId ? sessRow(b.fromSessionId) : null, to = parentsOf(stu.id);
+      if (b.notify) pushMsg(to, flexMsg('📌 補課通知｜' + stu.name + ' ' + whenOf(i) + ' ' + i.course, [flexBubble({ color: C.INFO, title: '補課通知', name: stu.name,
+        rows: [['補課時間', whenOf(i)], ['課程', i.course], ['老師', i.teacher], ['教室', i.room], ['原請假', from ? whenOf(from) + ' ' + sessionInfo(from).course : '']], note: i.note ? '老師備註：' + i.note : '', noteColor: C.INK, btn: ['查看課表', 'schedule'] })]));
+      return { ok: true, notified: b.notify ? to.length : 0 };
+    },
+    'a.makeupDelete'(b) { return { removed: Number(run('DELETE FROM makeups WHERE student_id=? AND session_id=?', b.studentId, b.sessionId).changes) }; },
     'a.sessionDelete'(b) {
       if (get("SELECT 1 x FROM attendance WHERE session_id=? AND status<>'取消'", b.id)) throw new Error('這堂課已有出席紀錄，不能刪除，請改用「停課」');
       const s = sessRow(b.id);
       if (s && !String(s.id).startsWith('X')) { run("UPDATE sessions SET status='停課', manual=1 WHERE id=?", b.id); return { cancelled: true }; }
-      run('DELETE FROM sessions WHERE id=?', b.id);
+      run('DELETE FROM sessions WHERE id=?', b.id); run('DELETE FROM makeups WHERE session_id=?', b.id);
       return { deleted: true };
     },
     'a.genSessions'() { return { added: generateSessions() }; },
