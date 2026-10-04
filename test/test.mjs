@@ -290,6 +290,30 @@ ok((await call('boss', 'a.unbind', { userId: (await call('dad', 'init')).data.us
   await call('boss', 'a.courseSave', { id: c.id, name: 'x', weekdays: [1], start: '06:00', end: '06:30', status: '停用' });
 }
 
+{ // 家長課表顯示全部課程與線上報名
+  const { addDays, today } = await import('../server/app.js');
+  const t0 = today();
+  const c = (await call('boss', 'a.courseSave', { name: '報名班', weekdays: [0, 1, 2, 3, 4, 5, 6], start: '05:00', end: '05:30', dateFrom: t0, dateTo: addDays(t0, 10), capacity: 1 })).data;
+  let sc = (await call('mom', 'schedule', { studentId: sid, month: '' })).data;
+  ok(sc.courses.some(q => q.id === c.id && q.canSignup && !q.enrolled) && sc.upcoming.some(q => q.courseId === c.id && !q.mine && !q.canLeave) && sc.upcoming.some(q => q.mine) && sc.monthSessions.some(q => q.courseId === c.id), '家長課表列出全部課程，未參加的可報名、不能請假');
+  let p0 = pushes.length;
+  r = await call('mom', 'signup', { studentId: sid, courseId: c.id });
+  ok(r.data.status === '待審核' && pushes.length === p0 + 1 && /重複|已經送出/.test((await call('mom', 'signup', { studentId: sid, courseId: c.id })).error) && (await call('mom', 'schedule', { studentId: sid })).data.info[c.id].pending, '報名需審核：建立申請並通知管理員');
+  const g = (await call('boss', 'a.signups')).data;
+  p0 = pushes.length; r = await call('boss', 'a.signupSave', { id: g[0].id, approve: true });
+  sc = (await call('mom', 'schedule', { studentId: sid })).data;
+  ok(g.length === 1 && r.ok && pushes.length === p0 + 1 && sc.info[c.id].enrolled && sc.upcoming.some(q => q.courseId === c.id && q.mine && q.canLeave) && (await call('boss', 'a.overview')).data.signups === 0, '同意報名後加入名單並通知家長');
+  const other = (await call('boss', 'a.studentSave', { name: '額滿生' })).data; await call('dad', 'bind', { code: other.code });
+  ok(/額滿/.test((await call('dad', 'signup', { studentId: other.id, courseId: c.id })).error), '額滿不能報名');
+  await call('boss', 'a.settingSave', { key: '報名需審核', value: '否' });
+  await call('boss', 'a.courseSave', { id: c.id, name: '報名班', weekdays: [0, 1, 2, 3, 4, 5, 6], start: '05:00', end: '05:30', capacity: 0 });
+  r = await call('dad', 'signup', { studentId: other.id, courseId: c.id });
+  ok(r.data.status === '已加入' && (await call('boss', 'a.courseStudents', { courseId: c.id })).data.ids.includes(other.id), '不需審核時直接加入名單');
+  await call('boss', 'a.settingSave', { key: '報名需審核', value: '是' });
+  await call('boss', 'a.unbind', { userId: (await call('dad', 'init')).data.userId, studentId: other.id });
+  await call('boss', 'a.courseDelete', { id: c.id });
+}
+
 // Webhook
 const body = JSON.stringify({ events: [{ type: 'message', replyToken: 'r', message: { type: 'text', text: '剩幾堂' }, source: { userId: (await call('mom', 'init')).data.userId } }] });
 const sig = crypto.createHmac('sha256', 'sec').update(body).digest('base64');

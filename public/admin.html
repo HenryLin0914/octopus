@@ -289,7 +289,7 @@ function formDialog(title, fields, values, save, { extra = '', saveText = '儲�
 const PAGES = {
   async home() {
     const d = await api('a.overview');
-    const st = d.stats;
+    const st = d.stats, sg = owner() && d.signups ? await api('a.signups') : [];
     return `<div class="head"><h1>${esc(A.meta.name || '')}，您好</h1><span class="s">${dLabel(d.date)}</span></div>
     <div class="grid stats" style="margin-bottom:14px">
       <div class="card stat"><b>${st.students}</b><span>在學學生</span></div>
@@ -297,6 +297,7 @@ const PAGES = {
       <div class="card stat"><b>${st.unbound}</b><span>尚未綁定家長</span></div>
       ${owner() ? `<a class="card stat" href="#money" style="text-decoration:none;color:inherit"><b>${money(st.monthIncome)}</b><span>本月儲值收入 ›</span></a>` : ''}
     </div>
+    ${sg.length ? `<div class="card" style="margin-bottom:14px;border-color:#f3dca6;background:#fffaf0"><h2 style="color:#8a4b00">報名申請（${sg.length}）</h2>${sg.map(g => `<div class="row"><div class="g"><div class="t">${esc(g.student)} → ${esc(g.course)}</div><div class="s">${esc(g.by || '家長')} 於 ${esc(g.time.slice(5, 16))} 申請｜剩 ${g.remain} 堂｜目前 ${g.count}${g.capacity ? '／' + g.capacity : ''} 人</div></div><div class="acts"><button class="btn sm ok" data-sg="${esc(g.id)}" data-ok="1">同意</button><button class="btn sm" data-sg="${esc(g.id)}">婉拒</button></div></div>`).join('')}<p class="s" style="margin-bottom:0">同意後學生會加入該課程的固定名單，並用 LINE 通知家長結果。</p></div>` : ''}
     <div class="grid cols">
       <div class="card"><h2>今日課程<span class="sp"></span><a class="btn sm ghost" href="#schedule">看整週 ›</a></h2>
         ${d.sessions.length ? d.sessions.map(sessRow).join('') : '<div class="empty">今天沒有課程</div>'}</div>
@@ -745,6 +746,7 @@ document.addEventListener('click', async e => {
     if ('newcourse' in ds) return editCourse('');
     if ('newsess' in ds) { if (!A.students.length) A.students = await api('a.students'); return editSession(null); }
     if (ds.dayoff) return dayOff(ds.dayoff);
+    if (ds.sg) { if (!ds.ok && !confirm('確定婉拒這筆報名？家長會收到通知。')) return; await api('a.signupSave', { id: ds.sg, approve: !!ds.ok }); toast(ds.ok ? '已同意，學生已加入名單' : '已婉拒'); return show(); }
     if (ds.lmu) return makeupDialog(ds.lmu, ds.name, ds.from);
     if (ds.f) { A.filter.f = ds.f; return show(); }
     if ('newstu' in ds) return newStudent();

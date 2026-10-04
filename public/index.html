@@ -53,6 +53,13 @@ h2{font-size:15px;color:var(--sub);margin:18px 4px 8px;font-weight:600}
 #sheet h3{margin:0 34px 4px 0;font-size:19px}#sheet .s{font-size:14px;color:var(--sub)}
 #sheet .intro{margin:14px 0 6px;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7}
 #sheet-x{position:absolute;right:12px;top:12px;border:0;background:none;font-size:26px;line-height:1;color:var(--sub);padding:4px 8px}
+.filt{display:flex;gap:8px;margin:8px 0 0}.filt button{flex:1;border:1px solid var(--line);background:#fff;border-radius:999px;padding:7px 10px;font:inherit;font-size:14px;color:var(--sub)}.filt button.on{border-color:var(--brand);background:var(--brand2);color:var(--brand);font-weight:600}
+.sc.other{background:#fbfaf8;border-style:dashed}.sc.other .t{color:#5b554f}
+.cc{display:flex;gap:12px;align-items:flex-start;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:10px}
+.cc .strip{width:4px;align-self:stretch;border-radius:2px;flex:none}.cc .g{flex:1;min-width:0}.cc .t{font-weight:700;font-size:17px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.cc dl{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;margin:8px 0 10px;font-size:14px}.cc dt{color:var(--sub)}.cc dd{margin:0;overflow-wrap:anywhere}
+.cc>.btn{flex:none}
+.dots i.g,.legend i.g{background:#fff;border:1.500px dashed #a59c95}
 .kids{display:flex;flex-direction:column;gap:8px;margin-bottom:6px}
 .kid{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:var(--card);border:1.500px solid var(--line);border-radius:14px;padding:13px 16px;font:inherit;color:inherit}
 .kid.on{border-color:var(--brand);background:linear-gradient(135deg,#d6336c,#f06595);color:#fff}
@@ -143,35 +150,52 @@ const PAGES = {
   async schedule(){
     S.sv = S.sv || 'list';
     const d = await api('schedule', S.sv === 'month' ? { studentId: S.cur, month: S.mon || '' } : { studentId: S.cur });
-    const T = d.today;
-    const card = u => `<div class="sc ${u.status === '停課' ? 'off' : ''}"><span class="strip" style="background:${u.status === '停課' ? '#b9b0b6' : esc(u.color)}"></span><div class="g">
-        <div class="t">${esc(u.course)} ${u.makeup ? '<span class="tag ok">補課</span>' : ''} ${u.status === '停課' ? tagOf('停課') : (u.my ? `<span class="tag ${u.my === '出席' ? 'ok' : u.my === '請假' ? 'warn' : 'bad'}">${u.my === '請假' ? '已請假' : u.my === '出席' ? '已出席' : esc(u.my)}</span>` : '')}</div>
+    const T = d.today, kid = curStu().name || '';
+    S.info = d.info; S.review = d.review;
+    if (!S.sf || S.sfFor !== S.cur) { S.sf = d.upcoming.some(u => u.mine) || d.courses.some(c => c.enrolled) ? 'mine' : 'all'; S.sfFor = S.cur; }
+    const allMode = S.sf === 'all', show = u => allMode || u.mine;
+    const state = c => !c ? '' : c.enrolled ? '' : c.pending ? '<span class="tag warn">報名審核中</span>' : c.full ? '<span class="tag">已額滿</span>' : '';
+    const tags = (cid, about) => { const c = d.info[cid] || {}; return `<button data-ci="${esc(cid)}">📖 課程介紹</button>${c.videos ? `<button data-cv="${esc(cid)}">🎬 影片 ${c.videos}</button>` : ''}<button data-ask="${esc(about)}">💬 諮詢</button>`; };
+    const card = u => { const c = d.info[u.courseId] || {};
+      return `<div class="sc ${u.status === '停課' ? 'off' : ''} ${u.mine ? '' : 'other'}"><span class="strip" style="background:${u.status === '停課' ? '#b9b0b6' : esc(u.color)}"></span><div class="g">
+        <div class="t">${esc(u.course)} ${u.makeup ? '<span class="tag ok">補課</span>' : ''} ${u.status === '停課' ? tagOf('停課') : (u.my ? `<span class="tag ${u.my === '出席' ? 'ok' : u.my === '請假' ? 'warn' : 'bad'}">${u.my === '請假' ? '已請假' : u.my === '出席' ? '已出席' : esc(u.my)}</span>` : '')} ${u.mine ? '' : state(c) || '<span class="tag">未參加</span>'}</div>
         <div class="s">${dLabel(u.date)} ${esc(u.start)}–${esc(u.end)}</div><div class="s">${[u.teacher, u.room].filter(Boolean).map(esc).join('｜')}</div>
         ${u.note ? `<div class="nt"><b>${u.status === '停課' ? '停課原因' : '老師備註'}</b>${esc(u.note)}</div>` : ''}</div>
-        ${u.canLeave ? `<button class="btn sm ghost" data-lvs="${esc(u.sessionId)}">我要請假</button>` : ''}
-        <div class="tags">${tags(u.courseId, u.course + ' ' + dLabel(u.date) + ' ' + u.start)}</div></div>`;
-    S.info = d.info;
-    const tags = (cid, about) => { const c = d.info[cid] || {}; return `<button data-ci="${esc(cid)}">📖 課程介紹</button>${c.videos ? `<button data-cv="${esc(cid)}">🎬 影片 ${c.videos}</button>` : ''}<button data-ask="${esc(about)}">💬 諮詢</button>`; };
-    const seg = `<div class="seg"><button class="${S.sv === 'list' ? 'on' : ''}" data-sv="list">近期</button><button class="${S.sv === 'month' ? 'on' : ''}" data-sv="month">月曆</button></div>`;
-    const all = `<h2>教室全部課程</h2>
-      <div class="card">${d.courses.map(c=>`
-        <div class="row"><div><div class="t">${esc(c.name)}</div><div class="s">每週${esc(c.day)} ${esc(c.start)}–${esc(c.end)}${c.teacher ? '｜' + esc(c.teacher) : ''}${c.room ? '｜' + esc(c.room) : ''}</div>${c.to ? `<div class="s">${esc((c.from || '').slice(5).replace('-', '/'))} – ${esc(c.to.slice(5).replace('-', '/'))}</div>` : ''}<div class="tags" style="padding:0;margin-top:8px">${tags(c.id, c.name)}</div></div>${c.enrolled?'<span class="tag ok">已報名</span>':''}</div>`).join('') || '<div class="empty">尚無課程</div>'}</div>`;
-    if (S.sv === 'list') return `${chips()}${seg}
-      <h2>${d.enrolledOnly ? '我的近期課程' : '近期課程'}</h2>
-      ${d.upcoming.length ? d.upcoming.map(card).join('') : '<div class="card"><div class="empty">近期沒有課程</div></div>'}${all}`;
+        ${u.canLeave ? `<button class="btn sm ghost" data-lvs="${esc(u.sessionId)}">我要請假</button>` : ''}${!u.mine && c.canSignup ? `<button class="btn sm" data-su="${esc(u.courseId)}">報名</button>` : ''}
+        <div class="tags">${tags(u.courseId, u.course + ' ' + dLabel(u.date) + ' ' + u.start)}</div></div>`; };
+    const seg = `<div class="seg"><button class="${S.sv === 'list' ? 'on' : ''}" data-sv="list">近期</button><button class="${S.sv === 'month' ? 'on' : ''}" data-sv="month">月曆</button></div>
+      <div class="filt"><button class="${allMode ? '' : 'on'}" data-sf="mine">${esc(kid)} 的課</button><button class="${allMode ? 'on' : ''}" data-sf="all">教室全部課程</button></div>`;
+    const cc = c => `<div class="cc"><span class="strip" style="background:${esc(c.color)}"></span><div class="g">
+        <div class="t">${esc(c.name)} ${c.enrolled ? '<span class="tag ok">已參加</span>' : state(c)}</div>
+        <dl><dt>時間</dt><dd>${c.oneoff ? esc((c.from || '').slice(5).replace('-', '/')) + '（單次）' : '每週' + esc(c.day)} ${esc(c.start)}–${esc(c.end)}</dd>
+          ${!c.oneoff && c.to ? `<dt>期間</dt><dd>${esc((c.from || '').slice(5).replace('-', '/'))} – ${esc(c.to.slice(5).replace('-', '/'))}</dd>` : ''}
+          ${c.teacher ? `<dt>老師</dt><dd>${esc(c.teacher)}</dd>` : ''}${c.room ? `<dt>教室</dt><dd>${esc(c.room)}</dd>` : ''}
+          ${c.capacity ? `<dt>名額</dt><dd>${c.count}／${c.capacity}${c.full ? '（已額滿）' : '，還有 ' + (c.capacity - c.count) + ' 個名額'}</dd>` : ''}
+          ${c.next ? `<dt>下一堂</dt><dd>${dLabel(c.next.slice(0, 10))} ${esc(c.next.slice(11))}</dd>` : ''}</dl>
+        <div class="tags" style="padding:0">${tags(c.id, c.name)}</div></div>
+        ${c.canSignup ? `<button class="btn sm" data-su="${esc(c.id)}">報名</button>` : ''}</div>`;
+    const mineC = d.courses.filter(c => c.enrolled), otherC = d.courses.filter(c => !c.enrolled);
+    const catalog = `${mineC.length ? `<h2>${esc(kid)} 參加的課程（${mineC.length}）</h2>${mineC.map(cc).join('')}` : ''}
+      <h2>${mineC.length ? '其他課程' : '教室全部課程'}（${otherC.length}）</h2>${otherC.length ? otherC.map(cc).join('') : '<div class="card"><div class="empty" style="padding:14px 0">沒有其他課程</div></div>'}
+      ${d.signupOpen ? `<p class="hint">按「報名」${d.review ? '會送出申請，教室確認後就會加入，並用 LINE 通知您' : '就會直接加入這門課'}。加入後才能在這裡看到每堂課的老師備註並線上請假。</p>` : '<p class="hint">想參加其他課程，請按「諮詢」聯絡教室。</p>'}`;
+    if (S.sv === 'list') { const list = d.upcoming.filter(show);
+      return `${chips()}${seg}
+      <h2>${allMode ? '近期所有課程' : esc(kid) + ' 的近期課程'}（${list.length} 堂）</h2>
+      ${list.length ? list.map(card).join('') : `<div class="card"><div class="empty" style="padding:16px 0">${allMode ? '近期沒有課程' : esc(kid) + ' 還沒有排入任何課程<br><span style="font-size:13px">可以在下方課程按「報名」，或切到「教室全部課程」看看</span>'}</div></div>`}${catalog}`; }
     S.mon = d.month;
+    const ms = d.monthSessions.filter(show);
     const first = S.mon + '-01', start = dAdd(first, -((dDay(first) + 6) % 7)), next = dAdd(first, 32).slice(0, 7) + '-01';
     const n = Math.ceil(((new Date(next) - new Date(start)) / 864e5) / 7) * 7, days = [...Array(n)].map((_, k) => dAdd(start, k));
-    const by = {}; d.monthSessions.forEach(u => (by[u.date] = by[u.date] || []).push(u));
-    if (!S.day || S.day.slice(0, 7) !== S.mon) S.day = T.slice(0, 7) === S.mon ? T : ((d.monthSessions.find(u => u.date >= T) || d.monthSessions[0] || {}).date || first);
+    const by = {}; ms.forEach(u => (by[u.date] = by[u.date] || []).push(u));
+    if (!S.day || S.day.slice(0, 7) !== S.mon) S.day = T.slice(0, 7) === S.mon ? T : ((ms.find(u => u.date >= T) || ms[0] || {}).date || first);
     const sel = by[S.day] || [];
     return `${chips()}${seg}
       <div class="mnav"><button class="btn sm ghost" data-mnav="-1">‹</button><b>${S.mon.replace('-', ' 年 ')} 月</b><button class="btn sm ghost" data-mnav="1">›</button></div>
-      <div class="mcal"><div class="mh">${[1,2,3,4,5,6,0].map(w => `<span>${WD[w]}</span>`).join('')}</div><div class="mg">${days.map(x => { const L = by[x] || []; return `<button class="mc ${x.slice(0, 7) !== S.mon ? 'out' : ''} ${x === T ? 'today' : ''} ${x === S.day ? 'sel' : ''}" data-day="${x}"><span class="dn">${+x.slice(8)}</span><span class="dots">${L.slice(0, 4).map(u => u.status === '停課' ? '<i class="x"></i>' : u.my === '請假' ? `<i class="o" style="border-color:${esc(u.color)}"></i>` : `<i style="background:${esc(u.color)}"></i>`).join('')}</span></button>`; }).join('')}</div></div>
-      <h2>${dLabel(S.day)}${S.day === T ? '｜今天' : ''}</h2>
+      <div class="mcal"><div class="mh">${[1,2,3,4,5,6,0].map(w => `<span>${WD[w]}</span>`).join('')}</div><div class="mg">${days.map(x => { const L = by[x] || []; return `<button class="mc ${x.slice(0, 7) !== S.mon ? 'out' : ''} ${x === T ? 'today' : ''} ${x === S.day ? 'sel' : ''}" data-day="${x}"><span class="dn">${+x.slice(8)}</span><span class="dots">${L.slice(0, 4).map(u => u.status === '停課' ? '<i class="x"></i>' : u.my === '請假' ? `<i class="o" style="border-color:${esc(u.color)}"></i>` : !u.mine ? '<i class="g"></i>' : `<i style="background:${esc(u.color)}"></i>`).join('')}</span></button>`; }).join('')}</div></div>
+      <div class="legend"><span><i style="background:var(--brand)"></i>${esc(kid)} 的課</span><span><i class="o" style="border-color:var(--brand)"></i>已請假</span><span><i class="x"></i>停課</span>${allMode ? '<span><i class="g"></i>未參加</span>' : ''}</div>
+      <h2>${dLabel(S.day)}${S.day === T ? '｜今天' : ''}（${sel.length} 堂）</h2>
       ${sel.length ? sel.map(card).join('') : '<div class="card"><div class="empty" style="padding:14px 0">這天沒有課</div></div>'}
-      <p class="s" style="font-size:13px;color:var(--sub);margin:4px 4px 0">這個月共 ${d.monthSessions.filter(u => u.status !== '停課').length} 堂課。</p>
-      <div class="legend"><span><i style="background:var(--brand)"></i>有課</span><span><i class="o" style="border-color:var(--brand)"></i>已請假</span><span><i class="x"></i>停課</span></div>${all}`;
+      <p class="hint">這個月${allMode ? '教室共' : esc(kid) + ' 有'} ${ms.filter(u => u.status !== '停課').length} 堂課。</p>${catalog}`;
   },
 
   async leave(){
@@ -269,9 +293,16 @@ document.addEventListener('click', async e => {
         <div class="s">${c.oneoff ? esc((c.from || '').slice(5).replace('-', '/')) : '每週' + esc(c.day)} ${esc(c.start)}–${esc(c.end)}${c.teacher ? '｜' + esc(c.teacher) : ''}${c.room ? '｜' + esc(c.room) : ''}</div>
         ${!c.oneoff && c.to ? `<div class="s">課程期間 ${esc((c.from || '').slice(5).replace('-', '/'))} – ${esc(c.to.slice(5).replace('-', '/'))}</div>` : ''}
         <div class="intro">${c.intro ? esc(c.intro) : '<span style="color:var(--sub)">老師還沒有寫課程介紹，想了解可以按下方「諮詢」直接問我們。</span>'}</div>
+        ${c.canSignup ? `<button class="btn" data-su="${esc(c.id)}">報名這門課</button>` : ''}
         ${c.videos ? `<button class="btn ghost" data-cv="${esc(c.id)}">🎬 看這門課的影片（${c.videos}）</button>` : ''}
-        <button class="btn" data-ask="${esc(c.name)}">💬 諮詢這門課</button>`); }
+        <button class="btn ${c.canSignup ? 'ghost' : ''}" data-ask="${esc(c.name)}">💬 諮詢這門課</button>`); }
     if(el.id === 'sheet-x') return closeSheet();
+    if(el.dataset.sf){ S.sf = el.dataset.sf; S.day = ''; return go('schedule'); }
+    if(el.dataset.su){ const c = (S.info || {})[el.dataset.su]; if(!c) return;
+      return sheet(`<h3>幫 ${esc(curStu().name)} 報名</h3><div class="intro" style="margin-top:8px"><b>${esc(c.name)}</b>\n${c.oneoff ? esc((c.from || '').slice(5).replace('-', '/')) + '（單次）' : '每週' + esc(c.day)} ${esc(c.start)}–${esc(c.end)}${c.teacher ? '\n老師：' + esc(c.teacher) : ''}${!c.oneoff && c.to ? '\n期間：' + esc((c.from || '').slice(5).replace('-', '/')) + ' – ' + esc(c.to.slice(5).replace('-', '/')) : ''}${c.capacity ? '\n名額：還有 ' + (c.capacity - c.count) + ' 個' : ''}</div>
+        <p class="hint" style="margin:0 0 6px">${S.review ? '送出後由教室確認，確認結果會用 LINE 通知您。' : '送出後會直接加入這門課的名單。'}上課時會從 ${esc(curStu().name)} 的上課卡扣堂。</p>
+        <button class="btn" data-sugo="${esc(c.id)}">確認報名</button>`); }
+    if(el.dataset.sugo){ el.disabled = true; const r = await api('signup', { studentId: S.cur, courseId: el.dataset.sugo }); closeSheet(); toast(r.status === '待審核' ? '已送出報名，教室確認後會通知您' : '報名成功，已加入課程'); return go('schedule'); }
     if(el.dataset.sv){ S.sv = el.dataset.sv; return go('schedule'); }
     if(el.dataset.mnav){ S.mon = dAdd(S.mon + '-15', +el.dataset.mnav * 30).slice(0, 7); S.day = ''; return go('schedule'); }
     if(el.dataset.day){ S.day = el.dataset.day; if(S.day.slice(0, 7) !== S.mon) S.mon = S.day.slice(0, 7); const y = window.scrollY; await go('schedule'); return window.scrollTo(0, y); }

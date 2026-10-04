@@ -59,13 +59,15 @@ const SETTINGS = {
   '低堂數推播': ['是', '堂數不足時通知家長', 'bool'],
   '請假推播': ['是', '家長線上請假後，回覆「已收到請假」', 'bool'],
   '請假通知管理員': ['是', '家長線上請假後通知管理員與老師', 'bool'],
-  '諮詢通知管理員': ['是', '家長從課表按「諮詢」留言時，用 LINE 通知管理員', 'bool']
+  '諮詢通知管理員': ['是', '家長從課表按「諮詢」留言時，用 LINE 通知管理員', 'bool'],
+  '開放線上報名': ['是', '家長可在 LINE 課表對還沒參加的課程按「報名」', 'bool'],
+  '報名需審核': ['是', '是＝管理員同意後才加入名單；否＝家長按下就直接加入', 'bool']
 };
 const PLANS = [['P01', '單堂', 1, 500, 30], ['P02', '10堂卡', 10, 4500, 90], ['P03', '20堂卡', 20, 8000, 180]];
 const COLORS = ['#D6336C', '#1971C2', '#2B8A3E', '#E67700', '#7048E8', '#0C8599', '#C2255C', '#5C940D'];
 
 const OWNER_ONLY = new Set(['a.studentSave', 'a.enroll', 'a.unbind', 'a.topup', 'a.cardSave', 'a.courseSave', 'a.sessionSave', 'a.sessionDelete', 'a.genSessions',
-  'a.videoSave', 'a.videoDelete', 'a.planSave', 'a.settingSave', 'a.adminSave', 'a.richmenu', 'a.export', 'a.student', 'a.videos', 'a.plans', 'a.settings', 'a.admins', 'a.cards', 'a.ledger', 'a.topupSave', 'a.videoInfo', 'a.dayOff', 'a.familySave', 'a.courseDelete', 'a.courseStudents']);
+  'a.videoSave', 'a.videoDelete', 'a.planSave', 'a.settingSave', 'a.adminSave', 'a.richmenu', 'a.export', 'a.student', 'a.videos', 'a.plans', 'a.settings', 'a.admins', 'a.cards', 'a.ledger', 'a.topupSave', 'a.videoInfo', 'a.dayOff', 'a.familySave', 'a.courseDelete', 'a.courseStudents', 'a.signupSave']);
 const ASYNC = new Set(['a.richmenu', 'a.videoInfo']);
 /** 從各種 YouTube 網址取出影片 ID（watch、youtu.be、shorts、live、embed） */
 export const ytId = url => { const m = String(url || '').match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^#]*&)?v=|shorts\/|live\/|embed\/|v\/))([\w-]{11})(?![\w-])/); return m ? m[1] : ''; };
@@ -83,6 +85,7 @@ export function createApp(opts = {}) {
     if (!cols.includes('date_to')) db.exec("ALTER TABLE courses ADD COLUMN date_to TEXT DEFAULT ''");
     if (!db.prepare('PRAGMA table_info(students)').all().some(c => c.name === 'family')) db.exec("ALTER TABLE students ADD COLUMN family TEXT DEFAULT ''");
     if (!cols.includes('intro')) db.exec("ALTER TABLE courses ADD COLUMN intro TEXT DEFAULT ''");
+    db.exec("CREATE TABLE IF NOT EXISTS signups(id TEXT PRIMARY KEY, student_id TEXT, course_id TEXT, status TEXT, time TEXT, by_user TEXT, by_name TEXT, done_at TEXT DEFAULT '', done_by TEXT DEFAULT '')");
     db.exec('CREATE TABLE IF NOT EXISTS session_skips(id TEXT PRIMARY KEY)'); // 已刪除的固定場次，不再自動排回來
     db.exec("CREATE TABLE IF NOT EXISTS makeups(id TEXT PRIMARY KEY, student_id TEXT, session_id TEXT, from_session_id TEXT DEFAULT '', created_at TEXT, by_name TEXT)");
   }
@@ -382,29 +385,57 @@ export function createApp(opts = {}) {
       assertOwns(user, b.studentId);
       const mine = all('SELECT course_id FROM enrollments WHERE student_id=?', b.studentId).map(r => r.course_id);
       const mk = all('SELECT session_id id FROM makeups WHERE student_id=?', b.studentId).map(r => r.id);
-      const t = today(), end = addDays(t, cfgNum('課表顯示天數', 28)), cutoff = cfgNum('請假截止小時', 2) * 3600e3;
-      const visible = s => !mine.length || mine.includes(s.course_id) || mk.includes(s.id);
-      const view = s => {
+      const pending = all("SELECT course_id FROM signups WHERE student_id=? AND status='待審核'", b.studentId).map(r => r.course_id);
+      const t = today(), end = addDays(t, cfgNum('課表顯示天數', 28)), cutoff = cfgNum('請假截止小時', 2) * 3600e3, open = cfgOn('開放線上報名');
+      const live = new Set(all("SELECT id FROM courses WHERE status='啟用'").map(r => r.id));
+      const view = s => { // mine＝孩子有排入（或補課）；其他課只供瀏覽與報名
         const i = sessionInfo(s), rec = activeRecord(s.id, b.studentId);
         i.my = rec ? rec.status : '';
         i.makeup = mk.includes(s.id);
-        i.canLeave = !i.my && i.status === '正常' && toDate(i.date, i.start).getTime() - Date.now() > cutoff;
+        i.mine = mine.includes(s.course_id) || i.makeup || !!rec;
+        i.canLeave = i.mine && !i.my && i.status === '正常' && toDate(i.date, i.start).getTime() - Date.now() > cutoff;
         delete i.capacity; delete i.manual; delete i.rawTeacher; delete i.rawRoom; delete i.deduct;
+        if (!i.mine) i.note = ''; // 老師備註只給這堂課的家長看
         return i;
       };
+      const visible = s => mine.includes(s.course_id) || mk.includes(s.id) || live.has(s.course_id);
       const upcoming = all('SELECT * FROM sessions WHERE date>=? AND date<=? ORDER BY date,start', t, end).filter(visible).map(view);
       const wd = '日一二三四五六';
-      const courses = all("SELECT * FROM courses WHERE status='啟用' AND weekdays<>'' ORDER BY start").map(c => ({ id: c.id, name: c.name, teacher: c.teacher, day: courseDays(c).map(d => wd[d]).join('、'), start: c.start, end: c.end, room: c.room, enrolled: mine.includes(c.id), from: c.date_from || '', to: c.date_to || '' }));
       const vids = {}; videosFor(b.studentId).forEach(v => { if (v.courseId) vids[v.courseId] = (vids[v.courseId] || 0) + 1; });
-      const info = {}, addInfo = id => { if (info[id]) return; const c = get('SELECT * FROM courses WHERE id=?', id); if (c) info[id] = { id, name: c.name, intro: c.intro || '', teacher: c.teacher, room: c.room, day: courseDays(c).map(d => wd[d]).join('、'), start: c.start, end: c.end, from: c.date_from || '', to: c.date_to || '', oneoff: c.weekdays === '', videos: vids[id] || 0 }; };
-      const out = { upcoming, courses, enrolledOnly: mine.length > 0, today: t, info };
-      upcoming.forEach(u => addInfo(u.courseId)); courses.forEach(c => addInfo(c.id));
+      const info = {}, addInfo = id => { if (info[id]) return info[id]; const c = get('SELECT * FROM courses WHERE id=?', id); if (!c) return null;
+        const count = get("SELECT COUNT(*) n FROM enrollments e JOIN students st ON st.id=e.student_id WHERE e.course_id=? AND st.status='在學'", id).n;
+        const next = get("SELECT date,start FROM sessions WHERE course_id=? AND status='正常' AND date>=? ORDER BY date,start", id, t);
+        return (info[id] = { id, name: c.name, intro: c.intro || '', teacher: c.teacher, room: c.room, day: courseDays(c).map(d => wd[d]).join('、'), start: c.start, end: c.end, from: c.date_from || '', to: c.date_to || '', oneoff: c.weekdays === '', color: c.color, videos: vids[id] || 0,
+          enrolled: mine.includes(id), pending: pending.includes(id), capacity: c.capacity || 0, count, full: c.capacity > 0 && count >= c.capacity, next: next ? next.date + ' ' + next.start : '',
+          canSignup: open && c.status === '啟用' && !mine.includes(id) && !pending.includes(id) && !(c.capacity > 0 && count >= c.capacity) && !!next && !(c.date_to && c.date_to < t) }); };
+      // 教室全部課程：固定課程（未結束）＋還沒上的單次課程
+      const courses = all("SELECT * FROM courses WHERE status='啟用' ORDER BY weekdays='' , start").filter(c => !(c.date_to && c.date_to < t)).map(c => addInfo(c.id)).filter(Boolean);
+      const out = { upcoming, courses, enrolledOnly: mine.length > 0, today: t, info, signupOpen: open, review: cfgOn('報名需審核') };
+      upcoming.forEach(u => addInfo(u.courseId));
       if (b.month !== undefined) { // 月曆：整個月（含過去）的課
         out.month = /^\d{4}-\d{2}$/.test(b.month || '') ? b.month : t.slice(0, 7);
         out.monthSessions = all('SELECT * FROM sessions WHERE substr(date,1,7)=? ORDER BY date,start', out.month).filter(visible).map(view);
         out.monthSessions.forEach(u => addInfo(u.courseId));
       }
       return out;
+    },
+    /** 家長線上報名：需審核時先建立申請並通知管理員，否則直接加入名單 */
+    signup(b, user) {
+      assertOwns(user, b.studentId);
+      if (!cfgOn('開放線上報名')) throw new Error('目前沒有開放線上報名，請直接聯絡教室');
+      const c = get("SELECT * FROM courses WHERE id=? AND status='啟用'", b.courseId), stu = student(b.studentId);
+      if (!c) throw new Error('找不到這門課');
+      if (get('SELECT 1 x FROM enrollments WHERE student_id=? AND course_id=?', stu.id, c.id)) throw new Error(stu.name + ' 已經在這門課的名單上');
+      if (get("SELECT 1 x FROM signups WHERE student_id=? AND course_id=? AND status='待審核'", stu.id, c.id)) throw new Error('已經送出報名，請等教室確認');
+      const count = get("SELECT COUNT(*) n FROM enrollments e JOIN students st ON st.id=e.student_id WHERE e.course_id=? AND st.status='在學'", c.id).n;
+      if (c.capacity > 0 && count >= c.capacity) throw new Error('這門課已額滿，請按「諮詢」聯絡教室');
+      const review = cfgOn('報名需審核'), id = uid('G');
+      run('INSERT INTO signups(id,student_id,course_id,status,time,by_user,by_name) VALUES(?,?,?,?,?,?,?)', id, stu.id, c.id, review ? '待審核' : '已加入', now(), user.userId, user.name);
+      if (!review) run('INSERT INTO enrollments VALUES(?,?,?)', stu.id, c.id, today());
+      const when = c.weekdays === '' ? (c.date_from || '').slice(5).replace('-', '/') + ' ' + c.start : '每週' + courseDays(c).map(d => '日一二三四五六'[d]).join('、') + ' ' + c.start + '–' + c.end;
+      pushMsg(all("SELECT user_id FROM admins WHERE active=1 AND role='owner'").map(r => r.user_id), flexMsg('📝 線上報名｜' + stu.name + ' → ' + c.name, [flexBubble({ color: C.INFO, title: review ? '報名申請' : '新報名', name: stu.name,
+        rows: [['課程', c.name], ['時間', when], ['申請人', user.name], ['剩餘堂數', totalRemain(stu.id) + ' 堂']], note: review ? '請到後台「總覽 → 報名申請」同意或婉拒。' : '已自動加入這門課的學生名單。', noteColor: C.SUB })]));
+      return { status: review ? '待審核' : '已加入' };
     },
     leave(b, user) {
       assertOwns(user, b.studentId);
@@ -459,6 +490,7 @@ export function createApp(opts = {}) {
         stats: { students: stus.length, weekSessions: get("SELECT COUNT(*) n FROM sessions WHERE date>=? AND date<=? AND status<>'停課'", today(), addDays(today(), 6)).n,
           unbound: get("SELECT COUNT(*) n FROM students s WHERE s.status='在學' AND NOT EXISTS(SELECT 1 FROM bindings b WHERE b.student_id=s.id)").n,
           monthIncome: get('SELECT COALESCE(SUM(amount),0) n FROM topups WHERE time>=?', today().slice(0, 7) + '-01').n },
+        signups: get("SELECT COUNT(*) n FROM signups WHERE status='待審核'").n,
         low: lowList,
         expiring: all("SELECT c.id,c.plan_name plan,c.remain,c.expire,(SELECT GROUP_CONCAT(s.name,'、') FROM card_students cs JOIN students s ON s.id=cs.student_id WHERE cs.card_id=c.id) names FROM cards c WHERE c.status='啟用' AND c.remain>0 AND c.expire<>'' AND c.expire>=? AND c.expire<=? ORDER BY c.expire LIMIT 12", today(), soon),
         leaves: all('SELECT st.name student,l.reason,s.date,s.start,COALESCE(c.name,s.course_id) course FROM leaves l JOIN sessions s ON s.id=l.session_id JOIN students st ON st.id=l.student_id LEFT JOIN courses c ON c.id=s.course_id WHERE s.date>=? ORDER BY s.date,s.start LIMIT 12', today())
@@ -518,6 +550,20 @@ export function createApp(opts = {}) {
       old.filter(id => !want.includes(id)).forEach(id => run('DELETE FROM enrollments WHERE course_id=? AND student_id=?', b.courseId, id));
       want.filter(id => !old.includes(id)).forEach(id => run('INSERT INTO enrollments VALUES(?,?,?)', id, b.courseId, today()));
       return { ids: want, added: want.filter(id => !old.includes(id)).length, removed: old.filter(id => !want.includes(id)).length };
+    },
+    'a.signups'() {
+      return all("SELECT g.id,g.time,g.by_name by,g.student_id sid,st.name student,g.course_id courseId,c.name course,c.capacity FROM signups g JOIN students st ON st.id=g.student_id JOIN courses c ON c.id=g.course_id WHERE g.status='待審核' ORDER BY g.time")
+        .map(g => ({ ...g, remain: totalRemain(g.sid), count: get("SELECT COUNT(*) n FROM enrollments e JOIN students s ON s.id=e.student_id WHERE e.course_id=? AND s.status='在學'", g.courseId).n }));
+    },
+    'a.signupSave'(b, user) {
+      const g = get("SELECT * FROM signups WHERE id=? AND status='待審核'", b.id);
+      if (!g) throw new Error('這筆報名已經處理過了');
+      const stu = student(g.student_id), c = get('SELECT * FROM courses WHERE id=?', g.course_id);
+      run('UPDATE signups SET status=?, done_at=?, done_by=? WHERE id=?', b.approve ? '已加入' : '已婉拒', now(), user.admin.name || user.name, g.id);
+      if (b.approve && stu && c) run('INSERT OR IGNORE INTO enrollments VALUES(?,?,?)', stu.id, c.id, today());
+      if (stu && c) pushMsg(parentsOf(stu.id), flexMsg((b.approve ? '✅ 報名成功｜' : '報名結果｜') + stu.name + ' ' + c.name, [flexBubble({ color: b.approve ? C.OK : C.SUB, title: b.approve ? '報名成功' : '報名未成功', name: stu.name,
+        rows: [['課程', c.name], ['老師', c.teacher]], note: b.approve ? '已加入課程名單，可在課表查看上課時間與請假。' : (str(b.reason) || '這次沒有辦法安排，詳情請按課表上的「諮詢」聯絡我們。'), noteColor: C.INK, btn: ['查看課表', 'schedule'] })]));
+      return { ok: true };
     },
     'a.close'(b, user) {
       const sess = sessRow(b.sessionId);
