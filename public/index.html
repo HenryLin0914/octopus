@@ -63,7 +63,11 @@ h2{font-size:15px;color:var(--sub);margin:18px 4px 8px;font-weight:600}
 .mc{min-height:52px;border:0;border-right:1px solid var(--line);border-bottom:1px solid var(--line);background:#fff;padding:5px 1px;display:flex;flex-direction:column;align-items:center;gap:4px;font:inherit;color:inherit;min-width:0}
 .mc:nth-child(7n){border-right:0}.mc:nth-last-child(-n+7){border-bottom:0}.mc.out{background:#faf8f5}.mc.out .dn{opacity:.4}
 .mc .dn{font-size:14px;font-weight:600;width:26px;height:26px;line-height:26px;text-align:center;border-radius:50%}.mc.today .dn{background:var(--brand);color:#fff}.mc.sel{box-shadow:inset 0 0 0 2px var(--brand)}
-.dots{display:flex;gap:3px;justify-content:center;min-height:7px}.dots i{width:7px;height:7px;border-radius:50%}
+.dots{display:flex;gap:3px;justify-content:center;align-items:center;min-height:10px}
+.dots i,.legend i{display:inline-block;width:8px;height:8px;border-radius:50%;flex:none}
+.dots i.o,.legend i.o{width:10px;height:10px;background:#fff;border:2px solid}
+.dots i.x,.legend i.x{width:10px;height:10px;border-radius:0;background:linear-gradient(45deg,transparent 42%,#8d8389 42%,#8d8389 58%,transparent 58%),linear-gradient(-45deg,transparent 42%,#8d8389 42%,#8d8389 58%,transparent 58%)}
+.legend{display:flex;gap:16px;font-size:13px;color:var(--sub);margin:6px 4px 0}.legend span{display:flex;align-items:center;gap:6px}
 #toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:#222;color:#fff;padding:10px 18px;border-radius:999px;font-size:14px;display:none;z-index:9;max-width:90%}
 #toast.show{display:block}#toast.bad{background:var(--bad)}
 #load{position:fixed;inset:0;background:rgba(246,244,241,.6);display:none;align-items:center;justify-content:center;z-index:8}
@@ -132,10 +136,10 @@ const PAGES = {
     const d = await api('schedule', S.sv === 'month' ? { studentId: S.cur, month: S.mon || '' } : { studentId: S.cur });
     const T = d.today;
     const card = u => `<div class="sc ${u.status === '停課' ? 'off' : ''}"><span class="strip" style="background:${u.status === '停課' ? '#b9b0b6' : esc(u.color)}"></span><div class="g">
-        <div class="t">${esc(u.course)} ${u.makeup ? '<span class="tag ok">補課</span>' : ''} ${u.status === '停課' ? tagOf('停課') : (u.my ? tagOf(u.my) : '')}</div>
+        <div class="t">${esc(u.course)} ${u.makeup ? '<span class="tag ok">補課</span>' : ''} ${u.status === '停課' ? tagOf('停課') : (u.my ? `<span class="tag ${u.my === '出席' ? 'ok' : u.my === '請假' ? 'warn' : 'bad'}">${u.my === '請假' ? '已請假' : u.my === '出席' ? '已出席' : esc(u.my)}</span>` : '')}</div>
         <div class="s">${dLabel(u.date)} ${esc(u.start)}–${esc(u.end)}</div><div class="s">${[u.teacher, u.room].filter(Boolean).map(esc).join('｜')}</div>
         ${u.note ? `<div class="nt"><b>${u.status === '停課' ? '停課原因' : '老師備註'}</b>${esc(u.note)}</div>` : ''}</div>
-        ${u.canLeave ? `<button class="btn sm ghost" data-lvs="${esc(u.sessionId)}">請假</button>` : ''}</div>`;
+        ${u.canLeave ? `<button class="btn sm ghost" data-lvs="${esc(u.sessionId)}">我要請假</button>` : ''}</div>`;
     const seg = `<div class="seg"><button class="${S.sv === 'list' ? 'on' : ''}" data-sv="list">近期</button><button class="${S.sv === 'month' ? 'on' : ''}" data-sv="month">月曆</button></div>`;
     const all = `<h2>教室全部課程</h2>
       <div class="card">${d.courses.map(c=>`
@@ -151,10 +155,11 @@ const PAGES = {
     const sel = by[S.day] || [];
     return `${chips()}${seg}
       <div class="mnav"><button class="btn sm ghost" data-mnav="-1">‹</button><b>${S.mon.replace('-', ' 年 ')} 月</b><button class="btn sm ghost" data-mnav="1">›</button></div>
-      <div class="mcal"><div class="mh">${[1,2,3,4,5,6,0].map(w => `<span>${WD[w]}</span>`).join('')}</div><div class="mg">${days.map(x => { const L = by[x] || []; return `<button class="mc ${x.slice(0, 7) !== S.mon ? 'out' : ''} ${x === T ? 'today' : ''} ${x === S.day ? 'sel' : ''}" data-day="${x}"><span class="dn">${+x.slice(8)}</span><span class="dots">${L.slice(0, 4).map(u => `<i style="background:${u.status === '停課' ? '#b9b0b6' : u.my === '請假' ? '#e67700' : esc(u.color)}"></i>`).join('')}</span></button>`; }).join('')}</div></div>
+      <div class="mcal"><div class="mh">${[1,2,3,4,5,6,0].map(w => `<span>${WD[w]}</span>`).join('')}</div><div class="mg">${days.map(x => { const L = by[x] || []; return `<button class="mc ${x.slice(0, 7) !== S.mon ? 'out' : ''} ${x === T ? 'today' : ''} ${x === S.day ? 'sel' : ''}" data-day="${x}"><span class="dn">${+x.slice(8)}</span><span class="dots">${L.slice(0, 4).map(u => u.status === '停課' ? '<i class="x"></i>' : u.my === '請假' ? `<i class="o" style="border-color:${esc(u.color)}"></i>` : `<i style="background:${esc(u.color)}"></i>`).join('')}</span></button>`; }).join('')}</div></div>
       <h2>${dLabel(S.day)}${S.day === T ? '｜今天' : ''}</h2>
       ${sel.length ? sel.map(card).join('') : '<div class="card"><div class="empty" style="padding:14px 0">這天沒有課</div></div>'}
-      <p class="s" style="font-size:13px;color:var(--sub);margin:4px 4px 0">這個月共 ${d.monthSessions.filter(u => u.status !== '停課').length} 堂課。灰點是停課，橘點是已請假。</p>${all}`;
+      <p class="s" style="font-size:13px;color:var(--sub);margin:4px 4px 0">這個月共 ${d.monthSessions.filter(u => u.status !== '停課').length} 堂課。</p>
+      <div class="legend"><span><i style="background:var(--brand)"></i>有課</span><span><i class="o" style="border-color:var(--brand)"></i>已請假</span><span><i class="x"></i>停課</span></div>${all}`;
   },
 
   async leave(){
