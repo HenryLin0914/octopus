@@ -312,7 +312,7 @@ async function go(p){
   const m = S.menu.find(x => x.code === p);
   $('#title').textContent = p === 'home' ? S.studio : (m ? m.name : S.studio);
   $('#back').hidden = p === 'home' || p === 'welcome';
-  try { $('#app').innerHTML = await PAGES[p](); }
+  try { $('#app').innerHTML = await PAGES[p](); centerDate(); }
   catch(e){ $('#app').innerHTML = `<div class="card big"><div class="i">⚠️</div><p>${esc(e.message)}</p><button class="btn ghost" data-go="home">回首頁</button></div>`; }
   window.scrollTo(0, 0);
 }
@@ -320,6 +320,8 @@ async function go(p){
 const toMin = t => +t.slice(0, 2) * 60 + +t.slice(3, 5);
 function keepForm(){ ['name', 'phone', 'people', 'purpose'].forEach(k => { const el = $('#r-' + k); if(el) S.r[k] = el.value.trim(); }); }
 async function keep(p){ const y = window.scrollY; await go(p); window.scrollTo(0, y); }
+/** 橫向日期列重畫後，把選到的日期捲回畫面中間（不然會跳回最前面） */
+function centerDate(){ const on = $('.dstrip .on'); if(on){ const st = on.parentNode; st.scrollLeft = on.offsetLeft - st.offsetLeft - (st.clientWidth - on.offsetWidth) / 2; } }
 function sheet(html){ closeSheet(); const m = document.createElement('div'); m.id = 'sheet'; m.innerHTML = `<div class="sh"><button id="sheet-x" aria-label="關閉">×</button>${html}</div>`; m.addEventListener('click', e => { if(e.target === m) closeSheet(); }); document.body.appendChild(m); }
 function closeSheet(){ const m = $('#sheet'); if(m) m.remove(); }
 /** 諮詢：回到官方帳號聊天室，並先幫家長帶好要問的內容 */
