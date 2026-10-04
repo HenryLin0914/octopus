@@ -263,16 +263,16 @@ const PAGES = {
     if (!d.open || !d.rooms.length) return `<div class="card big"><div class="i">🏠</div><p>${d.open ? '目前沒有開放租借的教室' : '目前沒有開放線上租借'}</p><p class="hint">想租借請按下方按鈕直接詢問我們。</p><button class="btn" data-ask="教室租借">💬 詢問租借</button></div>${mineHtml}`;
     if (!d.rooms.find(r => r.id === R.roomId)) { R.roomId = d.rooms.length === 1 ? d.rooms[0].id : ''; R.date = ''; }
     const room = d.rooms.find(r => r.id === R.roomId);
-    const rooms = `<h2>① 選擇教室</h2>${d.rooms.map(r => `<button class="kid ${r.id === R.roomId ? 'on' : ''}" data-rroom="${esc(r.id)}" style="margin-bottom:8px"><span class="g"><span class="t">${esc(r.name)}</span><span class="s" style="white-space:normal">${[r.capacity ? '可容納 ' + r.capacity + ' 人' : '', r.price ? '每小時 ' + r.price + ' 元' : '', r.days.length ? '開放：週' + [1,2,3,4,5,6,0].filter(x => r.days.includes(x)).map(x => WD[x]).join('、') : '尚未設定開放時段'].filter(Boolean).join('｜')}</span>${r.intro ? `<span class="s" style="white-space:normal">${esc(r.intro)}</span>` : ''}</span></button>`).join('')}`;
+    const rooms = `<h2>① 選擇教室</h2>${d.rooms.map(r => `<button class="kid ${r.id === R.roomId ? 'on' : ''}" data-rroom="${esc(r.id)}" style="margin-bottom:8px"><span class="g"><span class="t">${esc(r.name)}</span><span class="s" style="white-space:normal">${[r.capacity ? '可容納 ' + r.capacity + ' 人' : '', r.price ? '每小時 ' + r.price + ' 元' : '', r.dates.length ? (r.days.length ? '固定開放：週' + [1,2,3,4,5,6,0].filter(x => r.days.includes(x)).map(x => WD[x]).join('、') : '近期有 ' + r.dates.length + ' 天開放') : '近期沒有開放時段'].filter(Boolean).join('｜')}</span>${r.intro ? `<span class="s" style="white-space:normal">${esc(r.intro)}</span>` : ''}</span></button>`).join('')}`;
     let pick = '';
     if (room) {
       const days = []; for (let x = T; x <= d.lastDay; x = dAdd(x, 1)) days.push(x);
-      if (!R.date || R.date < T || R.date > d.lastDay) { R.date = days.find(x => room.days.includes(dDay(x))) || T; R.start = R.end = ''; }
+      if (!R.date || R.date < T || R.date > d.lastDay) { R.date = days.find(x => room.dates.includes(x)) || T; R.start = R.end = ''; }
       const sl = (await api('rentSlots', { roomId: room.id, date: R.date })).slots; R.slots = sl;
       if (R.start && !sl.some(k => k.start === R.start && k.free)) R.start = R.end = '';
       const inSel = k => R.start && k.start >= R.start && k.end <= (R.end || sl.find(x => x.start === R.start).end);
       const hrs = R.start ? (toMin(R.end || sl.find(x => x.start === R.start).end) - toMin(R.start)) / 60 : 0;
-      pick = `<h2>② 選擇日期</h2><div class="dstrip">${days.map(x => `<button class="${x === R.date ? 'on' : ''}" data-rdate="${x}" ${room.days.includes(dDay(x)) ? '' : 'disabled'}><small>${x === T ? '今天' : '週' + WD[dDay(x)]}</small><b>${+x.slice(8)}</b><small>${+x.slice(5, 7)} 月</small></button>`).join('')}</div>
+      pick = `<h2>② 選擇日期</h2><div class="dstrip">${days.map(x => `<button class="${x === R.date ? 'on' : ''}" data-rdate="${x}" ${room.dates.includes(x) ? '' : 'disabled'}><small>${x === T ? '今天' : '週' + WD[dDay(x)]}</small><b>${+x.slice(8)}</b><small>${+x.slice(5, 7)} 月</small></button>`).join('')}</div>
         <h2>③ 選擇時段 <span style="font-weight:400">${dLabel(R.date)}</span></h2>
         ${sl.length ? `<div class="slots">${sl.map(k => `<button class="${inSel(k) ? 'on' : ''}" data-rslot="${k.start}" ${k.free ? '' : 'disabled'}><b>${k.start}</b><small>${k.free ? '–' + k.end : esc(k.why)}</small></button>`).join('')}</div>
           <p class="hint">${R.start ? '已選 <b style="color:var(--ink)">' + R.start + '–' + (R.end || sl.find(x => x.start === R.start).end) + '</b>（' + hrs + ' 小時' + (room.price ? '，約 ' + Math.round(room.price * hrs) + ' 元' : '') + '）。要更長請再點結束的那一格；重選請點其他開始時間。' : '點一格是開始時間，再點後面的格子可以延長。最晚要在使用前 ' + d.advance + ' 小時預約。'}</p>`

@@ -58,6 +58,15 @@ main{padding:22px 26px 60px;min-width:0}
 .vcard .t{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .vcard .acts{margin-top:auto;padding-top:4px}
 .arow{width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);font:inherit;color:inherit;cursor:pointer}.arow:hover{background:var(--soft)}
+.rcg .rc{min-height:66px;border:0;border-right:1px solid var(--line);border-bottom:1px solid var(--line);background:#fff;padding:4px 3px;display:flex;flex-direction:column;align-items:center;gap:2px;font:inherit;color:inherit;min-width:0}
+.rcg .rc:nth-child(7n){border-right:0}.rc.out{background:var(--soft)}.rc.past{opacity:.5}
+.rc .dn{font-size:13px;font-weight:600;position:relative;width:24px;height:24px;line-height:24px;text-align:center;border-radius:50%}.rc.today .dn{background:var(--brand);color:#fff}
+.rc .dn i{position:absolute;right:-5px;top:0;width:7px;height:7px;border-radius:50%;background:var(--brand);border:1px solid #fff}
+.rc .hr{font-size:10.500px;line-height:1.25;color:var(--sub);text-align:center;overflow-wrap:anywhere}.rc.open{background:#eef8f0}.rc.open .hr{color:var(--ok);font-weight:600}
+.rc .bz{font-size:10px;color:var(--info)}
+.hgrid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px}
+.hgrid button{border:1px solid var(--line);background:#fff;border-radius:9px;padding:9px 0;font:inherit;font-size:14px;font-variant-numeric:tabular-nums;color:var(--ink)}
+.hgrid button.on{background:var(--ok);border-color:var(--ok);color:#fff;font-weight:600}
 .bk{display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:4px 10px 4px 4px;margin-bottom:8px;flex-wrap:wrap}
 .bk.dim{opacity:.6}.bkm{flex:1 1 220px;min-width:0;display:flex;gap:12px;align-items:flex-start;text-align:left;border:0;background:none;padding:9px 8px;font:inherit;color:inherit}
 .bkm .tm{font-weight:700;font-variant-numeric:tabular-nums;flex:none;width:50px}.bkm .tm small{display:block;font-weight:400;color:var(--sub);font-size:12px}
@@ -203,6 +212,8 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
   .sch .sp{display:none}
   .sch .tools{width:100%;display:grid;grid-template-columns:repeat(auto-fit,minmax(0,1fr))}.sch .tools select,.sch .tools .btn{width:100%;max-width:none;padding:10px 6px}
   .abar{grid-template-columns:1fr 1fr}
+  .hgrid{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .rcg .rc{min-height:60px;padding:3px 1px}.rc .hr{font-size:9.500px}
   .vgrid{grid-template-columns:minmax(0,1fr);gap:10px}
   .vcard{flex-direction:row}.vcard .thumb{width:128px;flex:none;aspect-ratio:auto;min-height:96px}.vcard .thumb:after{width:36px;height:36px;margin:-18px;background-size:20px}.vcard .in{min-width:0;padding:10px 12px}
   .setv.num{width:68px}.setv:not(.num){width:100%}.row:has(.setv:not(.num)){flex-wrap:wrap}
@@ -441,10 +452,10 @@ const PAGES = {
     if (R.tab === 'tags') return head + `<div class="card">${d.tags.length ? d.tags.map(t => `<div class="row"><span class="dot" style="background:${esc(t.color)}"></span><div class="g t">${esc(t.name)}</div><span class="s">${d.bookings.filter(b => b.tags.includes(t.id)).length} 筆</span><button class="btn sm" data-rtag="${esc(t.id)}">編輯</button></div>`).join('') : '<div class="empty">還沒有標籤</div>'}</div>
       <p class="s">標籤用來幫預約分類，例如「已付款」「未付款」「常客」「舞團」「需開冷氣」。在預約裡勾選即可，只有後台看得到。</p>`;
     if (R.tab === 'rooms') {
-      const hours = r => [1, 2, 3, 4, 5, 6, 0].filter(w => (r.open[w] || []).length).map(w => `<div class="s"><b style="color:var(--ink)">週${WD[w]}</b>　${r.open[w].map(x => x[0] + '–' + x[1]).join('、')}</div>`).join('') || '<div class="s" style="color:var(--warn)">尚未設定開放時段，外部看不到可預約的時間</div>';
+      const hours = r => [1, 2, 3, 4, 5, 6, 0].filter(w => (r.open[w] || []).length).map(w => `<div class="s"><b style="color:var(--ink)">週${WD[w]}</b>　${r.open[w].map(x => x[0] + '–' + x[1]).join('、')}</div>`).join('') || '<div class="s" style="color:var(--warn)">還沒有每週固定時段（可以只在月曆上開放個別日期）</div>';
       return head + (d.rooms.length ? d.rooms.map(r => `<div class="card" style="margin-bottom:12px"><div class="row" style="padding-top:0"><div class="g"><div class="t" style="font-size:17px">${esc(r.name)} ${r.status === '開放' ? '<span class="tag ok">開放租借</span>' : '<span class="tag">已關閉</span>'}</div>
           <div class="s">${[r.capacity ? '可容納 ' + r.capacity + ' 人' : '', '每小時 ' + money(r.price), '最小單位 ' + r.unit + ' 分鐘'].filter(Boolean).join('｜')}</div></div><button class="btn sm" data-room="${esc(r.id)}">編輯</button></div>
-          <div style="padding-top:8px">${hours(r)}</div>${r.intro ? `<div class="s" style="margin-top:6px">${esc(r.intro)}</div>` : ''}</div>`).join('') : '<div class="card empty">還沒有可租借的教室。<br><br><button class="btn p" data-room="">＋ 新增第一間教室</button><br><br><span class="s">設定教室名稱、價格和每週開放時段後，外部的人就能在 LINE 上預約。</span></div>')
+          <div style="padding-top:8px"><div class="s" style="margin-bottom:2px">每週固定開放</div>${hours(r)}</div><button class="btn p" data-rcal="${esc(r.id)}" style="margin-top:10px;width:100%">📅 用月曆設定開放時段</button>${r.intro ? `<div class="s" style="margin-top:6px">${esc(r.intro)}</div>` : ''}</div>`).join('') : '<div class="card empty">還沒有可租借的教室。<br><br><button class="btn p" data-room="">＋ 新增第一間教室</button><br><br><span class="s">設定教室名稱、價格和每週開放時段後，外部的人就能在 LINE 上預約。</span></div>')
         + `<div class="card"><h2>不開放的日期／時段<span class="sp"></span><button class="btn sm" data-block>＋ 新增</button></h2>${d.blocks.length ? d.blocks.map(k => `<div class="row"><div class="g"><div class="t">${dLabel(k.date)} ${k.start ? esc(k.start) + '–' + esc(k.end) : '整天'}</div><div class="s">${esc((d.rooms.find(r => r.id === k.room_id) || {}).name || '全部教室')}${k.note ? '｜' + esc(k.note) : ''}</div></div><button class="btn sm ghost" style="color:var(--bad)" data-blockdel="${esc(k.id)}">移除</button></div>`).join('') : '<div class="empty">目前沒有</div>'}</div>
         <p class="s">教室名稱和課程的「教室」欄位相同時，有課的時段會自動不開放租借，不用另外設定。</p>`;
     }
@@ -745,21 +756,55 @@ function editBooking(id) {
   q('roomId').onchange = busy; q('date').onchange = busy; busy();
 }
 function editRoom(id) {
-  const r = id ? A.rent.data.rooms.find(x => x.id === id) : null, txt = w => ((r && r.open[w]) || []).map(x => x[0] + '-' + x[1]).join(', ');
+  const r = id ? A.rent.data.rooms.find(x => x.id === id) : null;
   const F = [{ k: 'name', label: '教室名稱（和課程的「教室」同名時，有課的時段自動不開放）', ph: '例：A教室' }, { k: 'capacity', label: '可容納人數', type: 'number', half: 1 }, { k: 'price', label: '每小時價格', type: 'number', half: 1 },
     { k: 'unit', label: '最小預約單位', type: 'select', opts: [['60', '1 小時'], ['30', '30 分鐘']], half: 1 }, { k: 'status', label: '狀態', type: 'select', opts: [['開放', '開放租借'], ['關閉', '暫不開放']], half: 1 },
-    { k: 'intro', label: '教室介紹（外部看得到）', type: 'textarea', rows: 2, ph: '例：15 坪、整面鏡牆、木地板、藍牙音響' },
-    ...[1, 2, 3, 4, 5, 6, 0].map(w => ({ k: 'w' + w, label: '週' + WD[w] + ' 開放時段', ph: '不開放請留白' }))];
-  const v = r ? { ...r, ...Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map(w => ['w' + w, txt(w)])) } : { unit: '60', status: '開放', price: 0, capacity: 0 };
-  const m = formDialog(r ? '編輯教室' : '新增教室', F, v, async o => {
-    const open = {};
-    for (const w of [0, 1, 2, 3, 4, 5, 6]) { const parts = o['w' + w].split(/[,，、;；\s]+/).filter(Boolean).map(x => x.match(/^(\d{1,2})[:：]?(\d{2})?\s*[-–~～到至]\s*(\d{1,2})[:：]?(\d{2})?$/));
-      if (parts.some(x => !x)) throw new Error('週' + WD[w] + ' 的時段格式不對，請寫成 09:00-12:00，多段用逗號分開');
-      if (parts.length) open[w] = parts.map(x => [x[1].padStart(2, '0') + ':' + (x[2] || '00'), x[3].padStart(2, '0') + ':' + (x[4] || '00')]); }
-    await api('a.roomSave', { id: id || undefined, ...o, open }); toast('已儲存'); show();
-  }, { extra: '<button class="btn sm" data-fillw style="margin-top:12px">把週一的時段套用到每一天</button><p class="s">時段寫法：<b>09:00-12:00, 14:00-22:00</b>（多段用逗號分開，不開放的日子留白）。</p>',
+    { k: 'intro', label: '教室介紹（外部看得到）', type: 'textarea', rows: 2, ph: '例：15 坪、整面鏡牆、木地板、藍牙音響' }];
+  formDialog(r ? '編輯教室' : '新增教室', F, r || { unit: '60', status: '開放', price: 0, capacity: 0 }, async o => {
+    const x = await api('a.roomSave', { id: id || undefined, ...o }); toast('已儲存'); await show(); if (!r) roomCalendar(x.id);
+  }, { saveText: r ? '儲存' : '下一步：設定開放時段', extra: '<p class="s">開放時段在月曆上設定：點日期 → 點選要開放的時間 → 選擇「只有這一天」或「每週都這樣」。</p>',
     del: r ? { text: '刪除教室', confirm: '確定刪除這間教室？過去的預約紀錄會保留。', run: async () => { await api('a.roomDelete', { id }); toast('已刪除'); show(); } } : undefined });
-  $('[data-fillw]', m).onclick = () => { const x = $('[name=w1]', m).value; [2, 3, 4, 5, 6, 0].forEach(w => { $(`[name=w${w}]`, m).value = x; }); };
+}
+/** 月曆式開放時段：點日期設定當天（或每週同一天）開放的時間 */
+async function roomCalendar(roomId, month) {
+  const d = await api('a.roomCal', { roomId, month: month || '' }), T = d.today;
+  const first = d.month + '-01', lead = (dDay(first) + 6) % 7, short = r => r.map(x => x[0].replace(':00', '') + '–' + x[1].replace(':00', '')).join(' ');
+  const cell = x => `<button class="rc ${x.date === T ? 'today' : ''} ${x.date < T ? 'past' : ''} ${x.ranges.length ? 'open' : ''}" data-rd="${x.date}"><span class="dn">${+x.date.slice(8)}${x.custom ? '<i title="單日設定"></i>' : ''}</span>
+    <span class="hr">${x.closed ? '整天關閉' : x.ranges.length ? esc(short(x.ranges)) : '—'}</span>${x.booked || x.classes ? `<span class="bz">${x.booked ? '約' + x.booked : ''}${x.booked && x.classes ? '・' : ''}${x.classes ? '課' + x.classes : ''}</span>` : ''}</button>`;
+  const m = dialog('開放時段｜' + d.room.name, `<div class="snav" style="margin:10px 0"><button class="btn" data-rm="-1">‹</button><b style="flex:1">${d.month.replace('-', ' 年 ')} 月</b><button class="btn" data-rm="1">›</button><button class="btn" data-rm="0">本月</button></div>
+    <div class="mcal"><div class="mh">${[1, 2, 3, 4, 5, 6, 0].map(w => `<span>${WD[w]}</span>`).join('')}</div><div class="mg rcg">${'<span class="rc out"></span>'.repeat(lead)}${d.days.map(cell).join('')}</div></div>
+    <div class="s" style="margin-top:10px;line-height:1.7">點日期就能設定那天開放的時間。<br><b style="color:var(--ok)">綠色</b>＝有開放｜右上<b style="color:var(--brand)">紅點</b>＝這天是單獨設定的，和每週固定不同｜「約 2」＝已有 2 筆預約｜「課 1」＝有 1 堂課占用</div>`, { wide: true });
+  m.addEventListener('click', async e => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.rm !== undefined) { const n = +b.dataset.rm; m.remove(); return roomCalendar(roomId, n ? dAdd(d.month + '-15', n * 30).slice(0, 7) : T.slice(0, 7)); }
+    if (b.dataset.rd) { const x = d.days.find(k => k.date === b.dataset.rd); m.remove(); hoursDialog(d.room, x, d.month); }
+  });
+  const ob = new MutationObserver(() => { if (!document.body.contains(m)) { ob.disconnect(); if (!$('.mask')) show(); } }); ob.observe(document.body, { childList: true });
+}
+function hoursDialog(room, day, month) {
+  const unit = room.unit || 60, t2m = t => +t.slice(0, 2) * 60 + +t.slice(3), m2t = n => String(Math.floor(n / 60)).padStart(2, '0') + ':' + String(n % 60).padStart(2, '0');
+  const slots = []; for (let n = 6 * 60; n < 24 * 60; n += unit) slots.push(n);
+  const on = new Set(slots.filter(n => day.ranges.some(r => t2m(r[0]) <= n && n + unit <= t2m(r[1]))));
+  const w = dDay(day.date), back = () => roomCalendar(room.id, month);
+  const m = dialog(`${dLabel(day.date)} 開放時段｜${room.name}`, `<div class="acts" style="margin:10px 0 8px">${[['全天', 360, 1440], ['上午', 360, 720], ['下午', 720, 1080], ['晚上', 1080, 1440], ['清除', 0, 0]].map(p => `<button class="btn sm" data-pre="${p[1]},${p[2]}">${p[0]}</button>`).join('')}</div>
+    <div class="hgrid">${slots.map(n => `<button data-h="${n}">${m2t(n)}</button>`).join('')}</div><div class="s" id="hsum" style="margin:8px 0"></div>
+    <label class="f">套用範圍<select id="hscope"><option value="date">只有 ${day.date.slice(5).replace('-', '/')} 這一天</option><option value="weekly">每週${WD[w]}都這樣（固定時段）</option></select></label>
+    <p class="s">點一下開放、再點一下關閉，可以連續點多格。${day.booked || day.classes ? '<br>這天已有' + (day.booked ? ' ' + day.booked + ' 筆預約' : '') + (day.classes ? ' ' + day.classes + ' 堂課' : '') + '，縮短開放時段不會取消已成立的預約。' : ''}</p>`,
+    { foot: `${day.custom ? '<button class="btn ghost" data-hreset>恢復每週固定</button>' : ''}<span class="sp"></span><button class="btn" data-x>取消</button><button class="btn p" data-hsave>儲存</button>` });
+  const ranges = () => { const out = []; slots.forEach(n => { if (!on.has(n)) return; const l = out[out.length - 1]; if (l && l[1] === n) l[1] = n + unit; else out.push([n, n + unit]); }); return out.map(r => [m2t(r[0]), r[1] >= 1440 ? '24:00' : m2t(r[1])]); };
+  const paint = () => { $$('[data-h]', m).forEach(b => b.classList.toggle('on', on.has(+b.dataset.h))); const r = ranges(); $('#hsum', m).innerHTML = r.length ? '開放：<b style="color:var(--ink)">' + r.map(x => x[0] + '–' + x[1]).join('、') + '</b>' : '<b style="color:var(--warn)">這天不開放</b>'; };
+  paint();
+  let closed = false;
+  m.addEventListener('click', async e => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.h) { const n = +b.dataset.h; on.has(n) ? on.delete(n) : on.add(n); return paint(); }
+    if (b.dataset.pre) { const [a, z] = b.dataset.pre.split(',').map(Number); if (!z) on.clear(); else slots.forEach(n => { if (n >= a && n + unit <= z) on.add(n); }); return paint(); }
+    try {
+      if ('hsave' in b.dataset) { const sc = $('#hscope', m).value; await api('a.roomHours', { roomId: room.id, date: day.date, scope: sc, ranges: ranges() }); toast(sc === 'weekly' ? '已設定每週' + WD[w] + '的固定時段' : '已設定 ' + day.date.slice(5).replace('-', '/') + ' 的開放時段'); closed = true; m.remove(); back(); }
+      if ('hreset' in b.dataset) { await api('a.roomHours', { roomId: room.id, date: day.date, scope: 'reset' }); toast('已恢復每週固定時段'); closed = true; m.remove(); back(); }
+    } catch (err) { toast(err.message, true); }
+  });
+  const ob = new MutationObserver(() => { if (!document.body.contains(m)) { ob.disconnect(); if (!closed) back(); } }); ob.observe(document.body, { childList: true });
 }
 
 /* ---------- 影片 ---------- */
@@ -836,6 +881,7 @@ document.addEventListener('click', async e => {
     if (ds.bkok) { const r = await apiConflict('a.bookingSave', { id: ds.bkok, status: '已確認' }); toast('已確認' + rentNoti(r)); return show(); }
     if (ds.bkno) return formDialog('婉拒這筆預約', [{ k: 'reason', label: '給預約人的說明（選填）', ph: '例：這個時段已有活動，歡迎改約其他時間' }], {}, async o => { const r = await api('a.bookingSave', { id: ds.bkno, status: '已婉拒', reason: o.reason }); toast('已婉拒' + rentNoti(r)); show(); }, { saveText: '確定婉拒' });
     if ('room' in ds) return editRoom(ds.room);
+    if (ds.rcal) return roomCalendar(ds.rcal);
     if ('block' in ds) return formDialog('新增不開放的時段', [{ k: 'roomId', label: '教室', type: 'select', opts: [['', '全部教室']].concat(A.rent.data.rooms.map(r => [r.id, r.name])) }, { k: 'date', label: '日期', type: 'date' }, { k: 'start', label: '開始（整天請留白）', type: 'time', half: 1 }, { k: 'end', label: '結束', type: 'time', half: 1 }, { k: 'note', label: '原因（外部看得到）', ph: '例：整修、包場' }],
       { date: A.meta.today }, async o => { await api('a.rentBlockSave', o); toast('已新增'); show(); }, { saveText: '新增' });
     if (ds.blockdel) { await api('a.rentBlockDelete', { id: ds.blockdel }); toast('已移除'); return show(); }

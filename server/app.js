@@ -72,7 +72,7 @@ const PLANS = [['P01', '單堂', 1, 500, 30], ['P02', '10堂卡', 10, 4500, 90],
 const COLORS = ['#D6336C', '#1971C2', '#2B8A3E', '#E67700', '#7048E8', '#0C8599', '#C2255C', '#5C940D'];
 
 const OWNER_ONLY = new Set(['a.studentSave', 'a.enroll', 'a.unbind', 'a.topup', 'a.cardSave', 'a.courseSave', 'a.sessionSave', 'a.sessionDelete', 'a.genSessions',
-  'a.videoSave', 'a.videoDelete', 'a.planSave', 'a.settingSave', 'a.adminSave', 'a.richmenu', 'a.export', 'a.student', 'a.videos', 'a.plans', 'a.settings', 'a.admins', 'a.cards', 'a.ledger', 'a.topupSave', 'a.videoInfo', 'a.dayOff', 'a.familySave', 'a.courseDelete', 'a.courseStudents', 'a.signupSave', 'a.rent', 'a.roomSave', 'a.roomDelete', 'a.rentBlockSave', 'a.rentBlockDelete', 'a.rentTagSave', 'a.rentTagDelete', 'a.bookingSave', 'a.rentSlots']);
+  'a.videoSave', 'a.videoDelete', 'a.planSave', 'a.settingSave', 'a.adminSave', 'a.richmenu', 'a.export', 'a.student', 'a.videos', 'a.plans', 'a.settings', 'a.admins', 'a.cards', 'a.ledger', 'a.topupSave', 'a.videoInfo', 'a.dayOff', 'a.familySave', 'a.courseDelete', 'a.courseStudents', 'a.signupSave', 'a.rent', 'a.roomSave', 'a.roomDelete', 'a.rentBlockSave', 'a.rentBlockDelete', 'a.rentTagSave', 'a.rentTagDelete', 'a.bookingSave', 'a.rentSlots', 'a.roomCal', 'a.roomHours']);
 const ASYNC = new Set(['a.richmenu', 'a.videoInfo']);
 /** 從各種 YouTube 網址取出影片 ID（watch、youtu.be、shorts、live、embed） */
 export const ytId = url => { const m = String(url || '').match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^#]*&)?v=|shorts\/|live\/|embed\/|v\/))([\w-]{11})(?![\w-])/); return m ? m[1] : ''; };
@@ -94,6 +94,7 @@ export function createApp(opts = {}) {
     db.exec(`CREATE TABLE IF NOT EXISTS rooms(id TEXT PRIMARY KEY, name TEXT NOT NULL, capacity INTEGER DEFAULT 0, price INTEGER DEFAULT 0, unit INTEGER DEFAULT 60, intro TEXT DEFAULT '', open TEXT DEFAULT '{}', status TEXT DEFAULT '開放', sort INTEGER DEFAULT 0);
       CREATE TABLE IF NOT EXISTS bookings(id TEXT PRIMARY KEY, room_id TEXT, date TEXT, start TEXT, end TEXT, user_id TEXT DEFAULT '', line_name TEXT DEFAULT '', name TEXT DEFAULT '', phone TEXT DEFAULT '', purpose TEXT DEFAULT '', people INTEGER DEFAULT 0, status TEXT, amount INTEGER DEFAULT 0, tags TEXT DEFAULT '', note TEXT DEFAULT '', created_at TEXT, by_admin TEXT DEFAULT '', decided_at TEXT DEFAULT '', decided_by TEXT DEFAULT '');
       CREATE TABLE IF NOT EXISTS rent_blocks(id TEXT PRIMARY KEY, room_id TEXT DEFAULT '', date TEXT, start TEXT DEFAULT '', end TEXT DEFAULT '', note TEXT DEFAULT '');
+      CREATE TABLE IF NOT EXISTS room_dates(room_id TEXT, date TEXT, ranges TEXT DEFAULT '[]', PRIMARY KEY(room_id, date));
       CREATE TABLE IF NOT EXISTS rent_tags(id TEXT PRIMARY KEY, name TEXT, color TEXT, sort INTEGER DEFAULT 0);`);
     db.exec('CREATE TABLE IF NOT EXISTS session_skips(id TEXT PRIMARY KEY)'); // 已刪除的固定場次，不再自動排回來
     db.exec("CREATE TABLE IF NOT EXISTS makeups(id TEXT PRIMARY KEY, student_id TEXT, session_id TEXT, from_session_id TEXT DEFAULT '', created_at TEXT, by_name TEXT)");
@@ -334,6 +335,11 @@ export function createApp(opts = {}) {
   /* ---------- 教室租借 ---------- */
   const tm = t => +String(t).slice(0, 2) * 60 + +String(t).slice(3, 5), mt = m => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
   const roomOpen = r => { try { const o = JSON.parse(r.open || '{}'); return o && typeof o === 'object' ? o : {}; } catch { return {}; } };
+  /** 某一天的開放時段：有單日設定用單日的，否則用每週固定的 */
+  const dayRanges = (room, date) => { const o = get('SELECT ranges FROM room_dates WHERE room_id=? AND date=?', room.id, date);
+    if (o) { try { return JSON.parse(o.ranges) || []; } catch { return []; } } return roomOpen(room)[weekday(date)] || []; };
+  const cleanRanges = list => { const ok = (list || []).map(x => [nt(x[0]), x[1] === '24:00' ? '24:00' : nt(x[1])]).filter(x => x[0] && x[1] && x[1] > x[0]).sort(), out = [];
+    ok.forEach(r => { const l = out[out.length - 1]; if (l && r[0] <= l[1]) { if (r[1] > l[1]) l[1] = r[1]; } else out.push([...r]); }); return out; };
   const rentTags = () => all('SELECT * FROM rent_tags ORDER BY sort,id');
   /** 這間教室當天被占用的時段：別人的預約、管理員關閉的時段、排在這間教室的課 */
   function roomBusy(room, date, exceptId = '') {
@@ -345,8 +351,8 @@ export function createApp(opts = {}) {
   /** 當天可預約的格子（依開放時段與最小單位切） */
   function roomSlots(room, date) {
     const unit = Math.max(15, room.unit || 60), busy = roomBusy(room, date), lim = Date.now() + cfgNum('租借提前小時', 12) * 3600e3;
-    return (roomOpen(room)[weekday(date)] || []).flatMap(([a, z]) => { const out = [];
-      for (let m = tm(a); m + unit <= tm(z); m += unit) { const hit = busy.find(k => k[0] < m + unit && k[1] > m), late = toDate(date, mt(m)).getTime() < lim;
+    return dayRanges(room, date).flatMap(([a, z]) => { const out = [];
+      for (let m = tm(a); m + unit <= tm(z) && m + unit <= 1440; m += unit) { const hit = busy.find(k => k[0] < m + unit && k[1] > m), late = toDate(date, mt(m)).getTime() < lim;
         out.push({ start: mt(m), end: mt(m + unit), free: !hit && !late, why: hit ? hit[2] : late ? '已截止' : '' }); }
       return out; });
   }
@@ -490,7 +496,8 @@ export function createApp(opts = {}) {
     rentInfo(b, user) {
       const days = cfgNum('租借可預約天數', 30);
       return { open: cfgOn('開放教室租借'), review: cfgOn('租借需確認'), rules: cfg('租借須知', ''), today: today(), lastDay: addDays(today(), days), advance: cfgNum('租借提前小時', 12),
-        rooms: all("SELECT * FROM rooms WHERE status='開放' ORDER BY sort,id").map(r => ({ id: r.id, name: r.name, capacity: r.capacity, price: r.price, unit: r.unit, intro: r.intro, days: Object.keys(roomOpen(r)).filter(k => (roomOpen(r)[k] || []).length).map(Number) })),
+        rooms: all("SELECT * FROM rooms WHERE status='開放' ORDER BY sort,id").map(r => ({ id: r.id, name: r.name, capacity: r.capacity, price: r.price, unit: r.unit, intro: r.intro, days: Object.keys(roomOpen(r)).filter(k => (roomOpen(r)[k] || []).length).map(Number),
+          dates: [...Array(days + 1)].map((_, i) => addDays(today(), i)).filter(x => dayRanges(r, x).length) })),
         mine: all("SELECT * FROM bookings WHERE user_id=? AND date>=? ORDER BY date,start", user.userId, addDays(today(), -30)).map(bookingView), lastName: (get("SELECT name,phone FROM bookings WHERE user_id=? ORDER BY created_at DESC", user.userId) || {}) };
     },
     rentSlots(b) {
@@ -654,8 +661,8 @@ export function createApp(opts = {}) {
     'a.roomSave'(b) {
       const name = str(b.name, 40);
       if (!name) throw new Error('請輸入教室名稱');
-      const open = {};
-      Object.entries(b.open || {}).forEach(([d, list]) => { const ok = (list || []).map(x => [nt(x[0]), nt(x[1])]).filter(x => x[0] && x[1] && x[1] > x[0]).sort(); if (+d >= 0 && +d <= 6 && ok.length) open[+d] = ok; });
+      const old = b.id ? get('SELECT * FROM rooms WHERE id=?', b.id) : null, open = b.open === undefined && old ? roomOpen(old) : {};
+      Object.entries(b.open || {}).forEach(([d, list]) => { const ok = cleanRanges(list); if (+d >= 0 && +d <= 6 && ok.length) open[+d] = ok; });
       const unit = [30, 60].includes(Number(b.unit)) ? Number(b.unit) : 60;
       const v = [name, Math.max(0, Math.floor(Number(b.capacity)) || 0), Math.max(0, Math.floor(Number(b.price)) || 0), unit, str(b.intro, 1000), JSON.stringify(open), b.status === '關閉' ? '關閉' : '開放'];
       const id = b.id || nextId('rooms', 'R', 2);
@@ -663,9 +670,34 @@ export function createApp(opts = {}) {
       else run('INSERT INTO rooms(name,capacity,price,unit,intro,open,status,id,sort) VALUES(?,?,?,?,?,?,?,?,?)', ...v, id, get('SELECT COUNT(*) n FROM rooms').n);
       return { id };
     },
+    /** 月曆：這間教室某個月每天的開放時段、預約數與課程數 */
+    'a.roomCal'(b) {
+      const room = get('SELECT * FROM rooms WHERE id=?', b.roomId);
+      if (!room) throw new Error('找不到教室');
+      const month = /^\d{4}-\d{2}$/.test(b.month || '') ? b.month : today().slice(0, 7), days = [];
+      const ov = new Set(all('SELECT date FROM room_dates WHERE room_id=? AND substr(date,1,7)=?', room.id, month).map(r => r.date));
+      for (let d = month + '-01'; d.slice(0, 7) === month; d = addDays(d, 1)) {
+        const busy = roomBusy(room, d);
+        days.push({ date: d, ranges: dayRanges(room, d), custom: ov.has(d), booked: busy.filter(k => /預約/.test(k[2])).length, classes: busy.filter(k => k[2] === '上課').length, closed: busy.some(k => k[0] === 0 && k[1] === 1440) });
+      }
+      return { month, today: today(), room: { id: room.id, name: room.name, unit: room.unit, open: roomOpen(room) }, days };
+    },
+    /** 設定開放時段：scope=date 只改這一天；weekly 改成每週這個星期都這樣；reset 讓這一天回到每週固定 */
+    'a.roomHours'(b) {
+      const room = get('SELECT * FROM rooms WHERE id=?', b.roomId), date = nd(b.date);
+      if (!room || !date) throw new Error('找不到教室或日期');
+      const ranges = cleanRanges(b.ranges);
+      if (b.scope === 'reset') run('DELETE FROM room_dates WHERE room_id=? AND date=?', room.id, date);
+      else if (b.scope === 'weekly') { const open = roomOpen(room), w = weekday(date);
+        if (ranges.length) open[w] = ranges; else delete open[w];
+        run('UPDATE rooms SET open=? WHERE id=?', JSON.stringify(open), room.id);
+        all('SELECT date FROM room_dates WHERE room_id=? AND date>=?', room.id, today()).filter(r => weekday(r.date) === w).forEach(r => run('DELETE FROM room_dates WHERE room_id=? AND date=?', room.id, r.date)); // 之後同星期的單日設定一起回到新的固定時段
+      } else run('INSERT INTO room_dates(room_id,date,ranges) VALUES(?,?,?) ON CONFLICT(room_id,date) DO UPDATE SET ranges=excluded.ranges', room.id, date, JSON.stringify(ranges));
+      return { ranges: dayRanges(get('SELECT * FROM rooms WHERE id=?', room.id), date) };
+    },
     'a.roomDelete'(b) {
       if (get("SELECT 1 x FROM bookings WHERE room_id=? AND status IN ('待確認','已確認') AND date>=?", b.id, today())) throw new Error('這間教室還有未完成的預約，請先處理或改成「關閉」');
-      run('DELETE FROM rooms WHERE id=?', b.id); run('DELETE FROM rent_blocks WHERE room_id=?', b.id);
+      run('DELETE FROM rooms WHERE id=?', b.id); run('DELETE FROM rent_blocks WHERE room_id=?', b.id); run('DELETE FROM room_dates WHERE room_id=?', b.id);
       return { deleted: true };
     },
     'a.rentBlockSave'(b) {
