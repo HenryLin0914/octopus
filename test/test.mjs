@@ -354,27 +354,43 @@ ok((await call('boss', 'a.unbind', { userId: (await call('dad', 'init')).data.us
   ok(r.ok === false && /^CONFLICT:/.test(r.error) && /已被租借：舞團保留/.test(r.error) && !(await call('boss', 'a.meta')).data.courses.some(q => q.name === '撞租借的課'), '排課時提醒教室已被租借');
   r = await call('boss', 'a.courseSave', { name: '撞租借的固定課', room: 'A教室', weekdays: [wd], start: '14:30', end: '15:30', dateFrom: today(), dateTo: addDays(today(), 7) });
   ok(r.ok === false && /已被租借：阿明/.test(r.error), '開固定課程時也會檢查租借');
+  { // 沒填教室的課也會擋租借；確認租借時檢查課程；規則存檔回報重疊的課
+    const dX = addDays(d1, 7);
+    r = await call('boss', 'a.bookingSave', { roomId: rid, date: dX, start: '09:00', end: '12:00', name: '待確認的人', status: '待確認' }); const pend = r.data.id;
+    r = await call('boss', 'a.sessionSave', { date: dX, start: '10:00', end: '11:00', newCourse: { name: '沒填教室的特約課' } });
+    ok(r.ok === false && /已被租借：待確認的人/.test(r.error), '沒填教室的課：排課時也會提醒租借');
+    r = await call('boss', 'a.sessionSave', { date: dX, start: '10:00', end: '11:00', newCourse: { name: '沒填教室的特約課' }, force: true }); const sx = r.data.id;
+    ok((await call('boss', 'a.rentSlots', { roomId: rid, date: dX })).data.busy.some(x => x.why === '上課' && /未指定教室/.test(x.who)), '沒填教室的課會占用租借時段');
+    const row = (await call('boss', 'a.rent')).data.bookings.find(x => x.id === pend);
+    r = await call('boss', 'a.bookingSave', { id: pend, status: '已確認' });
+    ok(/上課（沒填教室的特約課/.test(row.conflict) && r.ok === false && /^CONFLICT:/.test(r.error) && /上課/.test(r.error), '確認租借時檢查是否撞到課程，清單上也會標示');
+    r = await call('boss', 'a.ruleSave', { roomId: rid, from: dX, to: dX, weekdays: [0, 1, 2, 3, 4, 5, 6], ranges: [['10:00', '11:00']] });
+    ok(r.data.classes === 1 && /特約課/.test(r.data.sample[0]) && (await call('boss', 'a.roomCal', { roomId: rid, month: dX.slice(0, 7) })).data.days.find(x => x.date === dX).busy.some(k => k.why === '上課'), '設定開放規則時回報重疊的課，月曆帶出當天占用明細');
+    const rl = (await call('boss', 'a.roomCal', { roomId: rid, month: dX.slice(0, 7) })).data.rules.find(x => x.from === dX);
+    await call('boss', 'a.ruleDelete', { id: rl.id }); await call('boss', 'a.sessionDelete', { id: sx }); await call('boss', 'a.bookingSave', { id: pend, status: '已取消' });
+  }
   await call('boss', 'a.rentBlockSave', { roomId: '', date: d1, start: '', end: '', note: '整修' });
   ok((await call('guest2', 'rentSlots', { roomId: rid, date: d1 })).data.slots.every(x => !x.free), '管理員可關閉整天');
-  { // 月曆式開放時段：單日設定與每週固定
-    const d2 = addDays(d1, 1), wd2 = new Date(d2 + 'T12:00:00+08:00').getUTCDay(), d9 = addDays(d2, 7);
-    ok((await call('guest2', 'rentSlots', { roomId: rid, date: d2 })).data.slots.length === 0 || wd2 === wd, '還沒設定的日子沒有時段');
-    await call('boss', 'a.roomHours', { roomId: rid, date: d2, scope: 'date', ranges: [['19:00', '21:00'], ['20:00', '22:00']] });
-    let cal = (await call('boss', 'a.roomCal', { roomId: rid, month: d2.slice(0, 7) })).data.days.find(x => x.date === d2);
-    ok(cal.custom && JSON.stringify(cal.ranges) === '[["19:00","22:00"]]' && (await call('guest2', 'rentSlots', { roomId: rid, date: d2 })).data.slots.length === 3 && (await call('guest2', 'rentInfo')).data.rooms[0].dates.includes(d2), '單日開放時段（重疊自動合併）');
-    await call('boss', 'a.roomHours', { roomId: rid, date: d2, scope: 'weekly', ranges: [['10:00', '12:00']] });
-    ok((await call('guest2', 'rentSlots', { roomId: rid, date: d2 })).data.slots.length === 2 && (await call('guest2', 'rentSlots', { roomId: rid, date: d9 })).data.slots.length === 2, '套用到每週同一天');
+  { // 開放規則（星期＋期間＋時段）與單日調整
+    const d2 = addDays(d1, 1), wd2 = new Date(d2 + 'T12:00:00+08:00').getUTCDay(), d9 = addDays(d2, 7), n = async x => (await call('guest2', 'rentSlots', { roomId: rid, date: x })).data.slots.length;
+    ok(await n(d2) === 0, '沒有規則的日子沒有時段');
+    await call('boss', 'a.ruleSave', { roomId: rid, weekdays: [wd2], ranges: [['10:00', '12:00']] });
+    let cal = (await call('boss', 'a.roomCal', { roomId: rid, month: d2.slice(0, 7) })).data, rule = cal.rules.find(x => x.weekdays.join() === String(wd2));
+    ok(rule && !rule.from && !rule.to && await n(d2) === 2 && await n(d9) === 2 && cal.days.find(x => x.date === d2).rules[0] === rule.id && (await call('boss', 'a.rent')).data.rooms[0].rules.length === 2, '持續的每週規則');
+    await call('boss', 'a.ruleSave', { roomId: rid, from: d2, to: d2, weekdays: [0, 1, 2, 3, 4, 5, 6], ranges: [['11:00', '14:00']] });
+    ok(await n(d2) === 4 && await n(d9) === 2, '有期間的規則只在期間內生效，時段和其他規則加在一起');
+    await call('boss', 'a.ruleSave', { id: rule.id, roomId: rid, weekdays: [wd2], ranges: [['10:00', '11:00']] });
+    ok(await n(d9) === 1 && (await call('boss', 'a.roomCal', { roomId: rid, month: d9.slice(0, 7) })).data.rules.find(x => x.id === rule.id).ranges[0][1] === '11:00', '規則可以再打開修改');
     await call('boss', 'a.roomHours', { roomId: rid, date: d9, scope: 'date', ranges: [] });
-    ok((await call('guest2', 'rentSlots', { roomId: rid, date: d9 })).data.slots.length === 0 && (await call('guest2', 'rentSlots', { roomId: rid, date: d2 })).data.slots.length === 2, '單日設為不開放，不影響其他週');
+    ok(await n(d9) === 0 && await n(d2) === 4 && (await call('boss', 'a.roomCal', { roomId: rid, month: d9.slice(0, 7) })).data.days.find(x => x.date === d9).custom, '單日設為不開放，不影響規則');
     await call('boss', 'a.roomHours', { roomId: rid, date: d9, scope: 'reset' });
-    ok((await call('guest2', 'rentSlots', { roomId: rid, date: d9 })).data.slots.length === 2, '恢復每週固定時段');
-    const f0 = addDays(d2, 14), f1 = addDays(f0, 6), wdF = new Date(f0 + 'T12:00:00+08:00').getUTCDay();
-    r = await call('boss', 'a.roomHours', { roomId: rid, date: f0, scope: 'range', from: f0, to: f1, ranges: [['08:00', '09:00']] });
-    ok(r.data.count === 7 && (await call('guest2', 'rentSlots', { roomId: rid, date: addDays(f0, 3) })).data.slots.length === 1, '起訖日期一次設定多天');
-    r = await call('boss', 'a.roomHours', { roomId: rid, date: f0, scope: 'range', from: f0, to: addDays(f0, 13), weekdays: [wdF], ranges: [] });
-    ok(r.data.count === 2 && (await call('guest2', 'rentSlots', { roomId: rid, date: f0 })).data.slots.length === 0 && (await call('guest2', 'rentSlots', { roomId: rid, date: addDays(f0, 1) })).data.slots.length === 1 && /起訖/.test((await call('boss', 'a.roomHours', { roomId: rid, date: f0, scope: 'range', from: f1, to: f0, ranges: [] })).error), '起訖範圍可只套用指定星期');
+    ok(await n(d9) === 1, '取消單日調整後回到規則');
+    ok(/至少選一個開放/.test((await call('boss', 'a.ruleSave', { roomId: rid, weekdays: [1], ranges: [] })).error) && /不能早於/.test((await call('boss', 'a.ruleSave', { roomId: rid, weekdays: [1], from: d9, to: d2, ranges: [['09:00', '10:00']] })).error), '規則驗證');
+    const extra = (await call('boss', 'a.roomCal', { roomId: rid, month: d2.slice(0, 7) })).data.rules.find(x => x.from === d2);
+    await call('boss', 'a.ruleDelete', { id: extra.id });
+    ok(await n(d2) === 1, '刪除規則');
     await call('boss', 'a.roomSave', { id: rid, name: 'A教室', price: 400, capacity: 20 });
-    ok((await call('guest2', 'rentSlots', { roomId: rid, date: d2 })).data.slots.length === 2, '編輯教室基本資料不會清掉開放時段');
+    ok(await n(d2) === 1 && (await call('guest2', 'rentInfo')).data.rooms[0].dates.includes(d2), '編輯教室基本資料不會清掉開放規則');
   }
   p0 = pushes.length; r = await call('guest', 'rentCancel', { id: bid });
   ok(r.ok && pushes.length === p0 + 1 && (await call('boss', 'a.rent')).data.bookings.find(x => x.id === bid).status === '已取消' && (await call('guest2', 'rentCancel', { id: bid })).ok === false, '預約人可取消自己的預約並通知管理員');

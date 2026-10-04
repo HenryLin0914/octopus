@@ -72,7 +72,7 @@ const PLANS = [['P01', '單堂', 1, 500, 30], ['P02', '10堂卡', 10, 4500, 90],
 const COLORS = ['#D6336C', '#1971C2', '#2B8A3E', '#E67700', '#7048E8', '#0C8599', '#C2255C', '#5C940D'];
 
 const OWNER_ONLY = new Set(['a.studentSave', 'a.enroll', 'a.unbind', 'a.topup', 'a.cardSave', 'a.courseSave', 'a.sessionSave', 'a.sessionDelete', 'a.genSessions',
-  'a.videoSave', 'a.videoDelete', 'a.planSave', 'a.settingSave', 'a.adminSave', 'a.richmenu', 'a.export', 'a.student', 'a.videos', 'a.plans', 'a.settings', 'a.admins', 'a.cards', 'a.ledger', 'a.topupSave', 'a.videoInfo', 'a.dayOff', 'a.familySave', 'a.courseDelete', 'a.courseStudents', 'a.signupSave', 'a.rent', 'a.roomSave', 'a.roomDelete', 'a.rentBlockSave', 'a.rentBlockDelete', 'a.rentTagSave', 'a.rentTagDelete', 'a.bookingSave', 'a.rentSlots', 'a.roomCal', 'a.roomHours']);
+  'a.videoSave', 'a.videoDelete', 'a.planSave', 'a.settingSave', 'a.adminSave', 'a.richmenu', 'a.export', 'a.student', 'a.videos', 'a.plans', 'a.settings', 'a.admins', 'a.cards', 'a.ledger', 'a.topupSave', 'a.videoInfo', 'a.dayOff', 'a.familySave', 'a.courseDelete', 'a.courseStudents', 'a.signupSave', 'a.rent', 'a.roomSave', 'a.roomDelete', 'a.rentBlockSave', 'a.rentBlockDelete', 'a.rentTagSave', 'a.rentTagDelete', 'a.bookingSave', 'a.rentSlots', 'a.roomCal', 'a.roomHours', 'a.ruleSave', 'a.ruleDelete']);
 const ASYNC = new Set(['a.richmenu', 'a.videoInfo']);
 /** 從各種 YouTube 網址取出影片 ID（watch、youtu.be、shorts、live、embed） */
 export const ytId = url => { const m = String(url || '').match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^#]*&)?v=|shorts\/|live\/|embed\/|v\/))([\w-]{11})(?![\w-])/); return m ? m[1] : ''; };
@@ -94,6 +94,7 @@ export function createApp(opts = {}) {
     db.exec(`CREATE TABLE IF NOT EXISTS rooms(id TEXT PRIMARY KEY, name TEXT NOT NULL, capacity INTEGER DEFAULT 0, price INTEGER DEFAULT 0, unit INTEGER DEFAULT 60, intro TEXT DEFAULT '', open TEXT DEFAULT '{}', status TEXT DEFAULT '開放', sort INTEGER DEFAULT 0);
       CREATE TABLE IF NOT EXISTS bookings(id TEXT PRIMARY KEY, room_id TEXT, date TEXT, start TEXT, end TEXT, user_id TEXT DEFAULT '', line_name TEXT DEFAULT '', name TEXT DEFAULT '', phone TEXT DEFAULT '', purpose TEXT DEFAULT '', people INTEGER DEFAULT 0, status TEXT, amount INTEGER DEFAULT 0, tags TEXT DEFAULT '', note TEXT DEFAULT '', created_at TEXT, by_admin TEXT DEFAULT '', decided_at TEXT DEFAULT '', decided_by TEXT DEFAULT '');
       CREATE TABLE IF NOT EXISTS rent_blocks(id TEXT PRIMARY KEY, room_id TEXT DEFAULT '', date TEXT, start TEXT DEFAULT '', end TEXT DEFAULT '', note TEXT DEFAULT '');
+      CREATE TABLE IF NOT EXISTS room_rules(id TEXT PRIMARY KEY, room_id TEXT, date_from TEXT DEFAULT '', date_to TEXT DEFAULT '', weekdays TEXT DEFAULT '0123456', ranges TEXT DEFAULT '[]', created_at TEXT);
       CREATE TABLE IF NOT EXISTS room_dates(room_id TEXT, date TEXT, ranges TEXT DEFAULT '[]', PRIMARY KEY(room_id, date));
       CREATE TABLE IF NOT EXISTS rent_tags(id TEXT PRIMARY KEY, name TEXT, color TEXT, sort INTEGER DEFAULT 0);`);
     db.exec('CREATE TABLE IF NOT EXISTS session_skips(id TEXT PRIMARY KEY)'); // 已刪除的固定場次，不再自動排回來
@@ -264,10 +265,9 @@ export function createApp(opts = {}) {
   }
   /** 這堂課的教室在同一時間已被租借（待確認或已確認） */
   function rentHits(s, me) {
-    const room = me.room && get('SELECT * FROM rooms WHERE name=?', me.room);
-    if (!room) return [];
-    return all("SELECT * FROM bookings WHERE room_id=? AND date=? AND status IN ('待確認','已確認') AND start<? AND end>?", room.id, s.date, s.end, s.start)
-      .map(b => ({ text: `${s.date.slice(5).replace('-', '/')}（${'日一二三四五六'[weekday(s.date)]}）${b.start}–${b.end} ${room.name} 已被租借：${b.name}（${b.status}）`, key: 'rent' + b.id }));
+    const rooms = me.room ? all('SELECT * FROM rooms WHERE name=?', me.room) : all('SELECT * FROM rooms'); // 沒填教室的課：每一間的租借都要提醒
+    return rooms.flatMap(room => all("SELECT * FROM bookings WHERE room_id=? AND date=? AND status IN ('待確認','已確認') AND start<? AND end>?", room.id, s.date, s.end, s.start)
+      .map(b => ({ text: `${s.date.slice(5).replace('-', '/')}（${'日一二三四五六'[weekday(s.date)]}）${b.start}–${b.end} ${room.name} 已被租借：${b.name}（${b.status}）`, key: 'rent' + b.id })));
   }
   const conflictError = list => { const seen = new Set(), out = []; list.forEach(c => { if (!seen.has(c.key)) { seen.add(c.key); out.push(c.text); } }); return new Error('CONFLICT:' + out.slice(0, 5).join('\n') + (out.length > 5 ? '\n…還有 ' + (out.length - 5) + ' 個時段' : '')); };
   /** 停課順延：把課程的結束日期延到下一個上課日，整期堂數不變 */
@@ -342,17 +342,27 @@ export function createApp(opts = {}) {
   /* ---------- 教室租借 ---------- */
   const tm = t => +String(t).slice(0, 2) * 60 + +String(t).slice(3, 5), mt = m => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
   const roomOpen = r => { try { const o = JSON.parse(r.open || '{}'); return o && typeof o === 'object' ? o : {}; } catch { return {}; } };
-  /** 某一天的開放時段：有單日設定用單日的，否則用每週固定的 */
-  const dayRanges = (room, date) => { const o = get('SELECT ranges FROM room_dates WHERE room_id=? AND date=?', room.id, date);
-    if (o) { try { return JSON.parse(o.ranges) || []; } catch { return []; } } return roomOpen(room)[weekday(date)] || []; };
   const cleanRanges = list => { const ok = (list || []).map(x => [nt(x[0]), x[1] === '24:00' ? '24:00' : nt(x[1])]).filter(x => x[0] && x[1] && x[1] > x[0]).sort(), out = [];
     ok.forEach(r => { const l = out[out.length - 1]; if (l && r[0] <= l[1]) { if (r[1] > l[1]) l[1] = r[1]; } else out.push([...r]); }); return out; };
+  const parseRanges = t => { try { const o = JSON.parse(t || '[]'); return Array.isArray(o) ? o : []; } catch { return []; } };
+  const roomRules = roomId => all('SELECT * FROM room_rules WHERE room_id=? ORDER BY (date_from<>\'\'), date_from, created_at', roomId).map(r => ({ id: r.id, from: r.date_from, to: r.date_to, weekdays: r.weekdays.split('').map(Number), ranges: parseRanges(r.ranges) }));
+  const ruleHits = (rules, date) => rules.filter(r => (!r.from || r.from <= date) && (!r.to || r.to >= date) && r.weekdays.includes(weekday(date)));
+  /** 某一天的開放時段：有單日設定就用單日的；否則把所有適用的開放規則加起來 */
+  const dayRanges = (room, date, rules) => { const o = get('SELECT ranges FROM room_dates WHERE room_id=? AND date=?', room.id, date);
+    return o ? parseRanges(o.ranges) : cleanRanges(ruleHits(rules || roomRules(room.id), date).flatMap(r => r.ranges)); };
+  if (!get("SELECT 1 x FROM meta WHERE key='rules_migrated'")) { // 舊的「每週固定時段」改存成開放規則
+    all('SELECT * FROM rooms').forEach(r => { const o = roomOpen(r), by = {};
+      Object.keys(o).forEach(w => { const key = JSON.stringify(o[w]); (by[key] = by[key] || []).push(w); });
+      Object.entries(by).forEach(([key, ws]) => run('INSERT INTO room_rules(id,room_id,weekdays,ranges,created_at) VALUES(?,?,?,?,?)', uid('U'), r.id, ws.sort().join(''), key, now())); });
+    run("INSERT OR IGNORE INTO meta VALUES('rules_migrated','1')");
+  }
   const rentTags = () => all('SELECT * FROM rent_tags ORDER BY sort,id');
   /** 這間教室當天被占用的時段：別人的預約、管理員關閉的時段、排在這間教室的課 */
   function roomBusy(room, date, exceptId = '') {
     const out = all("SELECT * FROM bookings WHERE room_id=? AND date=? AND status IN ('待確認','已確認') AND id<>?", room.id, date, exceptId).map(b => [tm(b.start), tm(b.end), b.status === '已確認' ? '已被預約' : '有人預約中', b.name]);
     all("SELECT * FROM rent_blocks WHERE date=? AND (room_id='' OR room_id=?)", date, room.id).forEach(k => out.push(k.start ? [tm(k.start), tm(k.end), k.note || '不開放', ''] : [0, 1440, k.note || '不開放', '']));
-    all("SELECT * FROM sessions WHERE date=? AND status<>'停課'", date).forEach(x => { const i = sessionInfo(x); if (i.room && i.room === room.name) out.push([tm(i.start), tm(i.end), '上課', i.course]); });
+    // 課程的教室同名才算占用；課程沒填教室時無法判斷，保守起見視為會用到每一間
+    all("SELECT * FROM sessions WHERE date=? AND status<>'停課'", date).forEach(x => { const i = sessionInfo(x); if (!i.room || i.room === room.name) out.push([tm(i.start), tm(i.end), '上課', i.course + (i.room ? '' : '・未指定教室')]); });
     return out;
   }
   /** 當天可預約的格子（依開放時段與最小單位切） */
@@ -503,7 +513,7 @@ export function createApp(opts = {}) {
     rentInfo(b, user) {
       const days = cfgNum('租借可預約天數', 30);
       return { open: cfgOn('開放教室租借'), review: cfgOn('租借需確認'), rules: cfg('租借須知', ''), today: today(), lastDay: addDays(today(), days), advance: cfgNum('租借提前小時', 12),
-        rooms: all("SELECT * FROM rooms WHERE status='開放' ORDER BY sort,id").map(r => ({ id: r.id, name: r.name, capacity: r.capacity, price: r.price, unit: r.unit, intro: r.intro, days: Object.keys(roomOpen(r)).filter(k => (roomOpen(r)[k] || []).length).map(Number),
+        rooms: all("SELECT * FROM rooms WHERE status='開放' ORDER BY sort,id").map(r => ({ id: r.id, name: r.name, capacity: r.capacity, price: r.price, unit: r.unit, intro: r.intro, days: [...new Set(roomRules(r.id).filter(x => !x.to || x.to >= today()).flatMap(x => x.weekdays))],
           dates: [...Array(days + 1)].map((_, i) => addDays(today(), i)).filter(x => dayRanges(r, x).length) })),
         mine: all("SELECT * FROM bookings WHERE user_id=? AND date>=? ORDER BY date,start", user.userId, addDays(today(), -30)).map(bookingView), lastName: (get("SELECT name,phone FROM bookings WHERE user_id=? ORDER BY created_at DESC", user.userId) || {}) };
     },
@@ -657,10 +667,14 @@ export function createApp(opts = {}) {
     'a.rent'(b) {
       const from = nd(b.from) || addDays(today(), -30);
       return { today: today(), tags: rentTags(), rooms: all('SELECT * FROM rooms ORDER BY sort,id').map(r => { const win = cfgNum('租借可預約天數', 30);
-          return { ...r, open: roomOpen(r), window: win, openDays: [...Array(win + 1)].filter((_, i) => dayRanges(r, addDays(today(), i)).length).length,
+          const rules = roomRules(r.id);
+          return { ...r, rules, window: win, openDays: [...Array(win + 1)].filter((_, i) => dayRanges(r, addDays(today(), i), rules).length).length,
             custom: all('SELECT date,ranges FROM room_dates WHERE room_id=? AND date>=? ORDER BY date', r.id, today()).map(x => { let g = []; try { g = JSON.parse(x.ranges) || []; } catch { /* 壞資料當作不開放 */ } return { date: x.date, ranges: g }; }) }; }),
         blocks: all('SELECT * FROM rent_blocks WHERE date>=? ORDER BY date,start', today()),
-        bookings: all('SELECT * FROM bookings WHERE date>=? ORDER BY date,start LIMIT 800', from).map(k => ({ ...bookingView(k), lineName: k.line_name, online: !!k.user_id, tags: k.tags ? k.tags.split(',') : [], note: k.note, byAdmin: k.by_admin, decidedBy: k.decided_by })),
+        bookings: all('SELECT * FROM bookings WHERE date>=? ORDER BY date,start LIMIT 800', from).map(k => { const room = get('SELECT * FROM rooms WHERE id=?', k.room_id);
+          const hit = room && k.date >= today() && ['待確認', '已確認'].includes(k.status) ? roomBusy(room, k.date, k.id).filter(x => x[0] < tm(k.end) && x[1] > tm(k.start)) : [];
+          return { ...bookingView(k), lineName: k.line_name, online: !!k.user_id, tags: k.tags ? k.tags.split(',') : [], note: k.note, byAdmin: k.by_admin, decidedBy: k.decided_by,
+            conflict: hit.map(x => `${mt(x[0])}–${mt(Math.min(x[1], 1439))} ${x[2]}${x[3] ? '（' + x[3] + '）' : ''}`).join('、') }; }),
         pending: get("SELECT COUNT(*) n FROM bookings WHERE status='待確認'").n };
     },
     'a.rentSlots'(b) {
@@ -671,52 +685,60 @@ export function createApp(opts = {}) {
     'a.roomSave'(b) {
       const name = str(b.name, 40);
       if (!name) throw new Error('請輸入教室名稱');
-      const old = b.id ? get('SELECT * FROM rooms WHERE id=?', b.id) : null, open = b.open === undefined && old ? roomOpen(old) : {};
+      const open = {};
       Object.entries(b.open || {}).forEach(([d, list]) => { const ok = cleanRanges(list); if (+d >= 0 && +d <= 6 && ok.length) open[+d] = ok; });
       const unit = [30, 60].includes(Number(b.unit)) ? Number(b.unit) : 60;
-      const v = [name, Math.max(0, Math.floor(Number(b.capacity)) || 0), Math.max(0, Math.floor(Number(b.price)) || 0), unit, str(b.intro, 1000), JSON.stringify(open), b.status === '關閉' ? '關閉' : '開放'];
+      const v = [name, Math.max(0, Math.floor(Number(b.capacity)) || 0), Math.max(0, Math.floor(Number(b.price)) || 0), unit, str(b.intro, 1000), '{}', b.status === '關閉' ? '關閉' : '開放'];
       const id = b.id || nextId('rooms', 'R', 2);
       if (b.id) { if (!get('SELECT 1 x FROM rooms WHERE id=?', id)) throw new Error('找不到教室'); run('UPDATE rooms SET name=?,capacity=?,price=?,unit=?,intro=?,open=?,status=? WHERE id=?', ...v, id); }
       else run('INSERT INTO rooms(name,capacity,price,unit,intro,open,status,id,sort) VALUES(?,?,?,?,?,?,?,?,?)', ...v, id, get('SELECT COUNT(*) n FROM rooms').n);
+      if (b.open !== undefined) { // 一次給定每週時段（匯入用）：取代沒有期間的規則
+        run("DELETE FROM room_rules WHERE room_id=? AND date_from='' AND date_to=''", id);
+        Object.entries(open).forEach(([w, list]) => run('INSERT INTO room_rules(id,room_id,weekdays,ranges,created_at) VALUES(?,?,?,?,?)', uid('U'), id, String(w), JSON.stringify(list), now()));
+      }
       return { id };
     },
-    /** 月曆：這間教室某個月每天的開放時段、預約數與課程數 */
+    /** 月曆：這間教室某個月每天的開放時段、適用的規則、預約數與課程數 */
     'a.roomCal'(b) {
       const room = get('SELECT * FROM rooms WHERE id=?', b.roomId);
       if (!room) throw new Error('找不到教室');
-      const month = /^\d{4}-\d{2}$/.test(b.month || '') ? b.month : today().slice(0, 7), days = [];
+      const month = /^\d{4}-\d{2}$/.test(b.month || '') ? b.month : today().slice(0, 7), days = [], rules = roomRules(room.id);
       const ov = new Set(all('SELECT date FROM room_dates WHERE room_id=? AND substr(date,1,7)=?', room.id, month).map(r => r.date));
       for (let d = month + '-01'; d.slice(0, 7) === month; d = addDays(d, 1)) {
         const busy = roomBusy(room, d);
-        days.push({ date: d, ranges: dayRanges(room, d), custom: ov.has(d), booked: busy.filter(k => /預約/.test(k[2])).length, classes: busy.filter(k => k[2] === '上課').length, closed: busy.some(k => k[0] === 0 && k[1] === 1440) });
+        days.push({ date: d, ranges: dayRanges(room, d, rules), custom: ov.has(d), rules: ruleHits(rules, d).map(r => r.id), booked: busy.filter(k => /預約/.test(k[2])).length, classes: busy.filter(k => k[2] === '上課').length, closed: busy.some(k => k[0] === 0 && k[1] === 1440),
+          busy: busy.map(k => ({ start: mt(k[0]), end: k[1] >= 1440 ? '24:00' : mt(k[1]), why: k[2], who: k[3] })).sort((x, y) => x.start < y.start ? -1 : 1) });
       }
-      return { month, today: today(), room: { id: room.id, name: room.name, unit: room.unit, open: roomOpen(room) }, days };
+      return { month, today: today(), room: { id: room.id, name: room.name, unit: room.unit }, rules, days };
     },
-    /** 設定開放時段：scope=date 只改這一天；weekly 改成每週這個星期都這樣；reset 讓這一天回到每週固定 */
+    /** 開放規則：哪幾個星期、哪段期間（可不設期限）、開放哪些時間。多條規則的時段會加在一起 */
+    'a.ruleSave'(b) {
+      const room = get('SELECT * FROM rooms WHERE id=?', b.roomId);
+      if (!room) throw new Error('找不到教室');
+      const ranges = cleanRanges(b.ranges), wds = [...new Set((b.weekdays || []).map(Number).filter(n => n >= 0 && n <= 6))].sort().join(''), from = nd(b.from), to = nd(b.to);
+      if (!ranges.length) throw new Error('請至少選一個開放的時間');
+      if (!wds) throw new Error('請至少選一個星期');
+      if (from && to && to < from) throw new Error('結束日期不能早於開始日期');
+      if (b.id) { if (!get('SELECT 1 x FROM room_rules WHERE id=? AND room_id=?', b.id, room.id)) throw new Error('找不到這條規則'); run('UPDATE room_rules SET date_from=?,date_to=?,weekdays=?,ranges=? WHERE id=?', from, to, wds, JSON.stringify(ranges), b.id); }
+      else run('INSERT INTO room_rules(id,room_id,date_from,date_to,weekdays,ranges,created_at) VALUES(?,?,?,?,?,?,?)', uid('U'), room.id, from, to, wds, JSON.stringify(ranges), now());
+      // 規則涵蓋的時間裡，未來 60 天有哪些課（這些時段會自動保留給課程，不會開放租借）
+      const t0 = today(), last = addDays(t0, 60), hits = [];
+      all("SELECT * FROM sessions WHERE date>=? AND date<=? AND status<>'停課' ORDER BY date,start", from && from > t0 ? from : t0, to && to < last ? to : last).forEach(x => { const i = sessionInfo(x);
+        if ((!i.room || i.room === room.name) && wds.includes(String(weekday(x.date))) && ranges.some(g => tm(g[0]) < tm(i.end) && tm(g[1]) > tm(i.start))) hits.push(`${x.date.slice(5).replace('-', '/')} ${i.start}–${i.end} ${i.course}`); });
+      return { ok: true, classes: hits.length, sample: hits.slice(0, 5) };
+    },
+    'a.ruleDelete'(b) { run('DELETE FROM room_rules WHERE id=?', b.id); return { ok: true }; },
+    /** 單日調整：scope=date 只改這一天（ranges 空＝這天不開放）；reset 取消單日調整、回到規則 */
     'a.roomHours'(b) {
       const room = get('SELECT * FROM rooms WHERE id=?', b.roomId), date = nd(b.date);
       if (!room || !date) throw new Error('找不到教室或日期');
-      const ranges = cleanRanges(b.ranges);
-      let count = 1;
-      if (b.scope === 'range') { // 一段日期（可只挑其中幾個星期幾）
-        const from = nd(b.from), to = nd(b.to), wds = Array.isArray(b.weekdays) && b.weekdays.length ? b.weekdays.map(Number) : [0, 1, 2, 3, 4, 5, 6];
-        if (!from || !to || to < from) throw new Error('請選擇正確的起訖日期');
-        if (to > addDays(from, 366)) throw new Error('一次最多設定一年');
-        count = 0;
-        for (let d = from; d <= to; d = addDays(d, 1)) if (wds.includes(weekday(d))) { run('INSERT INTO room_dates(room_id,date,ranges) VALUES(?,?,?) ON CONFLICT(room_id,date) DO UPDATE SET ranges=excluded.ranges', room.id, d, JSON.stringify(ranges)); count++; }
-        return { ranges, count };
-      }
       if (b.scope === 'reset') run('DELETE FROM room_dates WHERE room_id=? AND date=?', room.id, date);
-      else if (b.scope === 'weekly') { const open = roomOpen(room), w = weekday(date);
-        if (ranges.length) open[w] = ranges; else delete open[w];
-        run('UPDATE rooms SET open=? WHERE id=?', JSON.stringify(open), room.id);
-        all('SELECT date FROM room_dates WHERE room_id=? AND date>=?', room.id, today()).filter(r => weekday(r.date) === w).forEach(r => run('DELETE FROM room_dates WHERE room_id=? AND date=?', room.id, r.date)); // 之後同星期的單日設定一起回到新的固定時段
-      } else run('INSERT INTO room_dates(room_id,date,ranges) VALUES(?,?,?) ON CONFLICT(room_id,date) DO UPDATE SET ranges=excluded.ranges', room.id, date, JSON.stringify(ranges));
-      return { ranges: dayRanges(get('SELECT * FROM rooms WHERE id=?', room.id), date) };
+      else run('INSERT INTO room_dates(room_id,date,ranges) VALUES(?,?,?) ON CONFLICT(room_id,date) DO UPDATE SET ranges=excluded.ranges', room.id, date, JSON.stringify(cleanRanges(b.ranges)));
+      return { ranges: dayRanges(room, date) };
     },
     'a.roomDelete'(b) {
       if (get("SELECT 1 x FROM bookings WHERE room_id=? AND status IN ('待確認','已確認') AND date>=?", b.id, today())) throw new Error('這間教室還有未完成的預約，請先處理或改成「關閉」');
-      run('DELETE FROM rooms WHERE id=?', b.id); run('DELETE FROM rent_blocks WHERE room_id=?', b.id); run('DELETE FROM room_dates WHERE room_id=?', b.id);
+      run('DELETE FROM rooms WHERE id=?', b.id); run('DELETE FROM rent_blocks WHERE room_id=?', b.id); run('DELETE FROM room_dates WHERE room_id=?', b.id); run('DELETE FROM room_rules WHERE room_id=?', b.id);
       return { deleted: true };
     },
     'a.rentBlockSave'(b) {
