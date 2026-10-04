@@ -244,12 +244,12 @@ function dialog(title, body, { wide, foot } = {}) {
 function fieldsHtml(fields, v = {}) {
   const one = f => {
     const val = v[f.k] ?? f.def ?? '';
-    if (f.type === 'select') return `<label class="f">${esc(f.label)}<select name="${f.k}">${f.opts.map(o => `<option value="${esc(o[0])}" ${String(o[0]) === String(val) ? 'selected' : ''}>${esc(o[1])}</option>`).join('')}</select></label>`;
-    if (f.type === 'textarea') return `<label class="f">${esc(f.label)}<textarea name="${f.k}" rows="${f.rows || 2}" placeholder="${esc(f.ph || '')}">${esc(val)}</textarea></label>`;
-    if (f.type === 'days') return `<div class="f s" style="margin-top:12px">${esc(f.label)}<div class="chk">${[1, 2, 3, 4, 5, 6, 0].map(d => `<label><input type="checkbox" name="${f.k}" value="${d}" ${(val || []).map(Number).includes(d) ? 'checked' : ''}>週${WD[d]}</label>`).join('')}</div></div>`;
-    if (f.type === 'checks') return `<div class="f s" style="margin-top:12px">${esc(f.label)}<div class="chk">${f.opts.map(o => `<label><input type="checkbox" name="${f.k}" value="${esc(o[0])}" ${(val || []).includes(o[0]) ? 'checked' : ''}>${esc(o[1])}</label>`).join('') || '<span class="s">（尚無選項）</span>'}</div></div>`;
-    if (f.type === 'color') return `<div class="f s" style="margin-top:12px">${esc(f.label)}<div class="sw">${f.opts.map(c => `<label style="background:${c}"><input type="radio" name="${f.k}" value="${c}" ${c === (val || f.opts[0]) ? 'checked' : ''}></label>`).join('')}</div></div>`;
-    return `<label class="f">${esc(f.label)}<input name="${f.k}" type="${f.type || 'text'}" value="${esc(val)}" placeholder="${esc(f.ph || '')}" ${f.type === 'number' ? 'inputmode="numeric"' : ''}></label>`;
+    if (f.type === 'select') return `<label class="f" data-f="${f.k}">${esc(f.label)}<select name="${f.k}">${f.opts.map(o => `<option value="${esc(o[0])}" ${String(o[0]) === String(val) ? 'selected' : ''}>${esc(o[1])}</option>`).join('')}</select></label>`;
+    if (f.type === 'textarea') return `<label class="f" data-f="${f.k}">${esc(f.label)}<textarea name="${f.k}" rows="${f.rows || 2}" placeholder="${esc(f.ph || '')}">${esc(val)}</textarea></label>`;
+    if (f.type === 'days') return `<div class="f s" data-f="${f.k}" style="margin-top:12px">${esc(f.label)}<div class="chk">${[1, 2, 3, 4, 5, 6, 0].map(d => `<label><input type="checkbox" name="${f.k}" value="${d}" ${(val || []).map(Number).includes(d) ? 'checked' : ''}>週${WD[d]}</label>`).join('')}</div></div>`;
+    if (f.type === 'checks') return `<div class="f s" data-f="${f.k}" style="margin-top:12px">${esc(f.label)}<div class="chk">${f.opts.map(o => `<label><input type="checkbox" name="${f.k}" value="${esc(o[0])}" ${(val || []).includes(o[0]) ? 'checked' : ''}>${esc(o[1])}</label>`).join('') || '<span class="s">（尚無選項）</span>'}</div></div>`;
+    if (f.type === 'color') return `<div class="f s" data-f="${f.k}" style="margin-top:12px">${esc(f.label)}<div class="sw">${f.opts.map(c => `<label style="background:${c}"><input type="radio" name="${f.k}" value="${c}" ${c === (val || f.opts[0]) ? 'checked' : ''}></label>`).join('')}</div></div>`;
+    return `<label class="f" data-f="${f.k}">${esc(f.label)}<input name="${f.k}" type="${f.type || 'text'}" value="${esc(val)}" placeholder="${esc(f.ph || '')}" ${f.type === 'number' ? 'inputmode="numeric"' : ''}></label>`;
   };
   let out = '', i = 0;
   while (i < fields.length) {
@@ -474,7 +474,7 @@ async function openSession(id) {
   const d = await api('a.roster', { sessionId: id }), i = d.info;
   const off = () => i.status === '停課';
   const body = () => `<div class="s" style="margin:8px 0 10px">${dLabel(i.date)} ${esc(i.start)}–${esc(i.end)}${i.teacher ? '｜' + esc(i.teacher) : ''}${i.room ? '｜' + esc(i.room) : ''} ${i.status !== '正常' ? tag(i.status) : ''}</div>
-    <div class="abar">${off() ? '' : '<button class="btn p" data-a="qr">報到 QR Code</button>'}${owner() ? `<button class="btn" data-a="edit">調課／代課</button><button class="btn ${off() ? 'ok' : ''}" data-a="${off() ? 'resume' : 'stop'}" ${off() ? '' : 'style="color:var(--bad)"'}>${off() ? '恢復上課' : '停課'}</button>` : ''}${off() ? '' : '<button class="btn" data-a="close">結算</button>'}</div>
+    <div class="abar">${off() ? '' : '<button class="btn p" data-a="qr">報到 QR Code</button>'}${owner() ? `<button class="btn" data-a="edit">調課／代課</button><button class="btn ${off() ? 'ok' : ''}" data-a="${off() ? 'resume' : 'stop'}" ${off() ? '' : 'style="color:var(--bad)"'}>${off() ? '恢復上課' : '停課'}</button>` : ''}${off() ? '' : '<button class="btn" data-a="close">結算</button>'}${owner() ? '<button class="btn" data-a="del" style="color:var(--bad)">刪除這堂</button>' : ''}</div>
     <button class="notebox ${i.note ? '' : 'none'}" data-a="note"><span class="s">${off() ? '停課原因' : '老師備註'}（家長在課表看得到）</span><span class="nt">${i.note ? esc(i.note) : '＋ 寫給家長的提醒，例如要帶的東西、今天的進度'}</span></button>
     ${off() ? '' : `<div class="s" style="margin:12px 0 2px">已到 ${d.list.filter(x => x.status === '出席').length}／${d.list.length} 人　<span style="opacity:.8">「結算」會把還沒到、也沒請假的學生記為缺席</span></div>
     <div class="roster">${d.list.length ? d.list.map(x => `<div class="row"><div class="g"><div class="t">${esc(x.name)} ${x.makeup ? '<span class="tag info">補課</span>' : ''} ${x.status ? tag(x.status) : '<span class="tag">未到</span>'}</div><div class="s">剩 ${x.remain} 堂${x.method ? '｜' + esc(x.method) : ''}${x.note ? '｜' + esc(x.note) : ''}${x.makeupAt ? '｜已排補課 ' + esc(x.makeupAt) : ''}</div></div>
@@ -497,6 +497,10 @@ async function openSession(id) {
         async o => { const r = await api('a.sessionNote', { id, note: o.note, notify: !!o.notify }); toast('已儲存' + notiMsg(r)); await refresh(); });
       if (b.dataset.a === 'stop') formDialog('停課｜' + i.course, [{ k: 'note', label: '停課原因（家長看得到）', ph: '例：颱風假、老師請假' }, ...(i.term ? [{ k: 'postpone', label: '這一堂怎麼算', type: 'select', opts: [['1', '順延：整期往後延一堂，總堂數不變'], ['', '不順延：這期少一堂']] }] : []), NOTIFY()], { note: '', postpone: '1', notify: '1' },
         async o => { const r = await api('a.sessionSave', { id, ...keep, status: '停課', note: o.note, postpone: !!o.postpone, notify: !!o.notify, force: true }); toast('已停課' + (r.postponed ? '，最後一堂順延到 ' + r.postponed.slice(5).replace('-', '/') : '') + notiMsg(r)); await refresh(); }, { saveText: '確定停課', extra: `<p class="s">${dLabel(i.date)} ${esc(i.start)}–${esc(i.end)}。停課後這堂不能報到，也不會扣堂。</p>` });
+      if (b.dataset.a === 'del') { const has = d.list.some(x => x.status === '出席' || x.status === '缺席');
+        if (has) return toast('這堂課已有出席紀錄，不能刪除。若是不上課請改用「停課」', true);
+        formDialog('刪除這堂課｜' + i.course, off() ? [] : [NOTIFY()], { notify: '1' }, async o => { const r = await api('a.sessionDelete', { id, notify: !!o.notify }); toast('已刪除' + notiMsg(r)); m.remove(); },
+          { saveText: '確定刪除', extra: `<p>${dLabel(i.date)} ${esc(i.start)}–${esc(i.end)}</p><p class="s">刪除後這堂課會從課表消失，也不會再自動排回來；請假與補課安排會一併移除。<br>只是這次不上課、想保留紀錄的話，請改用「停課」。</p>` }); }
       if (b.dataset.a === 'resume') formDialog('恢復上課｜' + i.course, [NOTIFY()], { notify: '1' }, async o => { const r = await apiConflict('a.sessionSave', { id, ...keep, status: '正常', note: '', notify: !!o.notify }); toast('已恢復上課' + notiMsg(r)); await refresh(); }, { saveText: '恢復上課' });
     } catch (err) { toast(err.message, true); }
   });
@@ -518,19 +522,29 @@ async function showQr(id, i) {
 }
 $('#qr-x').onclick = () => { clearTimeout(qrTimer); $('#qrbox').classList.remove('show'); };
 function editSession(i) {
-  const isNew = !i;
-  const F = [...(isNew ? [{ k: 'courseId', label: '課程', type: 'select', opts: A.meta.courses.filter(c => c.status === '啟用').map(c => [c.id, c.name]) }] : []),
+  const isNew = !i, act = A.meta.courses.filter(c => c.status === '啟用' && c.weekdays !== '');
+  const F = [...(isNew ? [{ k: 'courseId', label: '課程', type: 'select', opts: [...act.map(c => [c.id, c.name]), ['__new', '＋ 新的課程（手動輸入名稱，只上這一天）']] }, { k: 'name', label: '新課程名稱', ph: '例：週末工作坊、體驗課' }] : []),
     { k: 'date', label: '日期', type: 'date' }, { k: 'start', label: '開始', type: 'time', half: 1 }, { k: 'end', label: '結束', type: 'time', half: 1 },
-    { k: 'teacher', label: '代課老師（留白＝原老師）', half: 1 }, { k: 'room', label: '教室（留白＝原教室）', half: 1 },
+    { k: 'teacher', label: isNew ? '老師' : '代課老師（留白＝原老師）', half: 1 }, { k: 'room', label: isNew ? '教室' : '教室（留白＝原教室）', half: 1 },
+    ...(isNew ? [{ k: 'color', label: '課表顏色', type: 'color', opts: A.meta.colors }, { k: 'studentIds', label: '參加的學生（可之後在點名單再加）', type: 'checks', opts: A.students.filter(x => x.status !== '停用').map(x => [x.id, x.name]) }] : []),
     { k: 'note', label: '老師備註（家長看得到）', ph: '例：調課原因、要帶的東西' }, NOTIFY()];
-  const c0 = A.meta.courses.find(c => c.status === '啟用') || {};
-  const v = isNew ? { date: A.view === 'month' && A.day ? A.day : A.meta.today, start: c0.start || '19:00', end: c0.end || '20:00', notify: '1' } : { date: i.date, start: i.start, end: i.end, teacher: i.rawTeacher || '', room: i.rawRoom || '', note: i.note, notify: '1' };
-  const m = formDialog(isNew ? '加課（單堂）' : '調課／代課｜' + i.course, F, v, async o => {
-    const r = await apiConflict('a.sessionSave', { id: isNew ? undefined : i.sessionId, ...o, status: isNew ? '正常' : i.status, notify: !!o.notify });
+  const c0 = act[0] || {};
+  const v = isNew ? { courseId: act.length ? act[0].id : '__new', date: A.view === 'month' && A.day ? A.day : A.meta.today, start: c0.start || '19:00', end: c0.end || '20:00', notify: '1', color: A.meta.colors[A.meta.courses.length % A.meta.colors.length], studentIds: [] } : { date: i.date, start: i.start, end: i.end, teacher: i.rawTeacher || '', room: i.rawRoom || '', note: i.note, notify: '1' };
+  const m = formDialog(isNew ? '加課' : '調課／代課｜' + i.course, F, v, async o => {
+    const one = isNew && o.courseId === '__new';
+    if (one && !o.name.trim()) throw new Error('請輸入課程名稱');
+    const r = await apiConflict('a.sessionSave', { id: isNew ? undefined : i.sessionId, date: o.date, start: o.start, end: o.end, note: o.note, status: isNew ? '正常' : i.status, notify: !!o.notify,
+      ...(one ? { newCourse: { name: o.name, teacher: o.teacher, room: o.room, color: o.color, studentIds: o.studentIds } } : { courseId: o.courseId, teacher: o.teacher, room: o.room }) });
+    if (one) A.meta = await api('a.meta');
     toast((isNew ? '已加課' : '已儲存') + notiMsg(r)); show(); if (!isNew) openSession(i.sessionId);
-  }, isNew ? { saveText: '加課', extra: '<p class="s">只加這一堂。要每週固定上課請到「課程管理」新增課程。</p>' }
-    : { extra: '<p class="s">只影響這一堂，不會改到每週固定時間。日期、時間、老師或教室有變動才會發通知。</p>', del: { text: '刪除這一堂', confirm: '確定刪除？（每週固定產生的課會改為停課，不會通知家長）', run: async () => { await api('a.sessionDelete', { id: i.sessionId }); toast('已處理'); show(); } } });
-  if (isNew) $('[name=courseId]', m).onchange = e => { const c = courseOf(e.target.value); $('[name=start]', m).value = c.start; $('[name=end]', m).value = c.end; };
+  }, isNew ? { saveText: '加課', extra: '<p class="s">只加這一堂，不會每週重複。課程選「＋ 新的課程」可以直接輸入名稱開一堂單次課程，之後在「課程管理」的「單次課程」可以管理。要每週固定上課請到「課程管理」新增課程。</p>' }
+    : { extra: '<p class="s">只影響這一堂，不會改到每週固定時間。日期、時間、老師或教室有變動才會發通知。要刪除請回上一頁按「刪除這堂」。</p>' });
+  if (isNew) {
+    const q = n => $(`[name=${n}]`, m), wrap = n => $(`[data-f="${n}"]`, m);
+    const sync = () => { const one = q('courseId').value === '__new'; wrap('name').hidden = !one; if (one && window.innerWidth > 860) q('name').focus(); wrap('color').hidden = !one; wrap('studentIds').hidden = !one;
+      q('teacher').placeholder = one ? '' : '留白＝原老師'; q('room').placeholder = one ? '' : '留白＝原教室'; };
+    q('courseId').onchange = e => { sync(); const c = courseOf(e.target.value); if (c.start) { q('start').value = c.start; q('end').value = c.end; } }; sync();
+  }
 }
 /** 整天停課：颱風假、國定假日 */
 function dayOff(date) {
@@ -541,17 +555,24 @@ function dayOff(date) {
 
 /* ---------- 課程管理 ---------- */
 function coursesDialog() {
-  const m = dialog('課程管理', (A.meta.courses.length ? A.meta.courses.map(c => `<div class="row"><span class="dot" style="background:${esc(c.color)}"></span><div class="g"><div class="t">${esc(c.name)} ${c.status === '停用' ? tag('停用') : ''}</div>
-    <div class="s">每週${String(c.weekdays).split('').map(d => WD[d]).join('、')} ${esc(c.start)}–${esc(c.end)}${c.teacher ? '｜' + esc(c.teacher) : ''}${c.room ? '｜' + esc(c.room) : ''}</div>
-    <div class="s">${c.date_to ? `期間 ${esc((c.date_from || '').slice(5).replace('-', '/') || '即日')} – ${esc(c.date_to.slice(2).replace(/-/g, '/'))}${c.date_to < A.meta.today ? ' <span class="tag">已結束</span>' : ''}` : '持續開課（未設結束日期）'}</div></div><button class="btn sm" data-c="${esc(c.id)}">編輯</button></div>`).join('') : '<div class="empty">還沒有課程</div>'), { foot: '<span class="sp"></span><button class="btn p" data-c="">＋ 新增課程</button>' });
+  const C = A.meta.courses, T = A.meta.today;
+  const row = c => `<div class="row"><span class="dot" style="background:${esc(c.color)}"></span><div class="g"><div class="t">${esc(c.name)} ${c.status === '停用' ? tag('停用', '已停開') : ''}</div>
+    <div class="s">${c.weekdays === '' ? esc((c.date_from || '').replace(/-/g, '/')) : '每週' + String(c.weekdays).split('').map(d => WD[d]).join('、')} ${esc(c.start)}–${esc(c.end)}${c.teacher ? '｜' + esc(c.teacher) : ''}${c.room ? '｜' + esc(c.room) : ''}</div>
+    ${c.weekdays === '' ? '' : `<div class="s">${c.date_to ? `期間 ${esc((c.date_from || '').slice(5).replace('-', '/') || '即日')} – ${esc(c.date_to.slice(2).replace(/-/g, '/'))}${c.date_to < T ? ' <span class="tag">已結束</span>' : ''}` : '持續開課（未設結束日期）'}</div>`}</div><button class="btn sm" data-c="${esc(c.id)}">編輯</button></div>`;
+  const sec = (title, list, empty) => list.length || empty ? `<h4 style="margin:14px 0 2px">${title}（${list.length}）</h4>${list.length ? list.map(row).join('') : `<div class="s">${empty}</div>`}` : '';
+  const on = C.filter(c => c.status === '啟用');
+  const m = dialog('課程管理', sec('固定課程', on.filter(c => c.weekdays !== ''), '還沒有固定課程，按下方「＋ 新增課程」') + sec('單次課程', on.filter(c => c.weekdays === '').sort((a, b) => (b.date_from || '').localeCompare(a.date_from || '')), '') + sec('已停開', C.filter(c => c.status !== '啟用'), '')
+    + '<p class="s">固定課程每週自動排課；單次課程是在課表「＋ 加課」時輸入新名稱建立的，只上一天。</p>', { foot: '<span class="sp"></span><button class="btn p" data-c="">＋ 新增課程</button>' });
   m.addEventListener('click', e => { const b = e.target.closest('[data-c]'); if (b) { m.remove(); editCourse(b.dataset.c); } });
 }
 function editCourse(id, renew) {
   const c = id ? courseOf(id) : null, src = renew ? courseOf(renew) : null;
-  const F = [{ k: 'name', label: '課程名稱', ph: '例：兒童街舞初級' }, { k: 'weekdays', label: '每週上課日（可複選）', type: 'days' },
+  const one = c && c.weekdays === '';
+  const F = [{ k: 'name', label: '課程名稱', ph: '例：兒童街舞初級' }, ...(one ? [] : [{ k: 'weekdays', label: '每週上課日（可複選）', type: 'days' },
     { k: 'dateFrom', label: '開課日期', type: 'date', half: 1 }, { k: 'dateTo', label: '結束日期（留白＝持續開課）', type: 'date', half: 1 },
-    { k: 'start', label: '開始時間', type: 'time', half: 1 }, { k: 'end', label: '結束時間', type: 'time', half: 1 }, { k: 'teacher', label: '老師', half: 1 }, { k: 'room', label: '教室', half: 1 },
+    { k: 'start', label: '開始時間', type: 'time', half: 1 }, { k: 'end', label: '結束時間', type: 'time', half: 1 }]), { k: 'teacher', label: '老師', half: 1 }, { k: 'room', label: '教室', half: 1 },
     { k: 'capacity', label: '人數上限（0＝不限）', type: 'number', half: 1 }, { k: 'deduct', label: '每堂扣幾堂', type: 'number', half: 1 }, { k: 'color', label: '課表顏色', type: 'color', opts: A.meta.colors },
+    { k: 'intro', label: '課程介紹（家長在 LINE 課表點「課程介紹」看得到）', type: 'textarea', rows: 4, ph: '例：適合 6–10 歲，從基本律動開始。請穿運動鞋、帶水壺。' },
     ...(src ? [{ k: 'copy', label: '學生名單', type: 'select', opts: [['1', '帶入上一期的學生'], ['', '不帶入，之後再排']] }] : []),
     ...(c ? [{ k: 'status', label: '狀態', type: 'select', opts: [['啟用', '開課中'], ['停用', '停開（不再排課）']] }] : [])];
   const span = src && src.date_to ? Math.max(6, Math.round((new Date(src.date_to) - new Date(src.date_from || src.date_to)) / 864e5)) : 83;
@@ -559,9 +580,11 @@ function editCourse(id, renew) {
     : src ? { ...src, weekdays: String(src.weekdays).split(''), dateFrom: dAdd(src.date_to, 1), dateTo: dAdd(src.date_to, 1 + span), copy: '1' }
     : { dateFrom: A.meta.today, dateTo: dAdd(A.meta.today, 83), start: '19:00', end: '20:00', deduct: 1, capacity: 0, weekdays: [], color: A.meta.colors[A.meta.courses.length % A.meta.colors.length] };
   const m = formDialog(c ? '編輯課程' : src ? '續開下一期｜' + src.name : '新增課程', F, v, async o => {
+    if (one) Object.assign(o, { weekdays: [], start: c.start, end: c.end, dateFrom: undefined, dateTo: undefined });
     const r = await apiConflict('a.courseSave', { id: id || undefined, ...o, copyStudentsFrom: src && o.copy ? src.id : undefined }); A.meta = await api('a.meta');
-    toast('已儲存' + (o.status === '停用' ? '' : o.dateTo ? `，整期共 ${r.past + r.upcoming} 堂（已過 ${r.past}、接下來 ${r.upcoming}）` : '，接下來共 ' + r.upcoming + ' 堂課') + (r.copied ? `，帶入 ${r.copied} 位學生` : '')); show(); },
-    { extra: (c && c.date_to ? '<button class="btn" data-renew style="margin-top:14px;width:100%">續開下一期（沿用時間、老師與學生）</button>' : '') + '<p class="s">有結束日期：只排到那一天為止，一次排完整期；開課日期在過去時，已經上過的堂數也會排出來，可以補點名。留白：持續開課，自動往後排（週數可在「設定」調整）。修改期間、時間或上課日時，尚未點名的未來課程會一起更新；已點名的不會動。</p>' });
+    toast('已儲存' + (o.status === '停用' || one ? '' : o.dateTo ? `，整期共 ${r.past + r.upcoming} 堂（已過 ${r.past}、接下來 ${r.upcoming}）` : '，接下來共 ' + r.upcoming + ' 堂課') + (r.copied ? `，帶入 ${r.copied} 位學生` : '')); show(); },
+    { del: c ? { text: '刪除課程', confirm: '確定刪除「' + c.name + '」？這門課排好的堂數、請假與補課安排都會一併刪除。\n（已經有出席紀錄的課程不能刪除，請改成「停開」。）', run: async () => { const r = await api('a.courseDelete', { id }); A.meta = await api('a.meta'); toast('已刪除課程與 ' + r.sessions + ' 堂課'); show(); } } : undefined,
+      extra: one ? '<p class="s">這是單次課程，只上一天。要改日期或時間，請到課表點那堂課按「調課／代課」。</p>' : (c && c.date_to ? '<button class="btn" data-renew style="margin-top:14px;width:100%">續開下一期（沿用時間、老師與學生）</button>' : '') + '<p class="s">有結束日期：只排到那一天為止，一次排完整期；開課日期在過去時，已經上過的堂數也會排出來，可以補點名。留白：持續開課，自動往後排（週數可在「設定」調整）。修改期間、時間或上課日時，尚未點名的未來課程會一起更新；已點名的不會動。</p>' });
   const rn = $('[data-renew]', m); if (rn) rn.onclick = () => { m.remove(); editCourse('', id); };
 }
 
@@ -693,7 +716,7 @@ document.addEventListener('click', async e => {
     if (ds.day) { A.day = ds.day; if (ds.day.slice(0, 7) !== A.mon) A.mon = ds.day.slice(0, 7); return show(); }
     if ('courses' in ds) return coursesDialog();
     if ('newcourse' in ds) return editCourse('');
-    if ('newsess' in ds) return editSession(null);
+    if ('newsess' in ds) { if (!A.students.length) A.students = await api('a.students'); return editSession(null); }
     if (ds.dayoff) return dayOff(ds.dayoff);
     if (ds.lmu) return makeupDialog(ds.lmu, ds.name, ds.from);
     if (ds.f) { A.filter.f = ds.f; return show(); }

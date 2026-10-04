@@ -235,6 +235,33 @@ ok((await call('boss', 'a.unbind', { userId: (await call('dad', 'init')).data.us
   for (const k of [k1, k2, k3, k4]) await call('boss', 'a.unbind', { userId: uidF, studentId: k.id });
 }
 
+{ // 刪除一堂課（不會被自動排回來）、單次課程
+  const { addDays, today } = await import('../server/app.js');
+  const t0 = today();
+  const c = (await call('boss', 'a.courseSave', { name: '刪除測試班', weekdays: [0, 1, 2, 3, 4, 5, 6], start: '07:00', end: '08:00', dateFrom: t0, dateTo: addDays(t0, 9) })).data;
+  const ses = () => call('boss', 'a.week', { start: t0, days: 20 }).then(x => x.data.sessions.filter(q => q.courseId === c.id));
+  const L = await ses();
+  r = await call('boss', 'a.sessionDelete', { id: L[3].sessionId });
+  await call('boss', 'a.genSessions'); app.maintenance();
+  ok(r.data.deleted && (await ses()).length === L.length - 1 && !(await ses()).some(q => q.sessionId === L[3].sessionId), '刪除固定場次後不會被自動排回來');
+  const kid = (await call('boss', 'a.studentSave', { name: '單次生' })).data;
+  r = await call('boss', 'a.sessionSave', { date: addDays(t0, 5), start: '15:00', end: '17:00', newCourse: { name: '週末工作坊', teacher: '客座老師', room: 'B', studentIds: [kid.id] } });
+  const meta = (await call('boss', 'a.meta')).data.courses.find(q => q.name === '週末工作坊');
+  const ro = (await call('boss', 'a.roster', { sessionId: r.data.id })).data;
+  ok(r.ok && meta && meta.weekdays === '' && ro.info.teacher === '客座老師' && ro.list.length === 1 && (await call('boss', 'a.week', { start: t0, days: 60 })).data.sessions.filter(q => q.courseId === meta.id).length === 1, '加課可建立單次課程（不每週重複）並排入學生');
+  ok((await call('boss', 'a.courseSave', { id: meta.id, name: '週末工作坊2', weekdays: [], start: '15:00', end: '17:00' })).ok, '單次課程可改名');
+  await call('boss', 'a.sessionDelete', { id: r.data.id });
+  ok(!(await call('boss', 'a.meta')).data.courses.some(q => q.id === meta.id), '刪除單次課程的那一堂，課程一併移除');
+  r = await call('boss', 'a.courseDelete', { id: c.id });
+  ok(r.data.deleted && !(await call('boss', 'a.meta')).data.courses.some(q => q.id === c.id) && /不能刪除/.test((await call('boss', 'a.courseDelete', { id: 'C01' })).error), '沒有出席紀錄的課程可刪除，有紀錄的不行');
+}
+
+{ // 家長課表：課程介紹與課程影片數
+  r = await call('boss', 'a.courseSave', { id: 'C01', name: '兒童街舞', weekdays: [3], start: '18:30', end: '19:30', intro: '適合 6–10 歲，從基本律動開始。' });
+  const sc = (await call('mom', 'schedule', { studentId: sid })).data;
+  ok(sc.info.C01 && sc.info.C01.intro.includes('6–10 歲') && sc.info.C01.videos === 1 && 'botId' in (await call('mom', 'init')).data, '家長課表帶出課程介紹與影片數');
+}
+
 // Webhook
 const body = JSON.stringify({ events: [{ type: 'message', replyToken: 'r', message: { type: 'text', text: '剩幾堂' }, source: { userId: (await call('mom', 'init')).data.userId } }] });
 const sig = crypto.createHmac('sha256', 'sec').update(body).digest('base64');

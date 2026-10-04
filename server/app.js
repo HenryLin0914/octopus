@@ -64,7 +64,7 @@ const PLANS = [['P01', '單堂', 1, 500, 30], ['P02', '10堂卡', 10, 4500, 90],
 const COLORS = ['#D6336C', '#1971C2', '#2B8A3E', '#E67700', '#7048E8', '#0C8599', '#C2255C', '#5C940D'];
 
 const OWNER_ONLY = new Set(['a.studentSave', 'a.enroll', 'a.unbind', 'a.topup', 'a.cardSave', 'a.courseSave', 'a.sessionSave', 'a.sessionDelete', 'a.genSessions',
-  'a.videoSave', 'a.videoDelete', 'a.planSave', 'a.settingSave', 'a.adminSave', 'a.richmenu', 'a.export', 'a.student', 'a.videos', 'a.plans', 'a.settings', 'a.admins', 'a.cards', 'a.ledger', 'a.topupSave', 'a.videoInfo', 'a.dayOff', 'a.familySave']);
+  'a.videoSave', 'a.videoDelete', 'a.planSave', 'a.settingSave', 'a.adminSave', 'a.richmenu', 'a.export', 'a.student', 'a.videos', 'a.plans', 'a.settings', 'a.admins', 'a.cards', 'a.ledger', 'a.topupSave', 'a.videoInfo', 'a.dayOff', 'a.familySave', 'a.courseDelete']);
 const ASYNC = new Set(['a.richmenu', 'a.videoInfo']);
 /** 從各種 YouTube 網址取出影片 ID（watch、youtu.be、shorts、live、embed） */
 export const ytId = url => { const m = String(url || '').match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^#]*&)?v=|shorts\/|live\/|embed\/|v\/))([\w-]{11})(?![\w-])/); return m ? m[1] : ''; };
@@ -81,6 +81,8 @@ export function createApp(opts = {}) {
     if (!cols.includes('date_from')) db.exec("ALTER TABLE courses ADD COLUMN date_from TEXT DEFAULT ''");
     if (!cols.includes('date_to')) db.exec("ALTER TABLE courses ADD COLUMN date_to TEXT DEFAULT ''");
     if (!db.prepare('PRAGMA table_info(students)').all().some(c => c.name === 'family')) db.exec("ALTER TABLE students ADD COLUMN family TEXT DEFAULT ''");
+    if (!cols.includes('intro')) db.exec("ALTER TABLE courses ADD COLUMN intro TEXT DEFAULT ''");
+    db.exec('CREATE TABLE IF NOT EXISTS session_skips(id TEXT PRIMARY KEY)'); // 已刪除的固定場次，不再自動排回來
     db.exec("CREATE TABLE IF NOT EXISTS makeups(id TEXT PRIMARY KEY, student_id TEXT, session_id TEXT, from_session_id TEXT DEFAULT '', created_at TEXT, by_name TEXT)");
   }
   const all = (sql, ...a) => db.prepare(sql).all(...a);
@@ -169,7 +171,7 @@ export function createApp(opts = {}) {
     if (yt) bubble.hero = { type: 'image', url: 'https://i.ytimg.com/vi/' + yt + '/hqdefault.jpg', size: 'full', aspectRatio: '16:9', aspectMode: 'cover', action: act };
     return bubble;
   }
-  const videosFor = sid => all("SELECT v.id,v.title,v.date,v.url,COALESCE(c.name,'') course,v.student_id personal FROM videos v LEFT JOIN courses c ON c.id=v.course_id WHERE v.status='啟用' AND v.url<>'' AND (v.student_id=? OR (v.student_id='' AND (v.course_id='' OR v.course_id IN (SELECT course_id FROM enrollments WHERE student_id=?)))) ORDER BY v.date DESC, v.id DESC", sid, sid).map(v => ({ ...v, yt: ytId(v.url) }));
+  const videosFor = sid => all("SELECT v.id,v.title,v.date,v.url,v.course_id courseId,COALESCE(c.name,'') course,v.student_id personal FROM videos v LEFT JOIN courses c ON c.id=v.course_id WHERE v.status='啟用' AND v.url<>'' AND (v.student_id=? OR (v.student_id='' AND (v.course_id='' OR v.course_id IN (SELECT course_id FROM enrollments WHERE student_id=?)))) ORDER BY v.date DESC, v.id DESC", sid, sid).map(v => ({ ...v, yt: ytId(v.url) }));
 
   /* ---------- 共用查詢 ---------- */
   const adminOf = userId => get('SELECT * FROM admins WHERE user_id=? AND active=1', userId) || null;
@@ -259,6 +261,13 @@ export function createApp(opts = {}) {
     return d;
   }
 
+  /** 官方帳號的 ID（@xxxx），用來讓家長從網頁一鍵回到聊天室諮詢 */
+  async function loadBotInfo() {
+    if (!env.LINE_CHANNEL_ACCESS_TOKEN) return;
+    try { const r = await lineFetch('https://api.line.me/v2/bot/info', { headers: authHdr() }); const d = r.ok ? await r.json() : {};
+      if (d.basicId) run("INSERT INTO meta VALUES('bot_basic_id',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", d.basicId); } catch (e) { console.error('bot info', e.message); }
+  }
+
   function notifyLeave(info, sid, reason, byName) {
     const name = (student(sid) || {}).name || sid;
     const rows = [['課程', info.course], ['時間', info.date + ' ' + info.start], ['原因', reason], ['申請人', byName]];
@@ -275,11 +284,14 @@ export function createApp(opts = {}) {
   const courseRange = c => { const t = today(); return { from: c.date_from || t, to: c.date_to || addDays(t, cfgNum('產生場次週數', 8) * 7 - 1) }; };
   function generateSessions() {
     let n = 0;
-    all("SELECT * FROM courses WHERE status='啟用'").forEach(c => {
+    const skipped = new Set(all('SELECT id FROM session_skips').map(r => r.id));
+    all("SELECT * FROM courses WHERE status='啟用' AND weekdays<>''").forEach(c => {
       const days = courseDays(c), { from, to } = courseRange(c);
       for (let d = from, i = 0; d <= to && i < 1100; d = addDays(d, 1), i++) {
         if (!days.includes(weekday(d))) continue;
-        const r = run('INSERT OR IGNORE INTO sessions(id,course_id,date,start,end,teacher,room,status,manual) VALUES(?,?,?,?,?,?,?,?,0)', c.id + '-' + d.replace(/-/g, ''), c.id, d, c.start, c.end, '', '', '正常');
+        const sid = c.id + '-' + d.replace(/-/g, '');
+        if (skipped.has(sid)) continue;
+        const r = run('INSERT OR IGNORE INTO sessions(id,course_id,date,start,end,teacher,room,status,manual) VALUES(?,?,?,?,?,?,?,?,0)', sid, c.id, d, c.start, c.end, '', '', '正常');
         n += Number(r.changes);
       }
     });
@@ -338,7 +350,7 @@ export function createApp(opts = {}) {
   const API = {
     /* ---------- 家長端 ---------- */
     init(b, user) {
-      return { studio: cfg('教室名稱', '舞蹈教室'), userId: user.userId, name: user.name, isAdmin: !!adminOf(user.userId), students: kidsOf(user.userId).map(studentBrief), lowAt: cfgNum('低堂數門檻', 2) };
+      return { studio: cfg('教室名稱', '舞蹈教室'), userId: user.userId, name: user.name, isAdmin: !!adminOf(user.userId), students: kidsOf(user.userId).map(studentBrief), lowAt: cfgNum('低堂數門檻', 2), botId: (get("SELECT value FROM meta WHERE key='bot_basic_id'") || {}).value || '' };
     },
     bind(b, user) {
       const code = str(b.code, 10);
@@ -381,11 +393,15 @@ export function createApp(opts = {}) {
       };
       const upcoming = all('SELECT * FROM sessions WHERE date>=? AND date<=? ORDER BY date,start', t, end).filter(visible).map(view);
       const wd = '日一二三四五六';
-      const courses = all("SELECT * FROM courses WHERE status='啟用' ORDER BY start").map(c => ({ id: c.id, name: c.name, teacher: c.teacher, day: courseDays(c).map(d => wd[d]).join('、'), start: c.start, end: c.end, room: c.room, enrolled: mine.includes(c.id), from: c.date_from || '', to: c.date_to || '' }));
-      const out = { upcoming, courses, enrolledOnly: mine.length > 0, today: t };
+      const courses = all("SELECT * FROM courses WHERE status='啟用' AND weekdays<>'' ORDER BY start").map(c => ({ id: c.id, name: c.name, teacher: c.teacher, day: courseDays(c).map(d => wd[d]).join('、'), start: c.start, end: c.end, room: c.room, enrolled: mine.includes(c.id), from: c.date_from || '', to: c.date_to || '' }));
+      const vids = {}; videosFor(b.studentId).forEach(v => { if (v.courseId) vids[v.courseId] = (vids[v.courseId] || 0) + 1; });
+      const info = {}, addInfo = id => { if (info[id]) return; const c = get('SELECT * FROM courses WHERE id=?', id); if (c) info[id] = { id, name: c.name, intro: c.intro || '', teacher: c.teacher, room: c.room, day: courseDays(c).map(d => wd[d]).join('、'), start: c.start, end: c.end, from: c.date_from || '', to: c.date_to || '', oneoff: c.weekdays === '', videos: vids[id] || 0 }; };
+      const out = { upcoming, courses, enrolledOnly: mine.length > 0, today: t, info };
+      upcoming.forEach(u => addInfo(u.courseId)); courses.forEach(c => addInfo(c.id));
       if (b.month !== undefined) { // 月曆：整個月（含過去）的課
         out.month = /^\d{4}-\d{2}$/.test(b.month || '') ? b.month : t.slice(0, 7);
         out.monthSessions = all('SELECT * FROM sessions WHERE substr(date,1,7)=? ORDER BY date,start', out.month).filter(visible).map(view);
+        out.monthSessions.forEach(u => addInfo(u.courseId));
       }
       return out;
     },
@@ -622,7 +638,8 @@ export function createApp(opts = {}) {
       if (!name) throw new Error('請輸入課程名稱');
       if (!start || !end || end <= start) throw new Error('上課時間不正確');
       const weekdays = [...new Set((b.weekdays || []).map(Number).filter(n => n >= 0 && n <= 6))].sort().join('');
-      if (!weekdays) throw new Error('請至少選一天上課日');
+      const oneoff = b.id && (get('SELECT weekdays w FROM courses WHERE id=?', b.id) || {}).w === '';
+      if (!weekdays && !oneoff) throw new Error('請至少選一天上課日');
       const id = b.id || nextId('courses', 'C', 2);
       const vals = [name, str(b.teacher, 40), weekdays, start, end, str(b.room, 40), Math.max(1, Math.floor(Number(b.deduct)) || 1), Math.max(0, Math.floor(Number(b.capacity)) || 0), COLORS.includes(b.color) ? b.color : COLORS[0], b.status === '停用' ? '停用' : '啟用'];
       if (b.id) { if (!get('SELECT 1 x FROM courses WHERE id=?', id)) throw new Error('找不到課程'); run('UPDATE courses SET name=?,teacher=?,weekdays=?,start=?,end=?,room=?,deduct=?,capacity=?,color=?,status=? WHERE id=?', ...vals, id); }
@@ -634,6 +651,7 @@ export function createApp(opts = {}) {
         if (df && df < addDays(today(), -731)) throw new Error('開課日期最多往前兩年');
         run('UPDATE courses SET date_from=?, date_to=? WHERE id=?', df, dt, id);
       }
+      if (b.intro !== undefined) run('UPDATE courses SET intro=? WHERE id=?', str(b.intro, 2000), id);
       const c = get('SELECT * FROM courses WHERE id=?', id);
       syncCourseSessions(c);
       const added = generateSessions();
@@ -644,6 +662,15 @@ export function createApp(opts = {}) {
         past: get("SELECT COUNT(*) n FROM sessions WHERE course_id=? AND date<? AND status<>'停課'", id, today()).n };
     },
     /** 單一場次：新增加課（manual）、調整時間／代課老師／教室、停課或恢復 */
+    /** 刪除課程：沒有任何出席紀錄才能刪（有紀錄請改「停開」） */
+    'a.courseDelete'(b) {
+      if (!get('SELECT 1 x FROM courses WHERE id=?', b.id)) throw new Error('找不到課程');
+      if (get("SELECT 1 x FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.course_id=? AND a.status IN ('出席','缺席')", b.id)) throw new Error('這門課已有出席紀錄，不能刪除，請改成「停開」');
+      all('SELECT id FROM sessions WHERE course_id=?', b.id).forEach(x => { run('DELETE FROM attendance WHERE session_id=?', x.id); run('DELETE FROM leaves WHERE session_id=?', x.id); run('DELETE FROM makeups WHERE session_id=? OR from_session_id=?', x.id, x.id); });
+      const n = Number(run('DELETE FROM sessions WHERE course_id=?', b.id).changes);
+      run('DELETE FROM enrollments WHERE course_id=?', b.id); run('DELETE FROM session_skips WHERE id LIKE ?', b.id + '-%'); run('DELETE FROM courses WHERE id=?', b.id);
+      return { deleted: true, sessions: n };
+    },
     'a.sessionSave'(b) {
       const date = nd(b.date), start = nt(b.start), end = nt(b.end);
       if (!date || !start || !end || end <= start) throw new Error('日期或時間不正確');
@@ -654,6 +681,15 @@ export function createApp(opts = {}) {
         if (!old) throw new Error('找不到場次');
         run('UPDATE sessions SET date=?,start=?,end=?,teacher=?,room=?,status=?,note=?,manual=1 WHERE id=?', date, start, end, str(b.teacher, 40), str(b.room, 40), status, str(b.note), b.id);
       } else {
+        if (b.newCourse) { // 單次課程：只在這一天上，不會每週重複
+          const name = str(b.newCourse.name, 60);
+          if (!name) throw new Error('請輸入課程名稱');
+          b.courseId = nextId('courses', 'C', 2);
+          run("INSERT INTO courses(id,name,teacher,weekdays,start,end,room,deduct,capacity,color,status,date_from,date_to) VALUES(?,?,?,'',?,?,?,?,0,?,'啟用',?,?)", b.courseId, name, str(b.newCourse.teacher, 40), start, end, str(b.newCourse.room, 40),
+            Math.max(0, Math.floor(Number(b.newCourse.deduct ?? 1)) || 0) || 1, COLORS.includes(b.newCourse.color) ? b.newCourse.color : COLORS[0], date, date);
+          (b.newCourse.studentIds || []).filter(student).forEach(sid => run('INSERT INTO enrollments VALUES(?,?,?)', sid, b.courseId, today()));
+          b.teacher = ''; b.room = '';
+        }
         if (!get('SELECT 1 x FROM courses WHERE id=?', b.courseId)) throw new Error('請選擇課程');
         id = uid('X');
         run('INSERT INTO sessions(id,course_id,date,start,end,teacher,room,status,note,manual) VALUES(?,?,?,?,?,?,?,?,?,1)', id, b.courseId, date, start, end, str(b.teacher, 40), str(b.room, 40), status, str(b.note));
@@ -706,11 +742,16 @@ export function createApp(opts = {}) {
     },
     'a.makeupDelete'(b) { return { removed: Number(run('DELETE FROM makeups WHERE student_id=? AND session_id=?', b.studentId, b.sessionId).changes) }; },
     'a.sessionDelete'(b) {
-      if (get("SELECT 1 x FROM attendance WHERE session_id=? AND status<>'取消'", b.id)) throw new Error('這堂課已有出席紀錄，不能刪除，請改用「停課」');
-      const s = sessRow(b.id);
-      if (s && !String(s.id).startsWith('X')) { run("UPDATE sessions SET status='停課', manual=1 WHERE id=?", b.id); return { cancelled: true }; }
-      run('DELETE FROM sessions WHERE id=?', b.id); run('DELETE FROM makeups WHERE session_id=?', b.id);
-      return { deleted: true };
+      const x = sessRow(b.id);
+      if (!x) throw new Error('找不到場次');
+      if (get("SELECT 1 x FROM attendance WHERE session_id=? AND status<>'取消' AND status<>'請假'", b.id)) throw new Error('這堂課已有出席紀錄，不能刪除。若是不上課請改用「停課」');
+      const notified = b.notify && x.status !== '停課' ? notifySession('停課', x, { ...x, status: '停課', note: str(b.reason) || '這堂課已取消' }) : 0;
+      run("UPDATE attendance SET status='取消' WHERE session_id=?", b.id); run('DELETE FROM leaves WHERE session_id=?', b.id); run('DELETE FROM makeups WHERE session_id=? OR from_session_id=?', b.id, b.id);
+      run('DELETE FROM sessions WHERE id=?', b.id);
+      if (!String(x.id).startsWith('X')) run('INSERT OR IGNORE INTO session_skips VALUES(?)', x.id); // 固定排課的場次：記下來，避免自動排回來
+      const c = get('SELECT * FROM courses WHERE id=?', x.course_id); // 單次課程刪掉最後一堂，課程一起移除
+      if (c && c.weekdays === '' && !get('SELECT 1 x FROM sessions WHERE course_id=?', c.id)) { run('DELETE FROM courses WHERE id=?', c.id); run('DELETE FROM enrollments WHERE course_id=?', c.id); }
+      return { deleted: true, notified };
     },
     'a.genSessions'() { return { added: generateSessions() }; },
     /** 帳務：某月的儲值明細與統計 */
@@ -932,5 +973,6 @@ export function createApp(opts = {}) {
   }
 
   maintenance();
+  loadBotInfo();
   return { api, webhook, db, maintenance, qrToken, flush: () => flush(), all, get, run };
 }
