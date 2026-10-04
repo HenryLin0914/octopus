@@ -154,6 +154,18 @@ ok((await call('boss', 'a.unbind', { userId: (await call('dad', 'init')).data.us
   ok((await call('boss', 'a.week', { start: t0, days: 42 })).data.sessions.every(x => x.courseId !== cid), '月曆查詢 42 天、停開課程不再出現');
 }
 
+{ // 開課期間含過去日期：過去的堂數也要排出來
+  const { addDays, today } = await import('../server/app.js');
+  const t0 = today();
+  r = await call('boss', 'a.courseSave', { name: '回溯班', weekdays: [0, 1, 2, 3, 4, 5, 6], start: '09:00', end: '10:00', dateFrom: addDays(t0, -20), dateTo: addDays(t0, 9) });
+  ok(r.data.past === 20 && r.data.upcoming === 10, '期間含過去日期時補排過去堂數 ' + JSON.stringify(r.data));
+  const w = (await call('boss', 'a.week', { start: addDays(t0, -20), days: 30 })).data.sessions.filter(x => x.courseId === r.data.id);
+  ok(w.length === 30 && w[0].seq === 1 && w[0].total === 30 && w[29].seq === 30 && w[0].past === true && w[29].past === false, '場次帶出第幾堂／共幾堂');
+  r = await call('boss', 'a.courseSave', { id: r.data.id, name: '回溯班', weekdays: [0, 1, 2, 3, 4, 5, 6], start: '09:00', end: '10:00', dateFrom: addDays(t0, -5), dateTo: addDays(t0, 9) });
+  ok(r.data.past === 5, '開課日期往後改，期間外未點名的過去堂數會移除');
+  await call('boss', 'a.courseSave', { id: r.data.id, name: '回溯班', weekdays: [1], start: '09:00', end: '10:00', status: '停用' });
+}
+
 // Webhook
 const body = JSON.stringify({ events: [{ type: 'message', replyToken: 'r', message: { type: 'text', text: '剩幾堂' }, source: { userId: (await call('mom', 'init')).data.userId } }] });
 const sig = crypto.createHmac('sha256', 'sec').update(body).digest('base64');
