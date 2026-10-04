@@ -712,7 +712,7 @@ document.addEventListener('click', async e => {
         { extra: `<p class="s">${esc(r.time.slice(0, 16))}｜${esc(r.plan_name)} ${r.lessons} 堂｜這張卡目前剩 ${r.card_remain ?? '—'} 堂。堂數要更正請到學生的上課卡按「調整」。</p>`, del: { text: '作廢這筆', confirm: '確定作廢？這筆收入會刪除，對應的上課卡會停用。', run: async () => { await api('a.topupSave', { id: r.id, void: true }); toast('已作廢'); show(); } } }); }
     if (ds.topup) { if (!A.students.length) A.students = await api('a.students'); return topup(ds.topup); }
     if (ds.copy) { const url = location.origin + '/admin.html';
-      const text = ds.copy === 'url' ? url : `【${A.meta.studio}】後台邀請\n1. 用 LINE 開啟這個連結：${url}\n2. 按「申請開通」\n3. 跟我說一聲，我幫您開通後重新整理就能使用`;
+      const text = ds.copy === 'url' ? url : `【${A.meta.studio}】後台邀請\n1. 用 LINE 開啟這個連結：${url}\n2. 按「申請開通」\n3. 跟我說一聲，我開通後頁面會自動進入後台`;
       let ok = false; try { await navigator.clipboard.writeText(text); ok = true; } catch { const t = document.createElement('textarea'); t.value = text; t.style.cssText = 'position:fixed;opacity:0'; document.body.appendChild(t); t.select(); try { ok = document.execCommand('copy'); } catch { /* 不支援 */ } t.remove(); }
       return toast(ok ? '已複製，貼到 LINE 傳給對方即可' : '無法自動複製，請長按上方網址手動複製', !ok); }
     if ('richmenu' in ds) { if (!confirm('確定重新套用圖文選單？')) return; await api('a.richmenu'); return toast('圖文選單已套用'); }
@@ -737,22 +737,28 @@ async function gate() {
   if (st.isAdmin) return true;
   $('#app').innerHTML = `<div class="card" style="max-width:440px;margin:8vh auto"><h1 style="font-size:20px;margin:0 0 6px">${esc(st.studio)}｜後台</h1>
     ${!st.hasOwner ? `<p>這是第一次啟用。請輸入安裝時顯示的<b>安裝碼</b>，您就會成為管理員。</p><input id="code" placeholder="安裝碼" autocomplete="off"><button class="btn p" id="claim" style="width:100%;margin-top:12px">啟用後台</button>`
-      : st.applied ? `<p>您的申請已送出，請等管理員開通後重新整理這個頁面。</p><button class="btn" onclick="location.reload()">重新整理</button>`
+      : st.applied ? `<p>您的申請已送出。管理員開通後，這個頁面會<b>自動進入後台</b>，不用關掉重開。</p><p class="s">等待開通中…</p><button class="btn" id="recheck" style="width:100%">我已經被開通了，立即進入</button>`
       : `<p>${esc(st.name)}，您還沒有後台權限。按下申請後，請管理員到「設定 → 管理員與老師」為您開通。</p><button class="btn p" id="apply" style="width:100%">申請開通</button>`}</div>`;
   const c = $('#claim'), a = $('#apply');
   if (c) c.onclick = async () => { try { await api('a.claim', { code: $('#code').value.trim() }); location.reload(); } catch (e) { toast(e.message, true); } };
   if (a) a.onclick = async () => { try { await api('a.apply'); toast('已送出申請'); gate(); } catch (e) { toast(e.message, true); } };
+  // 等待開通：每 4 秒自動檢查一次，開通後直接進入後台（不靠重新整理，避免 LINE 內建瀏覽器重載失敗）
+  clearInterval(gate.t);
+  const check = async manual => { try { const r = await api('a.status', {}, !manual); if (r.isAdmin) { clearInterval(gate.t); toast('已開通，歡迎使用'); return enter(); } if (manual) toast('還沒開通，請管理員到「設定 → 管理員與老師」按「開通」', true); } catch (e) { if (manual) toast(e.message, true); } };
+  if (st.applied) { gate.t = setInterval(() => { if (!document.hidden && $('#recheck')) check(false); }, 4000); $('#recheck').onclick = () => check(true); }
   return false;
 }
-(async function () {
-  try {
-    await boot();
-    if (!(await gate())) return;
+async function enter() {
     A.meta = await api('a.meta');
     $('#side').innerHTML = `<div class="brand">${esc(A.meta.studio)}<small>管理後台</small></div>` + NAV.filter(n => !n[2] || owner()).map(n => `<a href="#${n[0]}" data-p="${n[0]}">${ICON[n[0]]}<span>${n[1]}</span></a>`).join('') + `<div class="me">${esc(A.meta.name || '')}｜${owner() ? '管理員' : '老師'}</div>`;
     $('#side').hidden = false;
     show(location.hash.slice(1) || 'home');
-  } catch (e) { $('#app').innerHTML = `<div class="card empty">⚠️ ${esc(e.message)}</div>`; }
+}
+(async function () {
+  try {
+    await boot();
+    if (await gate()) await enter();
+  } catch (e) { $('#app').innerHTML = `<div class="card empty">⚠️ ${esc(e.message)}<br><br><button class="btn" onclick="location.href=location.pathname">重新載入</button></div>`; }
 })();
 </script>
 </body>
