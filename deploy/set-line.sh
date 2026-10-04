@@ -15,6 +15,11 @@ SECRET=$(ask_secret '新的 Channel secret（輸入時不顯示）')
 LIFF=$(ask 'LIFF ID' "$(cur LIFF_ID)")
 LOGIN=$(ask 'LINE Login Channel ID' "$(cur LINE_LOGIN_CHANNEL_ID)")
 
+echo
+echo "新的官方帳號如果和原本的 LINE Login 在「不同的 Provider」，LINE 給每個人的使用者 ID 會全部不同，"
+echo "舊的家長綁定和管理員身分都會失效，需要清掉後重新綁定（學生、課程、上課卡、出席、帳務資料都會保留）。"
+RESET=$(ask '是否清除舊的 LINE 綁定與管理員？輸入 yes 清除，其他＝不清除' 'no')
+
 cp "$ENV" "$ENV.bak.$(date +%Y%m%d%H%M%S)"; chmod 600 "$ENV".bak.* 2>/dev/null || true
 [ -n "$TOKEN" ] && setv LINE_CHANNEL_ACCESS_TOKEN "$TOKEN"
 [ -n "$SECRET" ] && setv LINE_CHANNEL_SECRET "$SECRET"
@@ -29,6 +34,22 @@ if [ -n "$TOKEN" ]; then # 先確認金鑰有效，並顯示是哪一個官方�
 fi
 PROFILE=$(docker compose ps --format '{{.Service}}' 2>/dev/null | grep -qx caddy && echo caddy || true)
 GIT_SHA=$(git rev-parse --short HEAD) COMPOSE_PROFILES=$PROFILE docker compose up -d --force-recreate
+if [ "$RESET" = "yes" ]; then
+  sleep 3
+  docker compose exec -T app node --no-warnings --input-type=module -e '
+    import { DatabaseSync } from "node:sqlite";
+    const f = (process.env.DATA_DIR || "/data") + "/octopus.db", db = new DatabaseSync(f);
+    db.exec("PRAGMA busy_timeout=5000");
+    const n = t => db.prepare("SELECT COUNT(*) n FROM " + t).get().n;
+    const bak = f.replace(/octopus\.db$/, "before-switch-" + Date.now() + ".db");
+    db.exec("VACUUM INTO \x27" + bak + "\x27");
+    console.log("清除前：家長綁定 " + n("bindings") + " 筆、管理員／老師 " + n("admins") + " 位（已另存備份 " + bak + "）");
+    db.exec("BEGIN IMMEDIATE; DELETE FROM bindings; DELETE FROM admins; UPDATE bookings SET user_id=\x27\x27 WHERE user_id<>\x27\x27; UPDATE signups SET status=\x27已婉拒\x27 WHERE status=\x27待審核\x27; DELETE FROM meta WHERE key IN (\x27bot_basic_id\x27,\x27richmenu_id\x27); COMMIT;");
+    console.log("已清除。學生 " + n("students") + " 位、課程 " + n("courses") + " 門、上課卡 " + n("cards") + " 張都保留。");
+  ' || echo "⚠ 清除失敗，資料沒有變動，請把這段訊息傳給協助您的人"
+  docker compose restart app >/dev/null
+  echo "請用 LINE 開啟後台，輸入安裝碼重新成為管理員。安裝碼：$(cur SETUP_CODE)"
+fi
 DOMAIN=$(cur DOMAIN || true)
 cat <<MSG
 
