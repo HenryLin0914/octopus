@@ -58,6 +58,11 @@ main{padding:22px 26px 60px;min-width:0}
 .vcard .t{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .vcard .acts{margin-top:auto;padding-top:4px}
 .arow{width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);font:inherit;color:inherit;cursor:pointer}.arow:hover{background:var(--soft)}
+.bk{display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:4px 10px 4px 4px;margin-bottom:8px;flex-wrap:wrap}
+.bk.dim{opacity:.6}.bkm{flex:1 1 220px;min-width:0;display:flex;gap:12px;align-items:flex-start;text-align:left;border:0;background:none;padding:9px 8px;font:inherit;color:inherit}
+.bkm .tm{font-weight:700;font-variant-numeric:tabular-nums;flex:none;width:50px}.bkm .tm small{display:block;font-weight:400;color:var(--sub);font-size:12px}
+.bkm .g{flex:1;min-width:0}.bkm .t,.bkm .s{display:block;overflow-wrap:anywhere}.bkm .tgs{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}.bkm .tgs:empty{display:none}
+.bk .acts{padding:0 4px 6px 62px}
 .fam{color:var(--info)}
 .fbox{background:#eef5fc;border:1px solid #cfe2f5;border-radius:10px;padding:10px 12px;margin-top:10px}.fbox .row{padding:7px 0;border-color:#cfe2f5}
 .amt{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -219,7 +224,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 <script src="config.js"></script>
 <script src="common.js"></script>
 <script>
-const A = { meta: null, students: [], page: 'home', week: null, filter: { kw: '', f: 'all', course: '' }, money: { tab: 'log', month: '' }, vf: '', cf: '', view: 'week', mon: '', day: '', att: { tab: 'log', month: '', course: '', student: '' } };
+const A = { meta: null, students: [], page: 'home', week: null, filter: { kw: '', f: 'all', course: '' }, money: { tab: 'log', month: '' }, vf: '', cf: '', rent: { tab: 'list', f: 'todo' }, view: 'week', mon: '', day: '', att: { tab: 'log', month: '', course: '', student: '' } };
 const owner = () => A.meta && A.meta.role === 'owner';
 const ICON = {
   home: '<svg viewBox="0 0 24 24"><path d="M3 11l9-8 9 8M5 10v10h14V10"/></svg>',
@@ -229,9 +234,10 @@ const ICON = {
   leaves: '<svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4M9 12h7M9 16h5"/></svg>',
   money: '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/></svg>',
   videos: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10 9.500v5l4.500-2.500z"/></svg>',
+  rent: '<svg viewBox="0 0 24 24"><path d="M4 21V5l8-2v18M12 7h8v14M4 21h16M8 9v.010M8 13v.010M8 17v.010M16 11v.010M16 15v.010"/></svg>',
   settings: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.900 4.900l2.100 2.100M17 17l2.100 2.100M4.900 19.100L7 17M17 7l2.100-2.100"/></svg>'
 };
-const NAV = [['home', '總覽'], ['schedule', '課表'], ['students', '學生'], ['money', '帳務', true], ['attend', '出席'], ['videos', '影片', true], ['settings', '設定', true]];
+const NAV = [['home', '總覽'], ['schedule', '課表'], ['students', '學生'], ['money', '帳務', true], ['attend', '出席'], ['videos', '影片', true], ['rent', '租借', true], ['settings', '設定', true]];
 const tag = (st, text) => { const c = ['出席', '已登記', '在學', '啟用', '正常'].includes(st) ? 'ok' : ['請假', '用完', '已結算'].includes(st) ? 'warn' : ['缺席', '停課', '停用', '過期'].includes(st) ? 'bad' : ''; return `<span class="tag ${c}">${esc(text || st)}</span>`; };
 const courseOf = id => (A.meta.courses.find(c => c.id === id) || {});
 const monday = d => dAdd(d, -((dDay(d) + 6) % 7));
@@ -297,6 +303,7 @@ const PAGES = {
       <div class="card stat"><b>${st.unbound}</b><span>尚未綁定家長</span></div>
       ${owner() ? `<a class="card stat" href="#money" style="text-decoration:none;color:inherit"><b>${money(st.monthIncome)}</b><span>本月儲值收入 ›</span></a>` : ''}
     </div>
+    ${owner() && d.rentPending ? `<a class="note" href="#rent" style="display:block;text-decoration:none;margin:0 0 12px">🏠 有 <b>${d.rentPending}</b> 筆教室租借申請等您確認 ›</a>` : ''}
     ${sg.length ? `<div class="card" style="margin-bottom:14px;border-color:#f3dca6;background:#fffaf0"><h2 style="color:#8a4b00">報名申請（${sg.length}）</h2>${sg.map(g => `<div class="row"><div class="g"><div class="t">${esc(g.student)} → ${esc(g.course)}</div><div class="s">${esc(g.by || '家長')} 於 ${esc(g.time.slice(5, 16))} 申請｜剩 ${g.remain} 堂｜目前 ${g.count}${g.capacity ? '／' + g.capacity : ''} 人</div></div><div class="acts"><button class="btn sm ok" data-sg="${esc(g.id)}" data-ok="1">同意</button><button class="btn sm" data-sg="${esc(g.id)}">婉拒</button></div></div>`).join('')}<p class="s" style="margin-bottom:0">同意後學生會加入該課程的固定名單，並用 LINE 通知家長結果。</p></div>` : ''}
     <div class="grid cols">
       <div class="card"><h2>今日課程<span class="sp"></span><a class="btn sm ghost" href="#schedule">看整週 ›</a></h2>
@@ -424,6 +431,36 @@ const PAGES = {
           ${d.truncated ? '<p class="s">只顯示最近 600 筆，請用上方篩選縮小範圍，或到「設定 → 匯出資料」下載完整紀錄。</p>' : ''}${d.rows.length ? '<p class="s" style="margin-bottom:0">點任一筆可開啟那堂課的點名單更正。</p>' : ''}</div>`;
     return `<div class="head"><h1>出席</h1></div><div class="acts" style="margin-bottom:12px">${seg}</div>${filters}${stats}${body}
       <p class="s">出席率＝出席 ÷（出席＋請假＋缺席）。缺席要在課後按「結算」才會記錄。</p>`;
+  },
+
+  async rent() {
+    const R = A.rent, d = await api('a.rent'); R.data = d;
+    const T = d.today, tagOf = id => d.tags.find(t => t.id === id);
+    const seg = `<div class="seg">${[['list', '預約' + (d.pending ? '（' + d.pending + '）' : '')], ['rooms', '教室與時段'], ['tags', '標籤']].map(x => `<button class="${R.tab === x[0] ? 'on' : ''}" data-rtab="${x[0]}">${x[1]}</button>`).join('')}</div>`;
+    const head = `<div class="head"><h1>教室租借</h1><span class="sp"></span>${R.tab === 'list' ? '<button class="btn p" data-bk="">＋ 手動預約</button>' : R.tab === 'rooms' ? '<button class="btn p" data-room="">＋ 新增教室</button>' : '<button class="btn p" data-rtag="">＋ 新增標籤</button>'}</div><div class="acts" style="margin-bottom:12px">${seg}</div>`;
+    if (R.tab === 'tags') return head + `<div class="card">${d.tags.length ? d.tags.map(t => `<div class="row"><span class="dot" style="background:${esc(t.color)}"></span><div class="g t">${esc(t.name)}</div><span class="s">${d.bookings.filter(b => b.tags.includes(t.id)).length} 筆</span><button class="btn sm" data-rtag="${esc(t.id)}">編輯</button></div>`).join('') : '<div class="empty">還沒有標籤</div>'}</div>
+      <p class="s">標籤用來幫預約分類，例如「已付款」「未付款」「常客」「舞團」「需開冷氣」。在預約裡勾選即可，只有後台看得到。</p>`;
+    if (R.tab === 'rooms') {
+      const hours = r => [1, 2, 3, 4, 5, 6, 0].filter(w => (r.open[w] || []).length).map(w => `<div class="s"><b style="color:var(--ink)">週${WD[w]}</b>　${r.open[w].map(x => x[0] + '–' + x[1]).join('、')}</div>`).join('') || '<div class="s" style="color:var(--warn)">尚未設定開放時段，外部看不到可預約的時間</div>';
+      return head + (d.rooms.length ? d.rooms.map(r => `<div class="card" style="margin-bottom:12px"><div class="row" style="padding-top:0"><div class="g"><div class="t" style="font-size:17px">${esc(r.name)} ${r.status === '開放' ? '<span class="tag ok">開放租借</span>' : '<span class="tag">已關閉</span>'}</div>
+          <div class="s">${[r.capacity ? '可容納 ' + r.capacity + ' 人' : '', '每小時 ' + money(r.price), '最小單位 ' + r.unit + ' 分鐘'].filter(Boolean).join('｜')}</div></div><button class="btn sm" data-room="${esc(r.id)}">編輯</button></div>
+          <div style="padding-top:8px">${hours(r)}</div>${r.intro ? `<div class="s" style="margin-top:6px">${esc(r.intro)}</div>` : ''}</div>`).join('') : '<div class="card empty">還沒有可租借的教室。<br><br><button class="btn p" data-room="">＋ 新增第一間教室</button><br><br><span class="s">設定教室名稱、價格和每週開放時段後，外部的人就能在 LINE 上預約。</span></div>')
+        + `<div class="card"><h2>不開放的日期／時段<span class="sp"></span><button class="btn sm" data-block>＋ 新增</button></h2>${d.blocks.length ? d.blocks.map(k => `<div class="row"><div class="g"><div class="t">${dLabel(k.date)} ${k.start ? esc(k.start) + '–' + esc(k.end) : '整天'}</div><div class="s">${esc((d.rooms.find(r => r.id === k.room_id) || {}).name || '全部教室')}${k.note ? '｜' + esc(k.note) : ''}</div></div><button class="btn sm ghost" style="color:var(--bad)" data-blockdel="${esc(k.id)}">移除</button></div>`).join('') : '<div class="empty">目前沒有</div>'}</div>
+        <p class="s">教室名稱和課程的「教室」欄位相同時，有課的時段會自動不開放租借，不用另外設定。</p>`;
+    }
+    const F = [['todo', '待確認', b => b.status === '待確認'], ['up', '即將到來', b => b.status === '已確認' && b.date >= T], ['all', '全部', b => b.date >= T || b.status === '待確認'], ['past', '過去與取消', b => b.date < T || ['已婉拒', '已取消'].includes(b.status)]];
+    if (R.f === 'todo' && !d.pending && !R.touched) R.f = 'up';
+    const list = d.bookings.filter(F.find(x => x[0] === R.f)[2]), dates = [...new Set(list.map(b => b.date))];
+    if (R.f === 'past') dates.reverse();
+    const stc = { 待確認: 'warn', 已確認: 'ok', 已婉拒: '', 已取消: '' };
+    const row = b => `<div class="bk ${['已婉拒', '已取消'].includes(b.status) ? 'dim' : ''}"><button class="bkm" data-bk="${esc(b.id)}"><span class="tm">${esc(b.start)}<small>${esc(b.end)}</small></span><span class="g"><span class="t">${esc(b.room)}　<span class="tag ${stc[b.status]}">${esc(b.status)}</span></span>
+        <span class="s">${esc(b.name)}${b.phone ? '｜' + esc(b.phone) : ''}${b.people ? '｜' + b.people + ' 人' : ''}${b.amount ? '｜' + money(b.amount) : ''}</span>${b.purpose ? `<span class="s">用途：${esc(b.purpose)}</span>` : ''}${b.note ? `<span class="s">備註：${esc(b.note)}</span>` : ''}
+        <span class="tgs">${b.online ? '' : '<span class="tag">後台建立</span>'}${b.tags.map(tagOf).filter(Boolean).map(t => `<span class="tag" style="background:color-mix(in srgb,${esc(t.color)} 16%,#fff);color:${esc(t.color)}">${esc(t.name)}</span>`).join('')}</span></span></button>
+        ${b.status === '待確認' ? `<div class="acts"><button class="btn sm ok" data-bkok="${esc(b.id)}">確認</button><button class="btn sm" data-bkno="${esc(b.id)}">婉拒</button></div>` : ''}</div>`;
+    return head + `<div class="acts" style="margin-bottom:12px">${F.map(x => `<button class="btn sm ${R.f === x[0] ? 'p' : ''}" data-rf="${x[0]}">${x[1]} ${d.bookings.filter(x[2]).length}</button>`).join('')}</div>
+      ${!d.rooms.length ? '<div class="note">還沒有設定可租借的教室，請先到「教室與時段」新增。</div>' : ''}
+      ${dates.length ? dates.map(x => `<div class="agenda"><div class="dayh ${x === T ? 'today' : ''}">${dLabel(x)}${x === T ? '｜今天' : ''}</div>${list.filter(b => b.date === x).map(row).join('')}</div>`).join('') : '<div class="card empty">這個分類沒有預約</div>'}
+      <p class="s">外部的人加入官方帳號後，點圖文選單「教室租借」或傳「租借」就能預約。點預約可修改時間、貼標籤、寫備註。</p>`;
   },
 
   async leaves() {
@@ -690,6 +727,41 @@ function topup(id) {
   $('[name=price]', m).placeholder = '定價 ' + (p0.price ?? '');
 }
 
+/* ---------- 教室租借 ---------- */
+const rentNoti = r => r && r.notified ? '，已用 LINE 通知預約人' : '';
+function editBooking(id) {
+  const d = A.rent.data, b = id ? d.bookings.find(x => x.id === id) : null, rooms = d.rooms.filter(r => r.status === '開放' || (b && r.id === b.roomId));
+  if (!rooms.length) return toast('請先到「教室與時段」新增教室', true);
+  const F = [{ k: 'roomId', label: '教室', type: 'select', opts: rooms.map(r => [r.id, r.name]) }, { k: 'date', label: '日期', type: 'date' }, { k: 'start', label: '開始', type: 'time', half: 1 }, { k: 'end', label: '結束', type: 'time', half: 1 },
+    { k: 'name', label: '預約人／用途名稱', ph: '例：王小明、XX 舞團', half: 1 }, { k: 'phone', label: '電話', half: 1 }, { k: 'people', label: '人數', type: 'number', half: 1 }, { k: 'amount', label: '費用（留白＝依時數計算）', type: 'number', half: 1 },
+    { k: 'purpose', label: '用途' }, { k: 'status', label: '狀態', type: 'select', opts: [['已確認', '已確認（保留時段）'], ['待確認', '待確認'], ['已婉拒', '已婉拒'], ['已取消', '已取消']] },
+    { k: 'tags', label: '標籤', type: 'checks', opts: d.tags.map(t => [t.id, t.name]) }, { k: 'note', label: '內部備註（只有後台看得到）', ph: '例：現場收款、需要音響' },
+    ...(b && b.online ? [{ k: 'notify', label: 'LINE 通知', type: 'select', opts: [['1', '狀態或時間有變動時通知預約人'], ['', '不通知']] }] : [])];
+  const v = b ? { ...b, notify: '1' } : { roomId: rooms[0].id, date: d.today, start: '10:00', end: '12:00', status: '已確認', tags: [] };
+  const m = formDialog(b ? '預約｜' + b.name : '手動預約（保留教室）', F, v, async o => { const r = await apiConflict('a.bookingSave', { id: id || undefined, ...o, notify: b && b.online ? !!o.notify : false }); toast('已儲存' + rentNoti(r)); show(); },
+    { saveText: b ? '儲存' : '建立預約', extra: `<div id="busy" class="s" style="margin-top:10px"></div>${b ? `<p class="s">${b.online ? '線上預約｜LINE：' + esc(b.lineName || '') : '後台建立｜' + esc(b.byAdmin || '')}｜${esc((b.createdAt || '').slice(5, 16))}${b.decidedBy ? '｜處理：' + esc(b.decidedBy) : ''}</p>` : '<p class="s">幫電話或現場預約的人保留時段。管理員不受開放時段限制，但和其他預約或課程重疊時會先提醒。</p>'}` });
+  const q = n => $(`[name=${n}]`, m), busy = async () => { try { const r = await api('a.rentSlots', { roomId: q('roomId').value, date: q('date').value, exceptId: id || '' }, true);
+    $('#busy', m).innerHTML = r.busy.length ? '<b style="color:var(--ink)">當天已占用：</b>' + r.busy.map(k => `${esc(k.start)}–${esc(k.end)} ${esc(k.why)}${k.who ? '（' + esc(k.who) + '）' : ''}`).join('、') : '這間教室當天沒有其他預約或課程。'; } catch { /* 提示失敗不影響儲存 */ } };
+  q('roomId').onchange = busy; q('date').onchange = busy; busy();
+}
+function editRoom(id) {
+  const r = id ? A.rent.data.rooms.find(x => x.id === id) : null, txt = w => ((r && r.open[w]) || []).map(x => x[0] + '-' + x[1]).join(', ');
+  const F = [{ k: 'name', label: '教室名稱（和課程的「教室」同名時，有課的時段自動不開放）', ph: '例：A教室' }, { k: 'capacity', label: '可容納人數', type: 'number', half: 1 }, { k: 'price', label: '每小時價格', type: 'number', half: 1 },
+    { k: 'unit', label: '最小預約單位', type: 'select', opts: [['60', '1 小時'], ['30', '30 分鐘']], half: 1 }, { k: 'status', label: '狀態', type: 'select', opts: [['開放', '開放租借'], ['關閉', '暫不開放']], half: 1 },
+    { k: 'intro', label: '教室介紹（外部看得到）', type: 'textarea', rows: 2, ph: '例：15 坪、整面鏡牆、木地板、藍牙音響' },
+    ...[1, 2, 3, 4, 5, 6, 0].map(w => ({ k: 'w' + w, label: '週' + WD[w] + ' 開放時段', ph: '不開放請留白' }))];
+  const v = r ? { ...r, ...Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map(w => ['w' + w, txt(w)])) } : { unit: '60', status: '開放', price: 0, capacity: 0 };
+  const m = formDialog(r ? '編輯教室' : '新增教室', F, v, async o => {
+    const open = {};
+    for (const w of [0, 1, 2, 3, 4, 5, 6]) { const parts = o['w' + w].split(/[,，、;；\s]+/).filter(Boolean).map(x => x.match(/^(\d{1,2})[:：]?(\d{2})?\s*[-–~～到至]\s*(\d{1,2})[:：]?(\d{2})?$/));
+      if (parts.some(x => !x)) throw new Error('週' + WD[w] + ' 的時段格式不對，請寫成 09:00-12:00，多段用逗號分開');
+      if (parts.length) open[w] = parts.map(x => [x[1].padStart(2, '0') + ':' + (x[2] || '00'), x[3].padStart(2, '0') + ':' + (x[4] || '00')]); }
+    await api('a.roomSave', { id: id || undefined, ...o, open }); toast('已儲存'); show();
+  }, { extra: '<button class="btn sm" data-fillw style="margin-top:12px">把週一的時段套用到每一天</button><p class="s">時段寫法：<b>09:00-12:00, 14:00-22:00</b>（多段用逗號分開，不開放的日子留白）。</p>',
+    del: r ? { text: '刪除教室', confirm: '確定刪除這間教室？過去的預約紀錄會保留。', run: async () => { await api('a.roomDelete', { id }); toast('已刪除'); show(); } } : undefined });
+  $('[data-fillw]', m).onclick = () => { const x = $('[name=w1]', m).value; [2, 3, 4, 5, 6, 0].forEach(w => { $(`[name=w${w}]`, m).value = x; }); };
+}
+
 /* ---------- 影片 ---------- */
 function editVideo(id) {
   const v = id ? A.videos.find(x => x.id === id) : null;
@@ -758,6 +830,18 @@ document.addEventListener('click', async e => {
     if ('newcourse' in ds) return editCourse('');
     if ('newsess' in ds) { if (!A.students.length) A.students = await api('a.students'); return editSession(null); }
     if (ds.dayoff) return dayOff(ds.dayoff);
+    if (ds.rtab) { A.rent.tab = ds.rtab; return show(); }
+    if (ds.rf) { A.rent.f = ds.rf; A.rent.touched = true; return show(); }
+    if ('bk' in ds) return editBooking(ds.bk);
+    if (ds.bkok) { const r = await apiConflict('a.bookingSave', { id: ds.bkok, status: '已確認' }); toast('已確認' + rentNoti(r)); return show(); }
+    if (ds.bkno) return formDialog('婉拒這筆預約', [{ k: 'reason', label: '給預約人的說明（選填）', ph: '例：這個時段已有活動，歡迎改約其他時間' }], {}, async o => { const r = await api('a.bookingSave', { id: ds.bkno, status: '已婉拒', reason: o.reason }); toast('已婉拒' + rentNoti(r)); show(); }, { saveText: '確定婉拒' });
+    if ('room' in ds) return editRoom(ds.room);
+    if ('block' in ds) return formDialog('新增不開放的時段', [{ k: 'roomId', label: '教室', type: 'select', opts: [['', '全部教室']].concat(A.rent.data.rooms.map(r => [r.id, r.name])) }, { k: 'date', label: '日期', type: 'date' }, { k: 'start', label: '開始（整天請留白）', type: 'time', half: 1 }, { k: 'end', label: '結束', type: 'time', half: 1 }, { k: 'note', label: '原因（外部看得到）', ph: '例：整修、包場' }],
+      { date: A.meta.today }, async o => { await api('a.rentBlockSave', o); toast('已新增'); show(); }, { saveText: '新增' });
+    if (ds.blockdel) { await api('a.rentBlockDelete', { id: ds.blockdel }); toast('已移除'); return show(); }
+    if ('rtag' in ds) { const t = ds.rtag ? A.rent.data.tags.find(x => x.id === ds.rtag) : null;
+      return formDialog(t ? '編輯標籤' : '新增標籤', [{ k: 'name', label: '標籤名稱', ph: '例：已付款' }, { k: 'color', label: '顏色', type: 'color', opts: A.meta.colors }], t || { color: A.meta.colors[2] }, async o => { await api('a.rentTagSave', { id: ds.rtag || undefined, ...o }); toast('已儲存'); show(); },
+        t ? { del: { text: '刪除', confirm: '確定刪除這個標籤？預約上的這個標籤會一併移除。', run: async () => { await api('a.rentTagDelete', { id: t.id }); show(); } } } : {}); }
     if (ds.sg) { if (!ds.ok && !confirm('確定婉拒這筆報名？家長會收到通知。')) return; await api('a.signupSave', { id: ds.sg, approve: !!ds.ok }); toast(ds.ok ? '已同意，學生已加入名單' : '已婉拒'); return show(); }
     if (ds.lmu) return makeupDialog(ds.lmu, ds.name, ds.from);
     if (ds.f) { A.filter.f = ds.f; return show(); }

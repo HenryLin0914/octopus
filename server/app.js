@@ -61,13 +61,18 @@ const SETTINGS = {
   '請假通知管理員': ['是', '家長線上請假後通知管理員與老師', 'bool'],
   '諮詢通知管理員': ['是', '家長從課表按「諮詢」留言時，用 LINE 通知管理員', 'bool'],
   '開放線上報名': ['是', '家長可在 LINE 課表對還沒參加的課程按「報名」', 'bool'],
-  '報名需審核': ['是', '是＝管理員同意後才加入名單；否＝家長按下就直接加入', 'bool']
+  '報名需審核': ['是', '是＝管理員同意後才加入名單；否＝家長按下就直接加入', 'bool'],
+  '開放教室租借': ['是', '外部使用者可在 LINE 預約開放的教室時段', 'bool'],
+  '租借需確認': ['是', '是＝管理員確認後預約才成立；否＝送出就直接成立', 'bool'],
+  '租借提前小時': ['12', '最晚要在使用前幾小時預約', 'num'],
+  '租借可預約天數': ['30', '可以預約未來幾天內的時段', 'num'],
+  '租借須知': ['請準時進場，結束時間前請復原場地、帶走垃圾。', '顯示在租借頁面與預約確認通知', 'text']
 };
 const PLANS = [['P01', '單堂', 1, 500, 30], ['P02', '10堂卡', 10, 4500, 90], ['P03', '20堂卡', 20, 8000, 180]];
 const COLORS = ['#D6336C', '#1971C2', '#2B8A3E', '#E67700', '#7048E8', '#0C8599', '#C2255C', '#5C940D'];
 
 const OWNER_ONLY = new Set(['a.studentSave', 'a.enroll', 'a.unbind', 'a.topup', 'a.cardSave', 'a.courseSave', 'a.sessionSave', 'a.sessionDelete', 'a.genSessions',
-  'a.videoSave', 'a.videoDelete', 'a.planSave', 'a.settingSave', 'a.adminSave', 'a.richmenu', 'a.export', 'a.student', 'a.videos', 'a.plans', 'a.settings', 'a.admins', 'a.cards', 'a.ledger', 'a.topupSave', 'a.videoInfo', 'a.dayOff', 'a.familySave', 'a.courseDelete', 'a.courseStudents', 'a.signupSave']);
+  'a.videoSave', 'a.videoDelete', 'a.planSave', 'a.settingSave', 'a.adminSave', 'a.richmenu', 'a.export', 'a.student', 'a.videos', 'a.plans', 'a.settings', 'a.admins', 'a.cards', 'a.ledger', 'a.topupSave', 'a.videoInfo', 'a.dayOff', 'a.familySave', 'a.courseDelete', 'a.courseStudents', 'a.signupSave', 'a.rent', 'a.roomSave', 'a.roomDelete', 'a.rentBlockSave', 'a.rentBlockDelete', 'a.rentTagSave', 'a.rentTagDelete', 'a.bookingSave', 'a.rentSlots']);
 const ASYNC = new Set(['a.richmenu', 'a.videoInfo']);
 /** 從各種 YouTube 網址取出影片 ID（watch、youtu.be、shorts、live、embed） */
 export const ytId = url => { const m = String(url || '').match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^#]*&)?v=|shorts\/|live\/|embed\/|v\/))([\w-]{11})(?![\w-])/); return m ? m[1] : ''; };
@@ -86,6 +91,10 @@ export function createApp(opts = {}) {
     if (!db.prepare('PRAGMA table_info(students)').all().some(c => c.name === 'family')) db.exec("ALTER TABLE students ADD COLUMN family TEXT DEFAULT ''");
     if (!cols.includes('intro')) db.exec("ALTER TABLE courses ADD COLUMN intro TEXT DEFAULT ''");
     db.exec("CREATE TABLE IF NOT EXISTS signups(id TEXT PRIMARY KEY, student_id TEXT, course_id TEXT, status TEXT, time TEXT, by_user TEXT, by_name TEXT, done_at TEXT DEFAULT '', done_by TEXT DEFAULT '')");
+    db.exec(`CREATE TABLE IF NOT EXISTS rooms(id TEXT PRIMARY KEY, name TEXT NOT NULL, capacity INTEGER DEFAULT 0, price INTEGER DEFAULT 0, unit INTEGER DEFAULT 60, intro TEXT DEFAULT '', open TEXT DEFAULT '{}', status TEXT DEFAULT '開放', sort INTEGER DEFAULT 0);
+      CREATE TABLE IF NOT EXISTS bookings(id TEXT PRIMARY KEY, room_id TEXT, date TEXT, start TEXT, end TEXT, user_id TEXT DEFAULT '', line_name TEXT DEFAULT '', name TEXT DEFAULT '', phone TEXT DEFAULT '', purpose TEXT DEFAULT '', people INTEGER DEFAULT 0, status TEXT, amount INTEGER DEFAULT 0, tags TEXT DEFAULT '', note TEXT DEFAULT '', created_at TEXT, by_admin TEXT DEFAULT '', decided_at TEXT DEFAULT '', decided_by TEXT DEFAULT '');
+      CREATE TABLE IF NOT EXISTS rent_blocks(id TEXT PRIMARY KEY, room_id TEXT DEFAULT '', date TEXT, start TEXT DEFAULT '', end TEXT DEFAULT '', note TEXT DEFAULT '');
+      CREATE TABLE IF NOT EXISTS rent_tags(id TEXT PRIMARY KEY, name TEXT, color TEXT, sort INTEGER DEFAULT 0);`);
     db.exec('CREATE TABLE IF NOT EXISTS session_skips(id TEXT PRIMARY KEY)'); // 已刪除的固定場次，不再自動排回來
     db.exec("CREATE TABLE IF NOT EXISTS makeups(id TEXT PRIMARY KEY, student_id TEXT, session_id TEXT, from_session_id TEXT DEFAULT '', created_at TEXT, by_name TEXT)");
   }
@@ -322,6 +331,33 @@ export function createApp(opts = {}) {
 
   const nextId = (table, prefix, width) => { const r = get(`SELECT MAX(CAST(SUBSTR(id,${prefix.length + 1}) AS INTEGER)) m FROM ${table} WHERE id LIKE ?`, prefix + '%'); return prefix + String((r.m || 0) + 1).padStart(width, '0'); };
   const newBindCode = () => { let c; do { c = String(crypto.randomInt(0, 1e6)).padStart(6, '0'); } while (get('SELECT 1 x FROM students WHERE bind_code=?', c)); return c; };
+  /* ---------- 教室租借 ---------- */
+  const tm = t => +String(t).slice(0, 2) * 60 + +String(t).slice(3, 5), mt = m => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+  const roomOpen = r => { try { const o = JSON.parse(r.open || '{}'); return o && typeof o === 'object' ? o : {}; } catch { return {}; } };
+  const rentTags = () => all('SELECT * FROM rent_tags ORDER BY sort,id');
+  /** 這間教室當天被占用的時段：別人的預約、管理員關閉的時段、排在這間教室的課 */
+  function roomBusy(room, date, exceptId = '') {
+    const out = all("SELECT * FROM bookings WHERE room_id=? AND date=? AND status IN ('待確認','已確認') AND id<>?", room.id, date, exceptId).map(b => [tm(b.start), tm(b.end), b.status === '已確認' ? '已被預約' : '有人預約中', b.name]);
+    all("SELECT * FROM rent_blocks WHERE date=? AND (room_id='' OR room_id=?)", date, room.id).forEach(k => out.push(k.start ? [tm(k.start), tm(k.end), k.note || '不開放', ''] : [0, 1440, k.note || '不開放', '']));
+    all("SELECT * FROM sessions WHERE date=? AND status<>'停課'", date).forEach(x => { const i = sessionInfo(x); if (i.room && i.room === room.name) out.push([tm(i.start), tm(i.end), '上課', i.course]); });
+    return out;
+  }
+  /** 當天可預約的格子（依開放時段與最小單位切） */
+  function roomSlots(room, date) {
+    const unit = Math.max(15, room.unit || 60), busy = roomBusy(room, date), lim = Date.now() + cfgNum('租借提前小時', 12) * 3600e3;
+    return (roomOpen(room)[weekday(date)] || []).flatMap(([a, z]) => { const out = [];
+      for (let m = tm(a); m + unit <= tm(z); m += unit) { const hit = busy.find(k => k[0] < m + unit && k[1] > m), late = toDate(date, mt(m)).getTime() < lim;
+        out.push({ start: mt(m), end: mt(m + unit), free: !hit && !late, why: hit ? hit[2] : late ? '已截止' : '' }); }
+      return out; });
+  }
+  const bookingView = b => { const r = get('SELECT * FROM rooms WHERE id=?', b.room_id) || {}; return { id: b.id, roomId: b.room_id, room: r.name || '（已刪除的教室）', date: b.date, start: b.start, end: b.end, status: b.status, amount: b.amount, name: b.name, phone: b.phone, purpose: b.purpose, people: b.people, createdAt: b.created_at }; };
+  function notifyRenter(b, title, color, note) {
+    if (!b.user_id) return 0;
+    const v = bookingView(b);
+    pushMsg([b.user_id], flexMsg('🏠 ' + title + '｜' + v.room + ' ' + whenOf(b), [flexBubble({ color, title, name: v.room, rows: [['時間', whenOf(b)], ['預約人', b.name], ['人數', b.people ? b.people + ' 人' : ''], ['費用', b.amount ? b.amount + ' 元' : '']], note, noteColor: C.INK, btn: ['查看我的預約', 'rent'] })]));
+    return 1;
+  }
+
   /* ---------- 家庭（兄弟姊妹）：共用上課卡、家長一次綁定 ---------- */
   const siblingsOf = sid => { const s = student(sid); return s && s.family ? all("SELECT * FROM students WHERE family=? AND id<>? AND status<>'停用' ORDER BY id", s.family, sid) : []; };
   /** 把幾位學生併成同一個家庭（沿用已有的家庭編號） */
@@ -450,6 +486,46 @@ export function createApp(opts = {}) {
       notifyLeave(sessionInfo(sess), b.studentId, reason, user.name || '家長');
       return { status: '已登記' };
     },
+    /* ----- 教室租借（不需要綁定學生，加好友登入即可） ----- */
+    rentInfo(b, user) {
+      const days = cfgNum('租借可預約天數', 30);
+      return { open: cfgOn('開放教室租借'), review: cfgOn('租借需確認'), rules: cfg('租借須知', ''), today: today(), lastDay: addDays(today(), days), advance: cfgNum('租借提前小時', 12),
+        rooms: all("SELECT * FROM rooms WHERE status='開放' ORDER BY sort,id").map(r => ({ id: r.id, name: r.name, capacity: r.capacity, price: r.price, unit: r.unit, intro: r.intro, days: Object.keys(roomOpen(r)).filter(k => (roomOpen(r)[k] || []).length).map(Number) })),
+        mine: all("SELECT * FROM bookings WHERE user_id=? AND date>=? ORDER BY date,start", user.userId, addDays(today(), -30)).map(bookingView), lastName: (get("SELECT name,phone FROM bookings WHERE user_id=? ORDER BY created_at DESC", user.userId) || {}) };
+    },
+    rentSlots(b) {
+      const room = get("SELECT * FROM rooms WHERE id=? AND status='開放'", b.roomId), date = nd(b.date);
+      if (!room || !date) throw new Error('找不到教室');
+      if (date < today() || date > addDays(today(), cfgNum('租借可預約天數', 30))) return { slots: [], out: true };
+      return { slots: roomSlots(room, date), unit: room.unit, price: room.price };
+    },
+    rentBook(b, user) {
+      if (!cfgOn('開放教室租借')) throw new Error('目前沒有開放線上租借，請直接聯絡教室');
+      const room = get("SELECT * FROM rooms WHERE id=? AND status='開放'", b.roomId), date = nd(b.date), start = nt(b.start), end = nt(b.end);
+      if (!room || !date || !start || !end || end <= start) throw new Error('請選擇教室、日期與時段');
+      if (date < today() || date > addDays(today(), cfgNum('租借可預約天數', 30))) throw new Error('這一天不開放預約');
+      const name = str(b.name, 40), phone = str(b.phone, 30);
+      if (!name || !/^[0-9+\-() ]{6,}$/.test(phone)) throw new Error('請填寫姓名與聯絡電話');
+      const want = roomSlots(room, date).filter(k => k.start >= start && k.end <= end);
+      if (!want.length || want[0].start !== start || want[want.length - 1].end !== end || want.some((k, i) => i && k.start !== want[i - 1].end)) throw new Error('請選擇開放時段內的連續時間');
+      if (want.some(k => !k.free)) throw new Error('這個時段剛剛被預約走了，請重新選擇');
+      if (get("SELECT COUNT(*) n FROM bookings WHERE user_id=? AND status='待確認'", user.userId).n >= 5) throw new Error('您有太多待確認的預約，請等教室確認後再預約');
+      const review = cfgOn('租借需確認'), id = uid('B'), amount = Math.round(room.price * (tm(end) - tm(start)) / 60);
+      run('INSERT INTO bookings(id,room_id,date,start,end,user_id,line_name,name,phone,purpose,people,status,amount,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)', id, room.id, date, start, end, user.userId, user.name, name, phone, str(b.purpose, 200), Math.max(0, Math.floor(Number(b.people)) || 0), review ? '待確認' : '已確認', amount, now());
+      const bk = get('SELECT * FROM bookings WHERE id=?', id);
+      pushMsg(all("SELECT user_id FROM admins WHERE active=1 AND role='owner'").map(r => r.user_id), flexMsg('🏠 教室租借' + (review ? '申請' : '') + '｜' + room.name + ' ' + whenOf(bk), [flexBubble({ color: C.INFO, title: review ? '教室租借申請' : '新的教室預約', name: room.name,
+        rows: [['時間', whenOf(bk)], ['預約人', name + '（' + phone + '）'], ['人數', bk.people ? bk.people + ' 人' : ''], ['用途', bk.purpose], ['費用', amount ? amount + ' 元' : '']], note: review ? '請到後台「租借」確認或婉拒。' : '已自動成立。', noteColor: C.SUB })]));
+      if (!review) notifyRenter(bk, '預約成功', C.OK, cfg('租借須知', ''));
+      return { id, status: bk.status, amount };
+    },
+    rentCancel(b, user) {
+      const bk = get("SELECT * FROM bookings WHERE id=? AND user_id=?", b.id, user.userId);
+      if (!bk || !['待確認', '已確認'].includes(bk.status)) throw new Error('這筆預約無法取消');
+      if (toDate(bk.date, bk.start).getTime() < Date.now()) throw new Error('已經過了使用時間');
+      run("UPDATE bookings SET status='已取消', decided_at=?, decided_by=? WHERE id=?", now(), '預約人取消', bk.id);
+      pushMsg(all("SELECT user_id FROM admins WHERE active=1 AND role='owner'").map(r => r.user_id), flexMsg('🏠 租借取消｜' + bookingView(bk).room + ' ' + whenOf(bk), [flexBubble({ color: C.SUB, title: '預約人取消租借', name: bookingView(bk).room, rows: [['時間', whenOf(bk)], ['預約人', bk.name + '（' + bk.phone + '）']] })]));
+      return { ok: true };
+    },
     leaves(b, user) {
       assertOwns(user, b.studentId);
       return all('SELECT l.reason,l.status,l.applied_at applied,s.date,s.start,COALESCE(c.name,s.course_id) course FROM leaves l JOIN sessions s ON s.id=l.session_id LEFT JOIN courses c ON c.id=s.course_id WHERE l.student_id=? ORDER BY l.applied_at DESC LIMIT 30', b.studentId);
@@ -490,7 +566,7 @@ export function createApp(opts = {}) {
         stats: { students: stus.length, weekSessions: get("SELECT COUNT(*) n FROM sessions WHERE date>=? AND date<=? AND status<>'停課'", today(), addDays(today(), 6)).n,
           unbound: get("SELECT COUNT(*) n FROM students s WHERE s.status='在學' AND NOT EXISTS(SELECT 1 FROM bindings b WHERE b.student_id=s.id)").n,
           monthIncome: get('SELECT COALESCE(SUM(amount),0) n FROM topups WHERE time>=?', today().slice(0, 7) + '-01').n },
-        signups: get("SELECT COUNT(*) n FROM signups WHERE status='待審核'").n,
+        signups: get("SELECT COUNT(*) n FROM signups WHERE status='待審核'").n, rentPending: get("SELECT COUNT(*) n FROM bookings WHERE status='待確認'").n,
         low: lowList,
         expiring: all("SELECT c.id,c.plan_name plan,c.remain,c.expire,(SELECT GROUP_CONCAT(s.name,'、') FROM card_students cs JOIN students s ON s.id=cs.student_id WHERE cs.card_id=c.id) names FROM cards c WHERE c.status='啟用' AND c.remain>0 AND c.expire<>'' AND c.expire>=? AND c.expire<=? ORDER BY c.expire LIMIT 12", today(), soon),
         leaves: all('SELECT st.name student,l.reason,s.date,s.start,COALESCE(c.name,s.course_id) course FROM leaves l JOIN sessions s ON s.id=l.session_id JOIN students st ON st.id=l.student_id LEFT JOIN courses c ON c.id=s.course_id WHERE s.date>=? ORDER BY s.date,s.start LIMIT 12', today())
@@ -562,6 +638,82 @@ export function createApp(opts = {}) {
       old.filter(id => !want.includes(id)).forEach(id => run('DELETE FROM enrollments WHERE course_id=? AND student_id=?', b.courseId, id));
       want.filter(id => !old.includes(id)).forEach(id => run('INSERT INTO enrollments VALUES(?,?,?)', id, b.courseId, today()));
       return { ids: want, added: want.filter(id => !old.includes(id)).length, removed: old.filter(id => !want.includes(id)).length };
+    },
+    'a.rent'(b) {
+      const from = nd(b.from) || addDays(today(), -30);
+      return { today: today(), tags: rentTags(), rooms: all('SELECT * FROM rooms ORDER BY sort,id').map(r => ({ ...r, open: roomOpen(r) })),
+        blocks: all('SELECT * FROM rent_blocks WHERE date>=? ORDER BY date,start', today()),
+        bookings: all('SELECT * FROM bookings WHERE date>=? ORDER BY date,start LIMIT 800', from).map(k => ({ ...bookingView(k), lineName: k.line_name, online: !!k.user_id, tags: k.tags ? k.tags.split(',') : [], note: k.note, byAdmin: k.by_admin, decidedBy: k.decided_by })),
+        pending: get("SELECT COUNT(*) n FROM bookings WHERE status='待確認'").n };
+    },
+    'a.rentSlots'(b) {
+      const room = get('SELECT * FROM rooms WHERE id=?', b.roomId), date = nd(b.date);
+      if (!room || !date) throw new Error('找不到教室');
+      return { slots: roomSlots(room, date), busy: roomBusy(room, date, str(b.exceptId, 40)).map(k => ({ start: mt(k[0]), end: mt(Math.min(k[1], 1439)), why: k[2], who: k[3] })).sort((x, y) => x.start < y.start ? -1 : 1) };
+    },
+    'a.roomSave'(b) {
+      const name = str(b.name, 40);
+      if (!name) throw new Error('請輸入教室名稱');
+      const open = {};
+      Object.entries(b.open || {}).forEach(([d, list]) => { const ok = (list || []).map(x => [nt(x[0]), nt(x[1])]).filter(x => x[0] && x[1] && x[1] > x[0]).sort(); if (+d >= 0 && +d <= 6 && ok.length) open[+d] = ok; });
+      const unit = [30, 60].includes(Number(b.unit)) ? Number(b.unit) : 60;
+      const v = [name, Math.max(0, Math.floor(Number(b.capacity)) || 0), Math.max(0, Math.floor(Number(b.price)) || 0), unit, str(b.intro, 1000), JSON.stringify(open), b.status === '關閉' ? '關閉' : '開放'];
+      const id = b.id || nextId('rooms', 'R', 2);
+      if (b.id) { if (!get('SELECT 1 x FROM rooms WHERE id=?', id)) throw new Error('找不到教室'); run('UPDATE rooms SET name=?,capacity=?,price=?,unit=?,intro=?,open=?,status=? WHERE id=?', ...v, id); }
+      else run('INSERT INTO rooms(name,capacity,price,unit,intro,open,status,id,sort) VALUES(?,?,?,?,?,?,?,?,?)', ...v, id, get('SELECT COUNT(*) n FROM rooms').n);
+      return { id };
+    },
+    'a.roomDelete'(b) {
+      if (get("SELECT 1 x FROM bookings WHERE room_id=? AND status IN ('待確認','已確認') AND date>=?", b.id, today())) throw new Error('這間教室還有未完成的預約，請先處理或改成「關閉」');
+      run('DELETE FROM rooms WHERE id=?', b.id); run('DELETE FROM rent_blocks WHERE room_id=?', b.id);
+      return { deleted: true };
+    },
+    'a.rentBlockSave'(b) {
+      const date = nd(b.date), start = nt(b.start), end = nt(b.end);
+      if (!date) throw new Error('請選擇日期');
+      if ((start || end) && !(start && end && end > start)) throw new Error('時間不正確（整天不開放請兩格都留白）');
+      const id = uid('K');
+      run('INSERT INTO rent_blocks(id,room_id,date,start,end,note) VALUES(?,?,?,?,?,?)', id, str(b.roomId, 20), date, start, end, str(b.note, 60));
+      return { id };
+    },
+    'a.rentBlockDelete'(b) { run('DELETE FROM rent_blocks WHERE id=?', b.id); return { ok: true }; },
+    'a.rentTagSave'(b) {
+      const name = str(b.name, 12);
+      if (!name) throw new Error('請輸入標籤名稱');
+      const color = COLORS.includes(b.color) ? b.color : COLORS[0];
+      if (b.id) run('UPDATE rent_tags SET name=?, color=? WHERE id=?', name, color, b.id);
+      else run('INSERT INTO rent_tags(id,name,color,sort) VALUES(?,?,?,?)', uid('T'), name, color, get('SELECT COUNT(*) n FROM rent_tags').n);
+      return { ok: true };
+    },
+    'a.rentTagDelete'(b) {
+      all("SELECT id,tags FROM bookings WHERE tags LIKE ?", '%' + b.id + '%').forEach(k => run('UPDATE bookings SET tags=? WHERE id=?', k.tags.split(',').filter(t => t !== b.id).join(','), k.id));
+      run('DELETE FROM rent_tags WHERE id=?', b.id); return { ok: true };
+    },
+    /** 管理員新增／修改預約：可直接幫人保留、確認、婉拒、取消、貼標籤 */
+    'a.bookingSave'(b, user) {
+      const old = b.id ? get('SELECT * FROM bookings WHERE id=?', b.id) : null;
+      if (b.id && !old) throw new Error('找不到這筆預約');
+      const pick = (k, d) => b[k] !== undefined ? b[k] : d;
+      const roomId = pick('roomId', old && old.room_id), date = nd(pick('date', old && old.date)), start = nt(pick('start', old && old.start)), end = nt(pick('end', old && old.end));
+      const room = get('SELECT * FROM rooms WHERE id=?', roomId);
+      if (!room || !date || !start || !end || end <= start) throw new Error('請選擇教室、日期與時間');
+      const status = ['待確認', '已確認', '已婉拒', '已取消'].includes(b.status) ? b.status : old ? old.status : '已確認';
+      const name = str(pick('name', old ? old.name : ''), 40);
+      if (!name) throw new Error('請填寫預約人或用途名稱');
+      if (['待確認', '已確認'].includes(status) && !b.force) { const hit = roomBusy(room, date, old ? old.id : '').filter(k => k[0] < tm(end) && k[1] > tm(start));
+        if (hit.length) throw new Error('CONFLICT:' + hit.map(k => `${mt(k[0])}–${mt(Math.min(k[1], 1439))} ${k[2]}${k[3] ? '（' + k[3] + '）' : ''}`).join('\n')); }
+      const valid = new Set(rentTags().map(t => t.id)), tags = Array.isArray(b.tags) ? b.tags.filter(t => valid.has(t)).join(',') : old ? old.tags : '';
+      const amount = b.amount !== undefined && b.amount !== '' ? Math.max(0, Math.floor(Number(b.amount)) || 0) : old ? old.amount : Math.round(room.price * (tm(end) - tm(start)) / 60);
+      const v = [room.id, date, start, end, name, str(pick('phone', old ? old.phone : ''), 30), str(pick('purpose', old ? old.purpose : ''), 200), Math.max(0, Math.floor(Number(pick('people', old ? old.people : 0))) || 0), status, amount, tags, str(pick('note', old ? old.note : ''), 300)];
+      const id = old ? old.id : uid('B'), me = user.admin.name || user.name;
+      if (old) run('UPDATE bookings SET room_id=?,date=?,start=?,end=?,name=?,phone=?,purpose=?,people=?,status=?,amount=?,tags=?,note=? WHERE id=?', ...v, id);
+      else run('INSERT INTO bookings(room_id,date,start,end,name,phone,purpose,people,status,amount,tags,note,id,created_at,by_admin) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', ...v, id, now(), me);
+      const cur = get('SELECT * FROM bookings WHERE id=?', id);
+      let notified = 0;
+      if (old && old.status !== status) { run('UPDATE bookings SET decided_at=?, decided_by=? WHERE id=?', now(), me, id);
+        if (b.notify !== false) notified = status === '已確認' ? notifyRenter(cur, '預約已確認', C.OK, cfg('租借須知', '')) : status === '已婉拒' ? notifyRenter(cur, '預約未成立', C.SUB, str(b.reason) || '這個時段無法出借，歡迎改約其他時間。') : status === '已取消' ? notifyRenter(cur, '預約已取消', C.WARN, str(b.reason) || '如有疑問請直接留言給我們。') : 0; }
+      else if (old && b.notify !== false && status === '已確認' && (old.date !== date || old.start !== start || old.end !== end || old.room_id !== room.id)) notified = notifyRenter(cur, '預約時間已更改', C.INFO, '原時間：' + whenOf(old));
+      return { id, status, notified };
     },
     'a.signups'() {
       return all("SELECT g.id,g.time,g.by_name by,g.student_id sid,st.name student,g.course_id courseId,c.name course,c.capacity FROM signups g JOIN students st ON st.id=g.student_id JOIN courses c ON c.id=g.course_id WHERE g.status='待審核' ORDER BY g.time")
@@ -927,9 +1079,9 @@ export function createApp(opts = {}) {
     },
     async 'a.richmenu'() {
       if (!env.LINE_CHANNEL_ACCESS_TOKEN || !env.LIFF_ID) throw new Error('伺服器尚未設定 LINE token 或 LIFF ID');
-      const W = 2500, H = 1686, cw = 833, ch = 843;
-      const cells = [['checkin', '線上報到'], ['card', '上課卡'], ['attendance', '出席紀錄'], ['schedule', '課表'], ['leave', '請假'], ['video', '影片']];
-      const areas = cells.map((c, i) => ({ bounds: { x: (i % 3) * cw, y: Math.floor(i / 3) * ch, width: i % 3 === 2 ? W - 2 * cw : cw, height: ch }, action: { type: 'uri', label: c[1], uri: liffUrl(c[0]) } }));
+      const W = 2500, H = 1686, cw = 625, ch = 843;
+      const cells = [['checkin', '線上報到'], ['card', '上課卡'], ['schedule', '課表'], ['leave', '請假'], ['attendance', '出席紀錄'], ['video', '影片'], ['rent', '教室租借'], ['bind', '綁定學生']];
+      const areas = cells.map((c, i) => ({ bounds: { x: (i % 4) * cw, y: Math.floor(i / 4) * ch, width: cw, height: ch }, action: { type: 'uri', label: c[1], uri: liffUrl(c[0]) } }));
       const img = fs.readFileSync(path.join(opts.publicDir || './public', 'richmenu.jpg'));
       const r1 = await lineFetch('https://api.line.me/v2/bot/richmenu', { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHdr() }, body: JSON.stringify({ size: { width: W, height: H }, selected: true, name: cfg('教室名稱', '舞蹈教室'), chatBarText: '功能選單', areas }) });
       if (!r1.ok) throw new Error('建立圖文選單失敗：' + await r1.text());
@@ -994,7 +1146,7 @@ export function createApp(opts = {}) {
 
   /* ---------- LINE Webhook ---------- */
   function menuFlex(title) {
-    const items = [['線上報到', 'checkin'], ['上課卡', 'card'], ['出席紀錄', 'attendance'], ['課表', 'schedule'], ['請假', 'leave'], ['影片', 'video'], ['綁定學生', 'bind']];
+    const items = [['線上報到', 'checkin'], ['上課卡', 'card'], ['出席紀錄', 'attendance'], ['課表', 'schedule'], ['請假', 'leave'], ['影片', 'video'], ['教室租借', 'rent'], ['綁定學生', 'bind']];
     return { type: 'flex', altText: cfg('教室名稱', '舞蹈教室') + ' 功能選單', contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', spacing: 'md', contents: [
       { type: 'text', text: cfg('教室名稱', '舞蹈教室'), weight: 'bold', size: 'lg' },
       { type: 'text', text: title || '請選擇功能', size: 'sm', color: '#888888', wrap: true },
@@ -1021,6 +1173,7 @@ export function createApp(opts = {}) {
             if (to.length) await lineMsg('multicast', { to, messages: [flexMsg('💬 家長諮詢｜' + t.slice(0, 60), [flexBubble({ color: C.INK, title: '家長諮詢', name: who || (kids.length ? kids.map(k => k.name).join('、') + ' 的家長' : '尚未綁定的訪客'), rows: [['學生', kids.map(k => k.name).join('、')], ['內容', t.slice(0, 300)]], note: '請到 LINE 官方帳號管理後台的聊天室回覆。', noteColor: C.SUB })])] }); }
           continue;
         }
+        if (/租借|租教室|場地|借教室/.test(t)) { await reply([flexMsg('教室租借：點「我要租教室」選擇時段', [flexBubble({ color: C.INFO, title: '教室租借', note: cfgOn('開放教室租借') ? '可以線上查看開放時段並預約，送出後我們會盡快確認。' : '目前沒有開放線上租借，請直接留言給我們。', noteColor: C.INK, btn: ['我要租教室', 'rent'] })])]); continue; }
         if (!isFn && !wantMenu) continue; // 一般聊天：不自動回覆，留給真人回（下方已有圖文選單）
         if (!kids.length) { await reply([menuFlex('您尚未綁定學生，請點「綁定學生」並輸入教室提供的綁定碼。')]); continue; }
         if (/請假/.test(t)) {

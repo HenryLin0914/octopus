@@ -53,6 +53,17 @@ h2{font-size:15px;color:var(--sub);margin:18px 4px 8px;font-weight:600}
 #sheet h3{margin:0 34px 4px 0;font-size:19px}#sheet .s{font-size:14px;color:var(--sub)}
 #sheet .intro{margin:14px 0 6px;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7}
 #sheet-x{position:absolute;right:12px;top:12px;border:0;background:none;font-size:26px;line-height:1;color:var(--sub);padding:4px 8px}
+.dstrip{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch}
+.dstrip button{flex:none;width:54px;border:1px solid var(--line);background:#fff;border-radius:12px;padding:6px 0;font:inherit;color:var(--ink);display:flex;flex-direction:column;align-items:center;line-height:1.25}
+.dstrip button b{font-size:19px}.dstrip button small{font-size:11px;color:var(--sub)}
+.dstrip button.on{background:var(--brand);border-color:var(--brand);color:#fff}.dstrip button.on small{color:rgba(255,255,255,.85)}
+.dstrip button:disabled{opacity:.35;background:#f1eee9}
+.slots{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.slots button{border:1px solid var(--line);background:#fff;border-radius:10px;padding:8px 2px;font:inherit;color:var(--ink);display:flex;flex-direction:column;align-items:center;line-height:1.3}
+.slots button b{font-size:15px}.slots button small{font-size:11px;color:var(--sub)}
+.slots button.on{background:var(--brand);border-color:var(--brand);color:#fff}.slots button.on small{color:rgba(255,255,255,.85)}
+.slots button:disabled{background:#f1eee9;color:#a59c95}.slots button:disabled b{text-decoration:line-through;font-weight:400}
+@media (max-width:350px){.slots{grid-template-columns:repeat(3,minmax(0,1fr))}}
 .filt{display:flex;gap:8px;margin:8px 0 0}.filt button{flex:1;border:1px solid var(--line);background:#fff;border-radius:999px;padding:7px 10px;font:inherit;font-size:14px;color:var(--sub)}.filt button.on{border-color:var(--brand);background:var(--brand2);color:var(--brand);font-weight:600}
 .sc.other{background:#fbfaf8;border-style:dashed}.sc.other .t{color:#5b554f}
 .cc{display:flex;gap:12px;align-items:flex-start;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:10px}
@@ -98,7 +109,7 @@ h2{font-size:15px;color:var(--sub);margin:18px 4px 8px;font-weight:600}
 <script src="config.js"></script>
 <script src="common.js"></script>
 <script>
-const MENU = [['checkin','線上報到','✅'],['card','上課卡','🎫'],['attendance','出席紀錄','📋'],['schedule','課表','📅'],['leave','請假','📝'],['video','影片','🎬'],['bind','綁定學生','🔗']]
+const MENU = [['checkin','線上報到','✅'],['card','上課卡','🎫'],['attendance','出席紀錄','📋'],['schedule','課表','📅'],['leave','請假','📝'],['video','影片','🎬'],['rent','教室租借','🏠'],['bind','綁定學生','🔗']]
   .map(m => ({ code: m[0], name: m[1], icon: m[2] }));
 const S = { studio: '', menu: MENU, students: [], cur: null, lowAt: 2, q: {} };
 
@@ -236,6 +247,48 @@ const PAGES = {
         <button class="btn sm" data-ck="${esc(s.id)}">報到</button></div>`).join('')}</div>`;
   },
 
+  welcome(){
+    return `<div class="card" style="text-align:center;padding:22px 16px"><div style="font-size:44px">👋</div><h3 style="margin:6px 0 4px">歡迎來到 ${esc(S.studio)}</h3><p class="hint" style="margin:0">請選擇您要做的事</p></div>
+      <button class="kid" data-go="bind"><span class="g"><span class="t">🔗 我是學生家長</span><span class="s" style="white-space:normal">輸入教室給的綁定碼，查看課表、堂數、請假</span></span><span style="font-size:22px;color:var(--sub)">›</span></button>
+      <div style="height:8px"></div>
+      <button class="kid" data-go="rent"><span class="g"><span class="t">🏠 我要租教室</span><span class="s" style="white-space:normal">查看開放時段，線上預約教室</span></span><span style="font-size:22px;color:var(--sub)">›</span></button>`;
+  },
+
+  async rent(){
+    const d = await api('rentInfo'); S.rent = d;
+    const R = S.r = S.r || {}, T = d.today;
+    const stTag = st => `<span class="tag ${st === '已確認' ? 'ok' : st === '待確認' ? 'warn' : ''}">${st === '待確認' ? '等待教室確認' : esc(st)}</span>`;
+    const mine = d.mine.filter(b => b.date >= T || b.status === '待確認');
+    const mineHtml = mine.length ? `<h2>我的預約（${mine.length}）</h2>${mine.map(b => `<div class="sc"><span class="strip" style="background:${b.status === '已確認' ? 'var(--ok)' : b.status === '待確認' ? 'var(--warn)' : '#b9b0b6'}"></span><div class="g"><div class="t">${esc(b.room)} ${stTag(b.status)}</div><div class="s">${dLabel(b.date)} ${esc(b.start)}–${esc(b.end)}${b.amount ? '｜' + b.amount + ' 元' : ''}</div></div>${['待確認', '已確認'].includes(b.status) ? `<button class="btn sm ghost" data-rcancel="${esc(b.id)}">取消預約</button>` : ''}</div>`).join('')}` : '';
+    if (!d.open || !d.rooms.length) return `<div class="card big"><div class="i">🏠</div><p>${d.open ? '目前沒有開放租借的教室' : '目前沒有開放線上租借'}</p><p class="hint">想租借請按下方按鈕直接詢問我們。</p><button class="btn" data-ask="教室租借">💬 詢問租借</button></div>${mineHtml}`;
+    if (!d.rooms.find(r => r.id === R.roomId)) { R.roomId = d.rooms.length === 1 ? d.rooms[0].id : ''; R.date = ''; }
+    const room = d.rooms.find(r => r.id === R.roomId);
+    const rooms = `<h2>① 選擇教室</h2>${d.rooms.map(r => `<button class="kid ${r.id === R.roomId ? 'on' : ''}" data-rroom="${esc(r.id)}" style="margin-bottom:8px"><span class="g"><span class="t">${esc(r.name)}</span><span class="s" style="white-space:normal">${[r.capacity ? '可容納 ' + r.capacity + ' 人' : '', r.price ? '每小時 ' + r.price + ' 元' : '', r.days.length ? '開放：週' + [1,2,3,4,5,6,0].filter(x => r.days.includes(x)).map(x => WD[x]).join('、') : '尚未設定開放時段'].filter(Boolean).join('｜')}</span>${r.intro ? `<span class="s" style="white-space:normal">${esc(r.intro)}</span>` : ''}</span></button>`).join('')}`;
+    let pick = '';
+    if (room) {
+      const days = []; for (let x = T; x <= d.lastDay; x = dAdd(x, 1)) days.push(x);
+      if (!R.date || R.date < T || R.date > d.lastDay) { R.date = days.find(x => room.days.includes(dDay(x))) || T; R.start = R.end = ''; }
+      const sl = (await api('rentSlots', { roomId: room.id, date: R.date })).slots; R.slots = sl;
+      if (R.start && !sl.some(k => k.start === R.start && k.free)) R.start = R.end = '';
+      const inSel = k => R.start && k.start >= R.start && k.end <= (R.end || sl.find(x => x.start === R.start).end);
+      const hrs = R.start ? (toMin(R.end || sl.find(x => x.start === R.start).end) - toMin(R.start)) / 60 : 0;
+      pick = `<h2>② 選擇日期</h2><div class="dstrip">${days.map(x => `<button class="${x === R.date ? 'on' : ''}" data-rdate="${x}" ${room.days.includes(dDay(x)) ? '' : 'disabled'}><small>${x === T ? '今天' : '週' + WD[dDay(x)]}</small><b>${+x.slice(8)}</b><small>${+x.slice(5, 7)} 月</small></button>`).join('')}</div>
+        <h2>③ 選擇時段 <span style="font-weight:400">${dLabel(R.date)}</span></h2>
+        ${sl.length ? `<div class="slots">${sl.map(k => `<button class="${inSel(k) ? 'on' : ''}" data-rslot="${k.start}" ${k.free ? '' : 'disabled'}><b>${k.start}</b><small>${k.free ? '–' + k.end : esc(k.why)}</small></button>`).join('')}</div>
+          <p class="hint">${R.start ? '已選 <b style="color:var(--ink)">' + R.start + '–' + (R.end || sl.find(x => x.start === R.start).end) + '</b>（' + hrs + ' 小時' + (room.price ? '，約 ' + Math.round(room.price * hrs) + ' 元' : '') + '）。要更長請再點結束的那一格；重選請點其他開始時間。' : '點一格是開始時間，再點後面的格子可以延長。最晚要在使用前 ' + d.advance + ' 小時預約。'}</p>`
+          : '<div class="card"><div class="empty" style="padding:14px 0">這一天沒有開放時段</div></div>'}
+        ${R.start ? `<h2>④ 填寫資料</h2><div class="card">
+          <label style="margin-top:0">預約人姓名</label><input id="r-name" value="${esc(R.name ?? d.lastName.name ?? '')}" placeholder="例：王小明">
+          <label>聯絡電話</label><input id="r-phone" inputmode="tel" value="${esc(R.phone ?? d.lastName.phone ?? '')}" placeholder="例：0912345678">
+          <label>使用人數</label><input id="r-people" inputmode="numeric" value="${esc(R.people ?? '')}" placeholder="例：6">
+          <label>用途（選填）</label><input id="r-purpose" value="${esc(R.purpose ?? '')}" placeholder="例：排舞、拍攝、課程">
+          ${d.rules ? `<div class="nt" style="margin-top:12px;background:#fff8e6;border:1px solid #f3dca6;border-radius:10px;padding:8px 10px;font-size:14px;white-space:pre-wrap"><b style="display:block;font-size:12px;color:#8a4b00">租借須知</b>${esc(d.rules)}</div>` : ''}
+          <button class="btn" id="r-go">${d.review ? '送出預約申請' : '確認預約'}</button>
+          <p class="hint" style="text-align:center">${d.review ? '送出後由教室確認，結果會用 LINE 通知您。' : '送出後預約立即成立。'}</p></div>` : ''}`;
+    }
+    return `${mineHtml}${rooms}${pick}<div style="height:10px"></div><button class="btn ghost" data-ask="教室租借">💬 有問題？直接問我們</button>`;
+  },
+
   bind(){
     return `<div class="card">
         <p style="margin-top:0">請輸入教室提供的 <b>6 位數綁定碼</b>。</p>
@@ -251,16 +304,19 @@ const PAGES = {
 let page = 'home';
 async function go(p){
   if(!PAGES[p]) p = 'home';
-  if(!S.students.length && p !== 'bind') p = 'bind';
+  if(!S.students.length && !['bind', 'rent'].includes(p)) p = 'welcome';
   page = p;
   const m = S.menu.find(x => x.code === p);
   $('#title').textContent = p === 'home' ? S.studio : (m ? m.name : S.studio);
-  $('#back').hidden = p === 'home' || !S.students.length;
+  $('#back').hidden = p === 'home' || p === 'welcome';
   try { $('#app').innerHTML = await PAGES[p](); }
   catch(e){ $('#app').innerHTML = `<div class="card big"><div class="i">⚠️</div><p>${esc(e.message)}</p><button class="btn ghost" data-go="home">回首頁</button></div>`; }
   window.scrollTo(0, 0);
 }
 
+const toMin = t => +t.slice(0, 2) * 60 + +t.slice(3, 5);
+function keepForm(){ ['name', 'phone', 'people', 'purpose'].forEach(k => { const el = $('#r-' + k); if(el) S.r[k] = el.value.trim(); }); }
+async function keep(p){ const y = window.scrollY; await go(p); window.scrollTo(0, y); }
 function sheet(html){ closeSheet(); const m = document.createElement('div'); m.id = 'sheet'; m.innerHTML = `<div class="sh"><button id="sheet-x" aria-label="關閉">×</button>${html}</div>`; m.addEventListener('click', e => { if(e.target === m) closeSheet(); }); document.body.appendChild(m); }
 function closeSheet(){ const m = $('#sheet'); if(m) m.remove(); }
 /** 諮詢：回到官方帳號聊天室，並先幫家長帶好要問的內容 */
@@ -297,6 +353,18 @@ document.addEventListener('click', async e => {
         ${c.videos ? `<button class="btn ghost" data-cv="${esc(c.id)}">🎬 看這門課的影片（${c.videos}）</button>` : ''}
         <button class="btn ${c.canSignup ? 'ghost' : ''}" data-ask="${esc(c.name)}">💬 諮詢這門課</button>`); }
     if(el.id === 'sheet-x') return closeSheet();
+    if(el.dataset.rroom){ S.r = { roomId: el.dataset.rroom }; return keep('rent'); }
+    if(el.dataset.rdate){ keepForm(); Object.assign(S.r, { date: el.dataset.rdate, start: '', end: '' }); return keep('rent'); }
+    if(el.dataset.rslot){ keepForm(); const R = S.r, sl = R.slots, i = sl.findIndex(k => k.start === el.dataset.rslot), a = sl.findIndex(k => k.start === R.start);
+      const contiguous = (x, y) => sl.slice(x, y + 1).every((k, n, arr) => k.free && (!n || arr[n - 1].end === k.start));
+      if (R.start && i > a && contiguous(a, i)) R.end = sl[i].end; else { R.start = sl[i].start; R.end = sl[i].end; }
+      return keep('rent'); }
+    if(el.id === 'r-go'){ keepForm(); const R = S.r; el.disabled = true;
+      try { const r = await api('rentBook', { roomId: R.roomId, date: R.date, start: R.start, end: R.end, name: R.name, phone: R.phone, people: R.people, purpose: R.purpose });
+        S.r = { roomId: R.roomId }; toast(r.status === '待確認' ? '已送出申請，確認後會用 LINE 通知您' : '預約成功'); return go('rent'); }
+      catch(e){ el.disabled = false; toast(e.message, true); if(/被預約走/.test(e.message)){ S.r.start = S.r.end = ''; keep('rent'); } return; } }
+    if(el.dataset.rcancel){ return sheet(`<h3>取消這筆預約？</h3><p class="hint" style="margin:8px 0">取消後時段會開放給其他人預約。</p><button class="btn" data-rcgo="${esc(el.dataset.rcancel)}">確定取消預約</button>`); }
+    if(el.dataset.rcgo){ await api('rentCancel', { id: el.dataset.rcgo }); closeSheet(); toast('已取消預約'); return go('rent'); }
     if(el.dataset.sf){ S.sf = el.dataset.sf; S.day = ''; return go('schedule'); }
     if(el.dataset.su){ const c = (S.info || {})[el.dataset.su]; if(!c) return;
       return sheet(`<h3>幫 ${esc(curStu().name)} 報名</h3><div class="intro" style="margin-top:8px"><b>${esc(c.name)}</b>\n${c.oneoff ? esc((c.from || '').slice(5).replace('-', '/')) + '（單次）' : '每週' + esc(c.day)} ${esc(c.start)}–${esc(c.end)}${c.teacher ? '\n老師：' + esc(c.teacher) : ''}${!c.oneoff && c.to ? '\n期間：' + esc((c.from || '').slice(5).replace('-', '/')) + ' – ' + esc(c.to.slice(5).replace('-', '/')) : ''}${c.capacity ? '\n名額：還有 ' + (c.capacity - c.count) + ' 個' : ''}</div>

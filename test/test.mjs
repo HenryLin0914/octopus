@@ -322,6 +322,43 @@ ok((await call('boss', 'a.unbind', { userId: (await call('dad', 'init')).data.us
   await call('boss', 'a.courseDelete', { id: c.id });
 }
 
+{ // 教室租借
+  const { addDays, today } = await import('../server/app.js');
+  const d1 = addDays(today(), 3), wd = new Date(d1 + 'T12:00:00+08:00').getUTCDay();
+  r = await call('boss', 'a.roomSave', { name: 'A教室', capacity: 20, price: 400, unit: 60, intro: '鏡面、木地板', open: { [wd]: [['09:00', '12:00'], ['14:00', '18:00']] } });
+  const rid = r.data.id;
+  ok(r.ok && /僅限管理員/.test((await call('teacher', 'a.roomSave', { name: 'x' })).error), '建立可租借教室（僅管理員）');
+  await call('boss', 'a.rentTagSave', { name: '已付款', color: '#2B8A3E' });
+  const tag = (await call('boss', 'a.rent')).data.tags[0];
+  let info = (await call('guest', 'rentInfo')).data;
+  ok(info.open && info.rooms.length === 1 && info.rooms[0].days.join() === String(wd) && (await call('guest', 'init')).data.students.length === 0, '未綁定學生的訪客也能看到租借資訊');
+  let sl = (await call('guest', 'rentSlots', { roomId: rid, date: d1 })).data.slots;
+  ok(sl.length === 7 && sl.every(x => x.free) && sl[0].start === '09:00' && sl[3].start === '14:00', '依開放時段切出可預約格子');
+  ok(/連續/.test((await call('guest', 'rentBook', { roomId: rid, date: d1, start: '11:00', end: '15:00', name: '阿明', phone: '0912345678' })).error) && /姓名與聯絡電話/.test((await call('guest', 'rentBook', { roomId: rid, date: d1, start: '09:00', end: '10:00', name: '', phone: '' })).error), '跨過未開放時段或缺資料會被擋');
+  let p0 = pushes.length;
+  r = await call('guest', 'rentBook', { roomId: rid, date: d1, start: '14:00', end: '16:00', name: '阿明', phone: '0912-345-678', people: 6, purpose: '排舞' });
+  const bid = r.data.id;
+  ok(r.data.status === '待確認' && r.data.amount === 800 && pushes.length === p0 + 1 && pushes[p0].body.messages[0].contents.header.contents[1].text === '教室租借申請', '送出租借申請並通知管理員');
+  sl = (await call('guest2', 'rentSlots', { roomId: rid, date: d1 })).data.slots;
+  ok(sl.filter(x => !x.free).map(x => x.start).join() === '14:00,15:00' && /被預約走/.test((await call('guest2', 'rentBook', { roomId: rid, date: d1, start: '15:00', end: '17:00', name: '小華', phone: '0922333444' })).error), '已被預約的時段不能再約');
+  p0 = pushes.length; r = await call('boss', 'a.bookingSave', { id: bid, status: '已確認', tags: [tag.id], note: '現場收款' });
+  let bk = (await call('boss', 'a.rent')).data.bookings.find(x => x.id === bid);
+  ok(r.data.notified === 1 && pushes.length === p0 + 1 && pushes[p0].body.messages[0].contents.header.contents[1].text === '預約已確認' && bk.status === '已確認' && bk.tags[0] === tag.id && (await call('guest', 'rentInfo')).data.mine[0].status === '已確認', '管理員確認並貼標籤，通知預約人');
+  r = await call('boss', 'a.bookingSave', { roomId: rid, date: d1, start: '15:00', end: '17:00', name: '舞團保留', status: '已確認' });
+  ok(r.ok === false && /^CONFLICT:/.test(r.error) && (await call('boss', 'a.bookingSave', { roomId: rid, date: d1, start: '16:00', end: '18:00', name: '舞團保留', status: '已確認' })).ok, '管理員手動保留：與既有預約重疊會警告');
+  // 排在同名教室的課會占用時段
+  const c = (await call('boss', 'a.courseSave', { name: '租借衝突班', room: 'A教室', weekdays: [wd], start: '09:00', end: '10:30', dateFrom: today(), dateTo: addDays(today(), 7), force: true })).data;
+  sl = (await call('guest2', 'rentSlots', { roomId: rid, date: d1 })).data.slots;
+  ok(sl.find(x => x.start === '09:00').why === '上課' && !sl.find(x => x.start === '10:00').free && sl.find(x => x.start === '11:00').free, '同教室有課的時段自動不開放');
+  await call('boss', 'a.rentBlockSave', { roomId: '', date: d1, start: '', end: '', note: '整修' });
+  ok((await call('guest2', 'rentSlots', { roomId: rid, date: d1 })).data.slots.every(x => !x.free), '管理員可關閉整天');
+  p0 = pushes.length; r = await call('guest', 'rentCancel', { id: bid });
+  ok(r.ok && pushes.length === p0 + 1 && (await call('boss', 'a.rent')).data.bookings.find(x => x.id === bid).status === '已取消' && (await call('guest2', 'rentCancel', { id: bid })).ok === false, '預約人可取消自己的預約並通知管理員');
+  ok(/未完成的預約/.test((await call('boss', 'a.roomDelete', { id: rid })).error), '還有預約的教室不能刪除');
+  await call('boss', 'a.courseDelete', { id: c.id });
+  await call('boss', 'a.roomSave', { id: rid, name: 'A教室', status: '關閉' });
+}
+
 // Webhook
 const body = JSON.stringify({ events: [{ type: 'message', replyToken: 'r', message: { type: 'text', text: '剩幾堂' }, source: { userId: (await call('mom', 'init')).data.userId } }] });
 const sig = crypto.createHmac('sha256', 'sec').update(body).digest('base64');
