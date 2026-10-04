@@ -64,6 +64,8 @@ h2{font-size:15px;color:var(--sub);margin:18px 4px 8px;font-weight:600}
 .slots button.on{background:var(--brand);border-color:var(--brand);color:#fff}.slots button.on small{color:rgba(255,255,255,.85)}
 .slots button:disabled{background:#f1eee9;color:#a59c95}.slots button:disabled b{text-decoration:line-through;font-weight:400}
 @media (max-width:350px){.slots{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.picked{display:flex;align-items:center;gap:10px;background:var(--brand2);border-radius:12px;padding:10px 14px;margin-top:10px}.picked div{flex:1}.picked b{font-size:18px;color:var(--brand);margin-right:10px}.picked span{font-size:14px;color:var(--ink)}
+.picked button{border:1px solid var(--brand);background:#fff;color:var(--brand);border-radius:999px;padding:6px 14px;font:inherit;font-size:14px;font-weight:600}
 .filt{display:flex;gap:8px;margin:8px 0 0}.filt button{flex:1;border:1px solid var(--line);background:#fff;border-radius:999px;padding:7px 10px;font:inherit;font-size:14px;color:var(--sub)}.filt button.on{border-color:var(--brand);background:var(--brand2);color:var(--brand);font-weight:600}
 .sc.other{background:#fbfaf8;border-style:dashed}.sc.other .t{color:#5b554f}
 .cc{display:flex;gap:12px;align-items:flex-start;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:10px}
@@ -275,7 +277,8 @@ const PAGES = {
       pick = `<h2>② 選擇日期</h2><div class="dstrip">${days.map(x => `<button class="${x === R.date ? 'on' : ''}" data-rdate="${x}" ${room.dates.includes(x) ? '' : 'disabled'}><small>${x === T ? '今天' : '週' + WD[dDay(x)]}</small><b>${+x.slice(8)}</b><small>${+x.slice(5, 7)} 月</small></button>`).join('')}</div>
         <h2>③ 選擇時段 <span style="font-weight:400">${dLabel(R.date)}</span></h2>
         ${sl.length ? `<div class="slots">${sl.map(k => `<button class="${inSel(k) ? 'on' : ''}" data-rslot="${k.start}" ${k.free ? '' : 'disabled'}><b>${k.start}</b><small>${k.free ? '–' + k.end : esc(k.why)}</small></button>`).join('')}</div>
-          <p class="hint">${R.start ? '已選 <b style="color:var(--ink)">' + R.start + '–' + (R.end || sl.find(x => x.start === R.start).end) + '</b>（' + hrs + ' 小時' + (room.price ? '，約 ' + Math.round(room.price * hrs) + ' 元' : '') + '）。要更長請再點結束的那一格；重選請點其他開始時間。' : '點一格是開始時間，再點後面的格子可以延長。最晚要在使用前 ' + d.advance + ' 小時預約。'}</p>`
+          ${R.start ? `<div class="picked"><div><b>${R.start}–${R.end || sl.find(x => x.start === R.start).end}</b><span>${hrs} 小時${room.price ? '｜約 ' + Math.round(room.price * hrs) + ' 元' : ''}</span></div><button id="r-clear">重選</button></div>
+          <p class="hint">點前後的格子可以延長；點已選的第一格或最後一格可以縮短。</p>` : `<p class="hint">點選要使用的時段，相連的格子可以一起選。最晚要在使用前 ${d.advance} 小時預約。</p>`}`
           : '<div class="card"><div class="empty" style="padding:14px 0">這一天沒有開放時段</div></div>'}
         ${R.start ? `<h2>④ 填寫資料</h2><div class="card">
           <label style="margin-top:0">預約人姓名</label><input id="r-name" value="${esc(R.name ?? d.lastName.name ?? '')}" placeholder="例：王小明">
@@ -355,10 +358,20 @@ document.addEventListener('click', async e => {
     if(el.id === 'sheet-x') return closeSheet();
     if(el.dataset.rroom){ S.r = { roomId: el.dataset.rroom }; return keep('rent'); }
     if(el.dataset.rdate){ keepForm(); Object.assign(S.r, { date: el.dataset.rdate, start: '', end: '' }); return keep('rent'); }
-    if(el.dataset.rslot){ keepForm(); const R = S.r, sl = R.slots, i = sl.findIndex(k => k.start === el.dataset.rslot), a = sl.findIndex(k => k.start === R.start);
-      const contiguous = (x, y) => sl.slice(x, y + 1).every((k, n, arr) => k.free && (!n || arr[n - 1].end === k.start));
-      if (R.start && i > a && contiguous(a, i)) R.end = sl[i].end; else { R.start = sl[i].start; R.end = sl[i].end; }
+    if(el.dataset.rslot){ keepForm(); const R = S.r, sl = R.slots, i = sl.findIndex(k => k.start === el.dataset.rslot);
+      const ok = (x, y) => sl.slice(x, y + 1).every((k, n, arr) => k.free && (!n || arr[n - 1].end === k.start));
+      let a = R.start ? sl.findIndex(k => k.start === R.start) : -1, z = R.start ? sl.findIndex(k => k.end === R.end) : -1;
+      if (a < 0 || z < 0) { a = z = i; }                         // 還沒選：從這格開始
+      else if (i === a && i === z) { a = z = -1; }               // 只選一格又點它：取消
+      else if (i === a) a++;                                      // 點第一格：從前面縮短
+      else if (i === z) z--;                                      // 點最後一格：從後面縮短
+      else if (i > a && i < z) z = i;                             // 點中間：結束改到這格
+      else if (i < a && ok(i, z)) a = i;                          // 點前面：往前延長
+      else if (i > z && ok(a, i)) z = i;                          // 點後面：往後延長
+      else { a = z = i; }                                         // 中間隔著不能約的時段：重新選
+      R.start = a < 0 ? '' : sl[a].start; R.end = a < 0 ? '' : sl[z].end;
       return keep('rent'); }
+    if(el.id === 'r-clear'){ keepForm(); S.r.start = S.r.end = ''; return keep('rent'); }
     if(el.id === 'r-go'){ keepForm(); const R = S.r; el.disabled = true;
       try { const r = await api('rentBook', { roomId: R.roomId, date: R.date, start: R.start, end: R.end, name: R.name, phone: R.phone, people: R.people, purpose: R.purpose });
         S.r = { roomId: R.roomId }; toast(r.status === '待確認' ? '已送出申請，確認後會用 LINE 通知您' : '預約成功'); return go('rent'); }
