@@ -656,7 +656,9 @@ export function createApp(opts = {}) {
     },
     'a.rent'(b) {
       const from = nd(b.from) || addDays(today(), -30);
-      return { today: today(), tags: rentTags(), rooms: all('SELECT * FROM rooms ORDER BY sort,id').map(r => ({ ...r, open: roomOpen(r) })),
+      return { today: today(), tags: rentTags(), rooms: all('SELECT * FROM rooms ORDER BY sort,id').map(r => { const win = cfgNum('租借可預約天數', 30);
+          return { ...r, open: roomOpen(r), window: win, openDays: [...Array(win + 1)].filter((_, i) => dayRanges(r, addDays(today(), i)).length).length,
+            custom: all('SELECT date,ranges FROM room_dates WHERE room_id=? AND date>=? ORDER BY date', r.id, today()).map(x => { let g = []; try { g = JSON.parse(x.ranges) || []; } catch { /* 壞資料當作不開放 */ } return { date: x.date, ranges: g }; }) }; }),
         blocks: all('SELECT * FROM rent_blocks WHERE date>=? ORDER BY date,start', today()),
         bookings: all('SELECT * FROM bookings WHERE date>=? ORDER BY date,start LIMIT 800', from).map(k => ({ ...bookingView(k), lineName: k.line_name, online: !!k.user_id, tags: k.tags ? k.tags.split(',') : [], note: k.note, byAdmin: k.by_admin, decidedBy: k.decided_by })),
         pending: get("SELECT COUNT(*) n FROM bookings WHERE status='待確認'").n };
