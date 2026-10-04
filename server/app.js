@@ -695,6 +695,15 @@ export function createApp(opts = {}) {
       const room = get('SELECT * FROM rooms WHERE id=?', b.roomId), date = nd(b.date);
       if (!room || !date) throw new Error('找不到教室或日期');
       const ranges = cleanRanges(b.ranges);
+      let count = 1;
+      if (b.scope === 'range') { // 一段日期（可只挑其中幾個星期幾）
+        const from = nd(b.from), to = nd(b.to), wds = Array.isArray(b.weekdays) && b.weekdays.length ? b.weekdays.map(Number) : [0, 1, 2, 3, 4, 5, 6];
+        if (!from || !to || to < from) throw new Error('請選擇正確的起訖日期');
+        if (to > addDays(from, 366)) throw new Error('一次最多設定一年');
+        count = 0;
+        for (let d = from; d <= to; d = addDays(d, 1)) if (wds.includes(weekday(d))) { run('INSERT INTO room_dates(room_id,date,ranges) VALUES(?,?,?) ON CONFLICT(room_id,date) DO UPDATE SET ranges=excluded.ranges', room.id, d, JSON.stringify(ranges)); count++; }
+        return { ranges, count };
+      }
       if (b.scope === 'reset') run('DELETE FROM room_dates WHERE room_id=? AND date=?', room.id, date);
       else if (b.scope === 'weekly') { const open = roomOpen(room), w = weekday(date);
         if (ranges.length) open[w] = ranges; else delete open[w];

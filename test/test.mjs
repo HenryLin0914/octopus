@@ -368,6 +368,11 @@ ok((await call('boss', 'a.unbind', { userId: (await call('dad', 'init')).data.us
     ok((await call('guest2', 'rentSlots', { roomId: rid, date: d9 })).data.slots.length === 0 && (await call('guest2', 'rentSlots', { roomId: rid, date: d2 })).data.slots.length === 2, '單日設為不開放，不影響其他週');
     await call('boss', 'a.roomHours', { roomId: rid, date: d9, scope: 'reset' });
     ok((await call('guest2', 'rentSlots', { roomId: rid, date: d9 })).data.slots.length === 2, '恢復每週固定時段');
+    const f0 = addDays(d2, 14), f1 = addDays(f0, 6), wdF = new Date(f0 + 'T12:00:00+08:00').getUTCDay();
+    r = await call('boss', 'a.roomHours', { roomId: rid, date: f0, scope: 'range', from: f0, to: f1, ranges: [['08:00', '09:00']] });
+    ok(r.data.count === 7 && (await call('guest2', 'rentSlots', { roomId: rid, date: addDays(f0, 3) })).data.slots.length === 1, '起訖日期一次設定多天');
+    r = await call('boss', 'a.roomHours', { roomId: rid, date: f0, scope: 'range', from: f0, to: addDays(f0, 13), weekdays: [wdF], ranges: [] });
+    ok(r.data.count === 2 && (await call('guest2', 'rentSlots', { roomId: rid, date: f0 })).data.slots.length === 0 && (await call('guest2', 'rentSlots', { roomId: rid, date: addDays(f0, 1) })).data.slots.length === 1 && /起訖/.test((await call('boss', 'a.roomHours', { roomId: rid, date: f0, scope: 'range', from: f1, to: f0, ranges: [] })).error), '起訖範圍可只套用指定星期');
     await call('boss', 'a.roomSave', { id: rid, name: 'A教室', price: 400, capacity: 20 });
     ok((await call('guest2', 'rentSlots', { roomId: rid, date: d2 })).data.slots.length === 2, '編輯教室基本資料不會清掉開放時段');
   }

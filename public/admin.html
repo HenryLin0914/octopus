@@ -792,19 +792,24 @@ function hoursDialog(room, day, month) {
   const w = dDay(day.date), back = () => roomCalendar(room.id, month);
   const m = dialog(`${dLabel(day.date)} 開放時段｜${room.name}`, `<div class="acts" style="margin:10px 0 8px">${[['全天', 360, 1440], ['上午', 360, 720], ['下午', 720, 1080], ['晚上', 1080, 1440], ['清除', 0, 0]].map(p => `<button class="btn sm" data-pre="${p[1]},${p[2]}">${p[0]}</button>`).join('')}</div>
     <div class="hgrid">${slots.map(n => `<button data-h="${n}">${m2t(n)}</button>`).join('')}</div><div class="s" id="hsum" style="margin:8px 0"></div>
-    <label class="f">套用範圍<select id="hscope"><option value="date">只有 ${day.date.slice(5).replace('-', '/')} 這一天</option><option value="weekly">每週${WD[w]}都這樣（固定時段）</option></select></label>
+    <label class="f">套用範圍<select id="hscope"><option value="date">只有 ${day.date.slice(5).replace('-', '/')} 這一天</option><option value="weekly">每週${WD[w]}都這樣（固定時段）</option><option value="range">一段日期（選起訖）</option></select></label>
+    <div id="hrange" hidden><div class="two"><label class="f">開始日期<input type="date" id="hfrom" value="${day.date}"></label><label class="f">結束日期<input type="date" id="hto" value="${dAdd(day.date, 6)}"></label></div>
+      <div class="f s" style="margin-top:12px">只套用到這些星期（全部勾選＝每天）<div class="chk">${[1, 2, 3, 4, 5, 6, 0].map(x => `<label><input type="checkbox" name="hwd" value="${x}" checked>週${WD[x]}</label>`).join('')}</div></div></div>
     <p class="s">上方按鈕會直接換成那個時段（上午 06–12、下午 12–18、晚上 18–24）；之後可以再點個別的格子增減。${day.booked || day.classes ? '<br>這天已有' + (day.booked ? ' ' + day.booked + ' 筆預約' : '') + (day.classes ? ' ' + day.classes + ' 堂課' : '') + '，縮短開放時段不會取消已成立的預約。' : ''}</p>`,
     { foot: `${day.custom ? '<button class="btn ghost" data-hreset>恢復每週固定</button>' : ''}<span class="sp"></span><button class="btn" data-x>取消</button><button class="btn p" data-hsave>儲存</button>` });
   const ranges = () => { const out = []; slots.forEach(n => { if (!on.has(n)) return; const l = out[out.length - 1]; if (l && l[1] === n) l[1] = n + unit; else out.push([n, n + unit]); }); return out.map(r => [m2t(r[0]), r[1] >= 1440 ? '24:00' : m2t(r[1])]); };
   const paint = () => { $$('[data-h]', m).forEach(b => b.classList.toggle('on', on.has(+b.dataset.h))); const r = ranges(); $('#hsum', m).innerHTML = r.length ? '開放：<b style="color:var(--ink)">' + r.map(x => x[0] + '–' + x[1]).join('、') + '</b>' : '<b style="color:var(--warn)">這天不開放</b>'; };
   paint();
+  $('#hscope', m).onchange = e => { $('#hrange', m).hidden = e.target.value !== 'range'; };
   let closed = false;
   m.addEventListener('click', async e => {
     const b = e.target.closest('button'); if (!b) return;
     if (b.dataset.h) { const n = +b.dataset.h; on.has(n) ? on.delete(n) : on.add(n); $$('[data-pre]', m).forEach(x => x.classList.remove('on')); return paint(); }
     if (b.dataset.pre) { const [a, z] = b.dataset.pre.split(',').map(Number); on.clear(); if (z) slots.forEach(n => { if (n >= a && n + unit <= z) on.add(n); }); $$('[data-pre]', m).forEach(x => x.classList.toggle('on', x === b && !!z)); return paint(); }
     try {
-      if ('hsave' in b.dataset) { const sc = $('#hscope', m).value; await api('a.roomHours', { roomId: room.id, date: day.date, scope: sc, ranges: ranges() }); toast(sc === 'weekly' ? '已設定每週' + WD[w] + '的固定時段' : '已設定 ' + day.date.slice(5).replace('-', '/') + ' 的開放時段'); closed = true; m.remove(); back(); }
+      if ('hsave' in b.dataset) { const sc = $('#hscope', m).value, wds = $$('[name=hwd]:checked', m).map(x => +x.value);
+        if (sc === 'range' && !wds.length) throw new Error('請至少勾選一個星期');
+        const r = await api('a.roomHours', { roomId: room.id, date: day.date, scope: sc, ranges: ranges(), from: $('#hfrom', m).value, to: $('#hto', m).value, weekdays: wds }); toast(sc === 'weekly' ? '已設定每週' + WD[w] + '的固定時段' : sc === 'range' ? '已設定 ' + r.count + ' 天的開放時段' : '已設定 ' + day.date.slice(5).replace('-', '/') + ' 的開放時段'); closed = true; m.remove(); back(); }
       if ('hreset' in b.dataset) { await api('a.roomHours', { roomId: room.id, date: day.date, scope: 'reset' }); toast('已恢復每週固定時段'); closed = true; m.remove(); back(); }
     } catch (err) { toast(err.message, true); }
   });
