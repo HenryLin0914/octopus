@@ -444,8 +444,9 @@ export function createApp(opts = {}) {
   /** 回覆內容 → LINE 訊息（文字、最多三張圖、按鈕卡片） */
   function replyMessages(r) {
     const out = [];
+    if (r.images.length > 3) out.push({ type: 'flex', altText: r.name.slice(0, 300), contents: { type: 'carousel', contents: r.images.slice(0, 10).map(u => ({ type: 'bubble', size: 'kilo', hero: { type: 'image', url: u, size: 'full', aspectRatio: '4:3', aspectMode: 'cover', action: { type: 'uri', uri: u } } })) } }); // 照片多時改成可左右滑的相簿，點一下看大圖
+    else r.images.forEach(u => out.push({ type: 'image', originalContentUrl: u, previewImageUrl: u }));
     if (r.text && !r.buttons.length) out.push({ type: 'text', text: r.text });
-    r.images.forEach(u => out.push({ type: 'image', originalContentUrl: u, previewImageUrl: u }));
     if (r.buttons.length) out.push({ type: 'flex', altText: (r.text || r.name).slice(0, 300), contents: { type: 'bubble', size: 'kilo',
       body: { type: 'box', layout: 'vertical', spacing: 'md', paddingAll: 'lg', contents: [{ type: 'text', text: r.name, weight: 'bold', size: 'lg', color: C.INK, wrap: true }, ...(r.text ? [{ type: 'text', text: r.text, size: 'sm', color: C.INK, wrap: true }] : [])] },
       footer: { type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: 'md', contents: r.buttons.map((x, i) => ({ type: 'button', style: i ? 'secondary' : 'primary', color: i ? undefined : C.BRAND, height: 'sm', action: { type: 'uri', label: x.label, uri: x.url } })) } } });
@@ -1273,7 +1274,7 @@ export function createApp(opts = {}) {
       const name = str(b.name, 30);
       if (!name) throw new Error('請輸入名稱');
       const okUrl = u => /^https:\/\/\S+$/.test(u || '');
-      const text = str(b.text, 2000), images = (b.images || []).map(u => str(u, 500)).filter(okUrl).slice(0, 3);
+      const text = str(b.text, 2000), images = (b.images || []).map(u => str(u, 500)).filter(okUrl).slice(0, 10);
       const buttons = (b.buttons || []).map(x => ({ label: str(x.label, 20), url: str(x.url, 500) })).filter(x => x.label && (okUrl(x.url) || /^tel:[0-9+\-]+$/.test(x.url))).slice(0, 4);
       if ((b.images || []).filter(Boolean).length > images.length || (b.buttons || []).filter(x => x && x.label && x.url).length > buttons.length) throw new Error('圖片和按鈕的連結必須是 https:// 開頭（LINE 的規定）');
       if (!text && !images.length && !buttons.length) throw new Error('請至少填一段文字、一張圖片或一個按鈕');
