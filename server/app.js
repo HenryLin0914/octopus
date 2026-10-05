@@ -73,7 +73,7 @@ const PLANS = [['P01', '單堂', 1, 500, 30], ['P02', '10堂卡', 10, 4500, 90],
 const COLORS = ['#D6336C', '#1971C2', '#2B8A3E', '#E67700', '#7048E8', '#0C8599', '#C2255C', '#5C940D'];
 
 const OWNER_ONLY = new Set(['a.studentSave', 'a.enroll', 'a.unbind', 'a.topup', 'a.cardSave', 'a.courseSave', 'a.sessionSave', 'a.sessionDelete', 'a.genSessions',
-  'a.videoSave', 'a.videoDelete', 'a.planSave', 'a.settingSave', 'a.adminSave', 'a.export', 'a.student', 'a.videos', 'a.plans', 'a.settings', 'a.admins', 'a.cards', 'a.ledger', 'a.topupSave', 'a.videoInfo', 'a.dayOff', 'a.familySave', 'a.courseDelete', 'a.courseStudents', 'a.signupSave', 'a.rent', 'a.roomSave', 'a.roomDelete', 'a.rentBlockSave', 'a.rentBlockDelete', 'a.rentTagSave', 'a.rentTagDelete', 'a.bookingSave', 'a.rentSlots', 'a.roomCal', 'a.roomHours', 'a.ruleSave', 'a.ruleDelete', 'a.upload', 'a.menu', 'a.menuPageSave', 'a.menuPageDelete', 'a.menuPageMove', 'a.replySave', 'a.replyDelete', 'a.menuPublish', 'a.menuUnpublish']);
+  'a.videoSave', 'a.videoDelete', 'a.planSave', 'a.settingSave', 'a.adminSave', 'a.export', 'a.student', 'a.videos', 'a.plans', 'a.settings', 'a.admins', 'a.cards', 'a.ledger', 'a.topupSave', 'a.videoInfo', 'a.dayOff', 'a.familySave', 'a.courseDelete', 'a.courseStudents', 'a.signupSave', 'a.rent', 'a.roomSave', 'a.roomDelete', 'a.rentBlockSave', 'a.rentBlockDelete', 'a.rentTagSave', 'a.rentTagDelete', 'a.bookingSave', 'a.rentSlots', 'a.roomCal', 'a.roomHours', 'a.ruleSave', 'a.ruleDelete', 'a.upload', 'a.menu', 'a.menuPageSave', 'a.menuTheme', 'a.menuPageDelete', 'a.menuPageMove', 'a.replySave', 'a.replyDelete', 'a.menuPublish', 'a.menuUnpublish']);
 const ASYNC = new Set(['a.menuPublish', 'a.menuUnpublish', 'a.videoInfo']);
 /** 從各種 YouTube 網址取出影片 ID（watch、youtu.be、shorts、live、embed） */
 export const ytId = url => { const m = String(url || '').match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^#]*&)?v=|shorts\/|live\/|embed\/|v\/))([\w-]{11})(?![\w-])/); return m ? m[1] : ''; };
@@ -423,9 +423,13 @@ export function createApp(opts = {}) {
   const MENU_FNS = [['checkin', '線上報到'], ['card', '上課卡'], ['schedule', '課表'], ['leave', '請假'], ['attendance', '出席紀錄'], ['video', '影片'], ['rent', '教室租借'], ['bind', '綁定學生'], ['home', '系統首頁']];
   const menuPages = () => all('SELECT * FROM rm_pages ORDER BY sort,id').map(p => ({ id: p.id, name: p.name, cols: p.cols, rows: p.rows, image: p.image, cells: parseRanges(p.cells) }));
   const replyList = () => all('SELECT * FROM replies ORDER BY sort,id').map(r => ({ id: r.id, name: r.name, keywords: r.keywords, text: r.text, images: parseRanges(r.images), buttons: parseRanges(r.buttons) }));
-  const menuRect = total => total > 1 ? { x: MENU_GEO.side, y: 0, w: MENU_GEO.W - MENU_GEO.side * 2, h: MENU_GEO.H - MENU_GEO.navH } : { x: 0, y: 0, w: MENU_GEO.W, h: MENU_GEO.H };
+  const menuRect = (total, hasImage = true) => total > 1 ? (hasImage ? { x: MENU_GEO.side, y: 0, w: MENU_GEO.W - MENU_GEO.side * 2, h: MENU_GEO.H - MENU_GEO.navH } : { x: 0, y: 0, w: MENU_GEO.W, h: MENU_GEO.H - MENU_GEO.navH }) : { x: 0, y: 0, w: MENU_GEO.W, h: MENU_GEO.H };
+  /** 系統繪製選單時，每個功能預設的圖示與小字 */
+  const MENU_LOOK = { checkin: ['qr', '掃教室 QR Code'], card: ['ticket', '剩餘堂數・儲值'], schedule: ['calendar', '課程・報名'], leave: ['file', '線上請假・紀錄'], attendance: ['check', '出席・請假・缺席'], video: ['play', '上課與成果影片'], rent: ['building', '查時段・線上預約'], bind: ['link', '輸入綁定碼'], home: ['home', ''] };
+  const MENU_THEMES = ['pink', 'warm', 'green', 'blue', 'dark'];
+  const fnCell = f => ({ label: MENU_FNS.find(x => x[0] === f)[1], type: 'fn', value: f, icon: MENU_LOOK[f][0], sub: MENU_LOOK[f][1], hl: f === 'checkin' });
   function menuAreas(pg, n, total, alias) {
-    const r = menuRect(total), cw = r.w / pg.cols, ch = r.h / pg.rows, out = [];
+    const r = menuRect(total, !!pg.image), cw = r.w / pg.cols, ch = r.h / pg.rows, out = [];
     pg.cells.forEach((c, i) => {
       const bounds = { x: Math.round(r.x + (i % pg.cols) * cw), y: Math.round(r.y + Math.floor(i / pg.cols) * ch), width: Math.round(cw), height: Math.round(ch) }, label = (c.label || pg.name).slice(0, 20);
       const action = c.type === 'fn' ? { type: 'uri', label, uri: liffUrl(c.value) } : c.type === 'url' ? { type: 'uri', label, uri: c.value } : c.type === 'text' ? { type: 'message', label, text: c.value.slice(0, 300) }
@@ -448,10 +452,19 @@ export function createApp(opts = {}) {
   }
   if (!get("SELECT 1 x FROM meta WHERE key='menu_seeded'")) { // 第一次：帶入原本官方帳號的六格選單＋教室功能頁，管理員可再調整
     const ins = (name, sort, cols, rows, image, cells) => run('INSERT INTO rm_pages(id,name,sort,cols,rows,image,cells) VALUES(?,?,?,?,?,?,?)', uid('P'), name, sort, cols, rows, image, JSON.stringify(cells));
-    ins('空間資訊', 1, 3, 2, '', [{ label: '租借方式及須知', type: 'text', value: '租借方式及須知' }, { label: '空間實拍展示', type: 'text', value: '空間實拍展示' }, { label: 'FB 粉絲專頁', type: 'url', value: 'https://www.facebook.com/share/1CnLmQV26C/' },
-      { label: 'Instagram', type: 'url', value: 'https://www.instagram.com/leopard.299132?igsh=MW0zamk3ZnowNXRqNQ==' }, { label: '課程資訊', type: 'text', value: '課程資訊' }, { label: '身體密碼', type: 'none', value: '' }]);
-    ins('教室功能', 2, 4, 2, '/richmenu.jpg', ['checkin', 'card', 'schedule', 'leave', 'attendance', 'video', 'rent', 'bind'].map(f => ({ label: MENU_FNS.find(x => x[0] === f)[1], type: 'fn', value: f })));
+    ins('空間資訊', 1, 3, 2, '', [{ label: '租借方式及須知', type: 'text', value: '租借方式及須知', icon: 'info', sub: '費用・規則' }, { label: '空間實拍展示', type: 'text', value: '空間實拍展示', icon: 'camera', sub: '看看教室環境' }, { label: 'FB 粉絲專頁', type: 'url', value: 'https://www.facebook.com/share/1CnLmQV26C/', icon: 'facebook', sub: 'Facebook' },
+      { label: 'Instagram', type: 'url', value: 'https://www.instagram.com/leopard.299132?igsh=MW0zamk3ZnowNXRqNQ==', icon: 'instagram', sub: '追蹤最新動態' }, { label: '課程資訊', type: 'text', value: '課程資訊', icon: 'book', sub: '課程・師資' }, { label: '身體密碼', type: 'none', value: '', icon: '', sub: 'Bodycode Sharing Space', hl: true }]);
+    ins('教室功能', 2, 4, 2, '', ['checkin', 'card', 'schedule', 'leave', 'attendance', 'video', 'rent', 'bind'].map(fnCell));
     run("INSERT OR IGNORE INTO meta VALUES('menu_seeded','1')");
+    run("INSERT OR IGNORE INTO meta VALUES('menu_style2','1')");
+  }
+  if (!get("SELECT 1 x FROM meta WHERE key='menu_style2'")) { // 舊版預設頁面：改成系統統一繪製的風格（補上圖示與小字，拿掉舊的教室功能圖）
+    const guess = [[/須知|規則|方式/, 'info', '費用・規則'], [/實拍|照片|環境/, 'camera', '看看教室環境'], [/FB|Facebook|臉書/i, 'facebook', 'Facebook'], [/Instagram|IG/i, 'instagram', '追蹤最新動態'], [/課程/, 'book', '課程・師資']];
+    for (const p of all('SELECT * FROM rm_pages')) { if (p.image && p.image !== '/richmenu.jpg') continue;
+      const cells = parseRanges(p.cells).map(c => { if (c.icon !== undefined) return c; if (c.type === 'fn' && MENU_LOOK[c.value]) return { ...c, icon: MENU_LOOK[c.value][0], sub: MENU_LOOK[c.value][1], hl: c.value === 'checkin' };
+        const g = guess.find(x => x[0].test(c.label)); return g ? { ...c, icon: g[1], sub: g[2] } : c.label === '身體密碼' ? { ...c, icon: '', sub: 'Bodycode Sharing Space', hl: true } : { ...c, icon: '', sub: '' }; });
+      run("UPDATE rm_pages SET image='',cells=? WHERE id=?", JSON.stringify(cells), p.id); }
+    run("INSERT OR IGNORE INTO meta VALUES('menu_style2','1')");
   }
 
   /* ============================== API ============================== */
@@ -1217,7 +1230,12 @@ export function createApp(opts = {}) {
     },
     'a.menu'() {
       const pub = k => (get('SELECT value FROM meta WHERE key=?', k) || {}).value || '';
-      return { pages: menuPages(), replies: replyList(), geo: MENU_GEO, fns: MENU_FNS, publishedAt: pub('menu_published_at'), ready: !!(env.LINE_CHANNEL_ACCESS_TOKEN && env.LIFF_ID) };
+      return { pages: menuPages(), replies: replyList(), geo: MENU_GEO, fns: MENU_FNS, look: MENU_LOOK, theme: pub('menu_theme') || 'pink', publishedAt: pub('menu_published_at'), ready: !!(env.LINE_CHANNEL_ACCESS_TOKEN && env.LIFF_ID) };
+    },
+    'a.menuTheme'(b) {
+      if (!MENU_THEMES.includes(b.theme)) throw new Error('沒有這個配色');
+      run("INSERT INTO meta VALUES('menu_theme',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", b.theme);
+      return { theme: b.theme };
     },
     'a.menuPageSave'(b) {
       const name = str(b.name, 20);
@@ -1229,7 +1247,7 @@ export function createApp(opts = {}) {
         if (type === 'url' && !/^https?:\/\/\S+$|^tel:[0-9+\-]+$|^line:\/\/\S+$/.test(value)) throw new Error(`第 ${i + 1} 格的連結要以 https:// 開頭`);
         if (type === 'text' && !value) throw new Error(`第 ${i + 1} 格請填要傳送的文字`);
         if (type === 'reply' && !get('SELECT 1 x FROM replies WHERE id=?', value)) throw new Error(`第 ${i + 1} 格請選擇回覆內容`);
-        return { label: str(c.label, 20), type, value: type === 'none' ? '' : value }; });
+        return { label: str(c.label, 20), type, value: type === 'none' ? '' : value, icon: /^[a-z]{1,12}$/.test(c.icon || '') ? c.icon : '', sub: str(c.sub, 24), hl: !!c.hl }; });
       const id = b.id || uid('P');
       if (b.id) { if (!get('SELECT 1 x FROM rm_pages WHERE id=?', id)) throw new Error('找不到這一頁'); run('UPDATE rm_pages SET name=?,cols=?,rows=?,image=?,cells=? WHERE id=?', name, cols, rows, image, JSON.stringify(cells), id); }
       else run('INSERT INTO rm_pages(id,name,sort,cols,rows,image,cells) VALUES(?,?,?,?,?,?,?)', id, name, (get('SELECT MAX(sort) m FROM rm_pages').m || 0) + 1, cols, rows, image, JSON.stringify(cells));

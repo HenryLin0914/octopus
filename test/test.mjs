@@ -402,6 +402,8 @@ ok((await call('boss', 'a.unbind', { userId: (await call('dad', 'init')).data.us
 { // 圖文選單：多頁、換頁、自訂格子、回覆內容
   let mn = (await call('boss', 'a.menu')).data;
   ok(mn.pages.length === 2 && mn.pages[0].cells.length === 6 && mn.pages[0].cells[2].type === 'url' && mn.pages[1].cells.every(c => c.type === 'fn') && /僅限管理員/.test((await call('teacher', 'a.menu')).error), '預設帶入原選單六格與教室功能頁');
+  ok(mn.pages.every(p => !p.image) && mn.pages[0].cells[0].icon === 'info' && mn.pages[1].cells[0].icon === 'qr' && mn.pages[1].cells[0].hl === true && mn.theme === 'pink', '預設頁面由系統繪製，帶圖示與小字');
+  ok((await call('boss', 'a.menuTheme', { theme: 'warm' })).ok && (await call('boss', 'a.menu')).data.theme === 'warm' && !(await call('boss', 'a.menuTheme', { theme: 'x' })).ok, '可切換選單配色');
   const jpg = Buffer.concat([Buffer.from([0xFF, 0xD8, 0xFF, 0xE0]), Buffer.alloc(3000, 7)]).toString('base64');
   ok(/只能上傳/.test((await call('boss', 'a.upload', { data: Buffer.from('hello world').toString('base64') })).error), '只接受圖片與 PDF');
   await call('boss', 'a.upload', { data: jpg.slice(0, 2000), part: { id: 'u1', i: 0, n: 2 } });

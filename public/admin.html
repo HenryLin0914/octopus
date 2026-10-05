@@ -495,9 +495,11 @@ const PAGES = {
     const act = c => c.type === 'fn' ? '開啟系統功能：' + ((d.fns.find(f => f[0] === c.value) || [])[1] || c.value) : c.type === 'url' ? '開啟連結：' + c.value : c.type === 'text' ? '傳送文字「' + c.value + '」' : c.type === 'reply' ? '機器人回覆：' + ((d.replies.find(r => r.id === c.value) || {}).name || '（已刪除）') : '不設定';
     return `<div class="head"><h1>圖文選單</h1><span class="sp"></span><a class="btn" href="#settings" style="text-decoration:none;color:inherit">‹ 回設定</a><button class="btn p" data-mn="publish">發布到 LINE</button></div>
       <div class="note">${d.publishedAt ? '目前 LINE 上顯示的是 <b>' + esc(d.publishedAt.slice(5, 16)) + '</b> 發布的版本。這裡改完要按「發布到 LINE」才會更新。' : '還沒有發布。這裡設定好之後按「發布到 LINE」，聊天室下方的選單才會換成這一套。'}${d.ready ? '' : '<br>⚠ 伺服器還沒設定 LINE 金鑰，無法發布。'}</div>
+      <div class="card" style="margin-bottom:12px"><h2>選單風格</h2><div class="s">沒有上傳圖片的頁面由系統繪製，所有頁面同一種風格。選一個配色：</div>
+        <div class="acts" style="margin-top:8px">${Object.entries(RM_THEMES).map(([k, t]) => `<button class="btn sm ${d.theme === k ? 'p' : ''}" data-mn="theme" data-id="${k}"><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${t[4]};border:2px solid ${t[1]};vertical-align:-1px;margin-right:5px"></span>${t[0]}</button>`).join('')}</div></div>
       ${d.pages.map((p, n) => `<div class="card" style="margin-bottom:12px"><h2>第 ${n + 1} 頁｜<span style="color:var(--ink)">${esc(p.name)}</span>${n === 0 ? '<span class="tag ok">打開聊天室先看到這頁</span>' : ''}<span class="sp"></span></h2>
         <canvas class="rmpv" data-pv="${esc(p.id)}" width="1250" height="843"></canvas>
-        ${p.image ? '' : '<div class="s" style="color:var(--warn);margin-top:6px">這一頁還沒有上傳圖片，現在是系統自動畫的格子。按「編輯」可以上傳您原本的選單圖。</div>'}
+        ${p.image ? '<div class="s" style="margin-top:6px">這一頁用的是自己上傳的圖片，不會套用上方的配色。</div>' : ''}
         <div style="margin-top:8px">${p.cells.map((c, i) => `<div class="s" style="overflow-wrap:anywhere"><b style="color:var(--ink)">${i + 1}. ${esc(c.label || '（未命名）')}</b>　${esc(act(c))}</div>`).join('')}</div>
         <div class="acts" style="margin-top:10px"><button class="btn sm p" data-mn="edit" data-id="${esc(p.id)}">編輯</button>${n ? `<button class="btn sm" data-mn="up" data-id="${esc(p.id)}">往前移</button>` : ''}${n < d.pages.length - 1 ? `<button class="btn sm" data-mn="down" data-id="${esc(p.id)}">往後移</button>` : ''}<button class="btn sm ghost" style="color:var(--bad)" data-mn="del" data-id="${esc(p.id)}">刪除這頁</button></div></div>`).join('') || '<div class="card empty">還沒有任何一頁</div>'}
       <button class="btn" data-mn="add" style="width:100%;margin-bottom:16px">＋ 新增一頁</button>
@@ -775,34 +777,50 @@ function topup(id) {
 const loadImg = src => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error('圖片載入失敗')); i.src = src; });
 const rrect = (c, x, y, w, h, r) => { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); };
 const RMFONT = '"PingFang TC","Noto Sans TC","Noto Sans CJK TC","Microsoft JhengHei",sans-serif';
-/** 把一頁畫成 2500×1686 的選單圖：原圖等比例放在上方，多頁時下方加「上一頁／頁名／下一頁」 */
-async function composePage(pg, n, total) {
+const RM_THEMES = { pink: ['莓粉', '#fdf1f5', '#ffffff', '#3b2430', '#d6336c', '#f7d6e1'], warm: ['暖棕', '#efe6da', '#fffaf3', '#46342a', '#a5673f', '#e3d3c0'], green: ['墨綠', '#e6eee8', '#ffffff', '#1f3a2e', '#2f6b4f', '#cfdfd4'], blue: ['霧藍', '#e7eef5', '#ffffff', '#1e3148', '#2f6db0', '#cddbea'], dark: ['夜黑', '#1f1b1e', '#2e282c', '#f5eee8', '#e0b36a', '#443c41'] };
+const RM_ICONS = { qr: ['QR 報到', 'M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h3v3h-3z M18 18h3v3h-3z M6.5 6.5h.01 M17.5 6.5h.01 M6.5 17.5h.01'], ticket: ['票卡', 'M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z M13 5v2 M13 17v2 M13 11v2'],
+  calendar: ['行事曆', 'M8 2v4 M16 2v4 M3 10h18 M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z M8 14h4 M8 18h8'], file: ['文件', 'M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z M14 2v4a2 2 0 0 0 2 2h4 M16 13H8 M16 17H8 M10 9H8'],
+  check: ['打勾清單', 'M9 2h6a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2 M9 14l2 2 4-4'], play: ['影片', 'M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z M10 9l5 3-5 3z'],
+  building: ['教室', 'M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2 M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2 M10 6h4 M10 10h4 M10 14h4 M10 18h4'], link: ['連結', 'M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71 M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71'],
+  home: ['首頁', 'M3 10l9-7 9 7v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z M9 22V12h6v10'], info: ['說明', 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z M12 16v-4 M12 8h.01'], camera: ['相機', 'M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z M12 10a3 3 0 1 0 0 6 3 3 0 0 0 0-6z'],
+  facebook: ['Facebook', 'M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z'], instagram: ['Instagram', 'M7 2h10a5 5 0 0 1 5 5v10a5 5 0 0 1-5 5H7a5 5 0 0 1-5-5V7a5 5 0 0 1 5-5z M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z M17.5 6.5h.01'],
+  book: ['書本', 'M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z'], chat: ['對話', 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z'], pin: ['地點', 'M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z M12 7a3 3 0 1 0 0 6 3 3 0 0 0 0-6z'],
+  money: ['費用', 'M12 2v20 M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6'], star: ['星星', 'M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z'], heart: ['愛心', 'M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z'],
+  phone: ['電話', 'M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z'], clock: ['時間', 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z M12 6v6l4 2'] };
+const fitFont = (c, t, w, fs, wt) => { c.font = `${wt} ${fs}px ${RMFONT}`; while (c.measureText(t).width > w && fs > 24) { fs -= 3; c.font = `${wt} ${fs}px ${RMFONT}`; } return fs; };
+/** 把一頁畫成 2500×1686 的選單圖。沒有上傳圖片時由系統依配色繪製（每頁同一種風格）；多頁時下方加「上一頁／頁名／下一頁」 */
+async function composePage(pg, n, total, themeKey) {
   const G = A.menu.geo, cv = document.createElement('canvas'); cv.width = G.W; cv.height = G.H; const c = cv.getContext('2d');
-  const R = total > 1 ? { x: G.side, y: 0, w: G.W - G.side * 2, h: G.H - G.navH } : { x: 0, y: 0, w: G.W, h: G.H };
-  let bg = '#fdf1f5', ink = '#3b2430';
+  const T = RM_THEMES[themeKey || A.menu.theme] || RM_THEMES.pink, [, tBg, tTile, tInk, tAcc, tLine] = T;
+  const multi = total > 1, R = multi ? (pg.image ? { x: G.side, y: 0, w: G.W - G.side * 2, h: G.H - G.navH } : { x: 0, y: 0, w: G.W, h: G.H - G.navH }) : { x: 0, y: 0, w: G.W, h: G.H };
+  let bg = tBg, ink = tInk, btn = tTile, line = tLine;
   if (pg.image) {
     const img = await loadImg(pg.image);
-    c.drawImage(img, 0, 0, 12, 12, 0, 0, 1, 1); const px = c.getImageData(0, 0, 1, 1).data; bg = `rgb(${px[0]},${px[1]},${px[2]})`; ink = px[0] * .3 + px[1] * .59 + px[2] * .11 > 140 ? '#3b2430' : '#fff';
+    c.drawImage(img, 0, 0, 12, 12, 0, 0, 1, 1); const px = c.getImageData(0, 0, 1, 1).data, light = px[0] * .3 + px[1] * .59 + px[2] * .11 > 140; bg = `rgb(${px[0]},${px[1]},${px[2]})`; ink = light ? '#3b2430' : '#fff'; btn = light ? '#fff' : 'rgba(255,255,255,.2)'; line = light ? 'rgba(0,0,0,.12)' : 'rgba(255,255,255,.4)';
     c.fillStyle = bg; c.fillRect(0, 0, G.W, G.H);
     const k = Math.min(R.w / img.width, R.h / img.height), w = img.width * k, h = img.height * k;
     c.drawImage(img, R.x + (R.w - w) / 2, R.y + (R.h - h) / 2, w, h);
   } else {
     c.fillStyle = bg; c.fillRect(0, 0, G.W, G.H);
-    const cw = R.w / pg.cols, ch = R.h / pg.rows, pad = 14;
-    pg.cells.forEach((cell, i) => { const x = R.x + (i % pg.cols) * cw + pad, y = R.y + Math.floor(i / pg.cols) * ch + pad, w = cw - pad * 2, h = ch - pad * 2;
-      c.fillStyle = cell.type === 'none' ? '#f8e6ec' : '#fff'; rrect(c, x, y, w, h, 46); c.fill(); c.strokeStyle = '#f7d6e1'; c.lineWidth = 4; c.stroke();
-      let fs = Math.min(110, h * .22); c.font = `900 ${fs}px ${RMFONT}`; const t = cell.label || '';
-      while (c.measureText(t).width > w - 60 && fs > 30) { fs -= 4; c.font = `900 ${fs}px ${RMFONT}`; }
-      c.fillStyle = '#3b2430'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(t, x + w / 2, y + h / 2); });
+    const out = 26, cw = (R.w - out * 2) / pg.cols, ch = (R.h - out * (multi ? 1 : 2)) / pg.rows, pad = 14;
+    pg.cells.forEach((cell, i) => { const x = R.x + out + (i % pg.cols) * cw + pad, y = R.y + out + Math.floor(i / pg.cols) * ch + pad, w = cw - pad * 2, h = ch - pad * 2, hl = !!cell.hl, fg = hl ? '#fff' : tInk;
+      c.save(); c.shadowColor = 'rgba(0,0,0,.10)'; c.shadowBlur = 30; c.shadowOffsetY = 8; if (hl) { const g = c.createLinearGradient(x, y, x + w, y + h); g.addColorStop(0, tAcc); g.addColorStop(1, tAcc + 'cc'); c.fillStyle = g; } else c.fillStyle = tTile; rrect(c, x, y, w, h, 52); c.fill(); c.restore();
+      if (!hl) { c.strokeStyle = tLine; c.lineWidth = 4; rrect(c, x, y, w, h, 52); c.stroke(); }
+      const ic = RM_ICONS[cell.icon], t = cell.label || '', sub = cell.sub || '', S = ic ? Math.min(w, h) * .3 : 0;
+      const fs = fitFont(c, t, w - 70, ic ? Math.min(104, h * .17) : Math.min(132, h * .2), 900), ss = sub ? Math.min(52, fs * .5) : 0, gap1 = ic ? h * .075 : 0, gap2 = sub ? h * .045 : 0;
+      let cy = y + (h - (S + gap1 + fs + gap2 + ss)) / 2;
+      if (ic) { c.save(); c.translate(x + w / 2 - S / 2, cy); c.scale(S / 24, S / 24); c.strokeStyle = hl ? '#fff' : tAcc; c.lineWidth = 1.9; c.lineCap = 'round'; c.lineJoin = 'round'; c.stroke(new Path2D(ic[1])); c.restore(); cy += S + gap1; }
+      c.textAlign = 'center'; c.textBaseline = 'top'; c.fillStyle = fg; c.font = `900 ${fs}px ${RMFONT}`; c.fillText(t, x + w / 2, cy); cy += fs + gap2;
+      if (sub) { fitFont(c, sub, w - 70, ss, 500); c.globalAlpha = hl ? .9 : .62; c.fillStyle = hl ? '#fff' : tInk; c.fillText(sub, x + w / 2, cy); c.globalAlpha = 1; } });
   }
-  if (total > 1) { // 換頁列
-    const y = G.H - G.navH, light = ink === '#3b2430', bw = 620, bh = G.navH - 56, by = y + 28;
-    c.fillStyle = light ? 'rgba(0,0,0,.05)' : 'rgba(255,255,255,.12)'; c.fillRect(0, y, G.W, G.navH);
-    [[60, '‹  上一頁'], [G.W - 60 - bw, '下一頁  ›']].forEach(([x, t]) => { c.fillStyle = light ? '#fff' : 'rgba(255,255,255,.2)'; rrect(c, x, by, bw, bh, bh / 2); c.fill(); c.strokeStyle = light ? 'rgba(0,0,0,.12)' : 'rgba(255,255,255,.4)'; c.lineWidth = 3; c.stroke();
+  if (multi) { // 換頁列
+    const y = G.H - G.navH, bw = 620, bh = G.navH - 64, by = y + 26;
+    if (pg.image) { c.fillStyle = ink === '#fff' ? 'rgba(255,255,255,.12)' : 'rgba(0,0,0,.05)'; c.fillRect(0, y, G.W, G.navH); }
+    [[54, '‹  上一頁'], [G.W - 54 - bw, '下一頁  ›']].forEach(([x, t]) => { c.fillStyle = btn; rrect(c, x, by, bw, bh, bh / 2); c.fill(); c.strokeStyle = line; c.lineWidth = 4; c.stroke();
       c.fillStyle = ink; c.font = `700 68px ${RMFONT}`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(t, x + bw / 2, by + bh / 2 + 2); });
-    c.fillStyle = ink; c.font = `700 62px ${RMFONT}`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(pg.name, G.W / 2, y + G.navH / 2 - 24);
+    c.fillStyle = ink; c.font = `700 62px ${RMFONT}`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(pg.name, G.W / 2, by + bh / 2 - 22);
     const gap = 44, x0 = G.W / 2 - (total - 1) * gap / 2;
-    for (let i = 0; i < total; i++) { c.beginPath(); c.arc(x0 + i * gap, y + G.navH - 44, i === n ? 13 : 9, 0, 7); c.fillStyle = ink; c.globalAlpha = i === n ? 1 : .3; c.fill(); c.globalAlpha = 1; }
+    for (let i = 0; i < total; i++) { c.beginPath(); c.arc(x0 + i * gap, by + bh / 2 + 44, i === n ? 13 : 9, 0, 7); c.fillStyle = pg.image ? ink : tAcc; c.globalAlpha = i === n ? 1 : .3; c.fill(); c.globalAlpha = 1; }
   }
   return cv;
 }
@@ -842,25 +860,26 @@ function editMenuPage(id) {
     <h4 style="margin:18px 0 2px">每一格按下去要做什麼</h4><div class="s">格子順序：由左到右、由上到下。</div><div id="mp-cells"></div>`,
     { wide: true, foot: '<span class="sp"></span><button class="btn" data-x>取消</button><button class="btn p" data-mpsave>儲存</button>' });
   const types = [['fn', '開啟系統功能'], ['url', '開啟連結'], ['reply', '機器人回覆內容'], ['text', '替客人傳送一段文字'], ['none', '不設定']];
-  const grab = () => { st.name = $('#mp-name', m).value.trim(); $$('.mpc', m).forEach((row, i) => { st.cells[i] = { label: $('[data-k=label]', row).value.trim(), type: $('[data-k=type]', row).value, value: ($('[data-k=value]', row) || {}).value || '' }; }); };
+  const grab = () => { st.name = $('#mp-name', m).value.trim(); $$('.mpc', m).forEach((row, i) => { st.cells[i] = { label: $('[data-k=label]', row).value.trim(), type: $('[data-k=type]', row).value, value: ($('[data-k=value]', row) || {}).value || '', icon: $('[data-k=icon]', row).value, sub: $('[data-k=sub]', row).value.trim(), hl: $('[data-k=hl]', row).checked }; }); };
   const paint = () => {
-    $('#mp-img', m).innerHTML = `${st.image ? `<img src="${esc(st.image)}" style="width:100%;max-width:420px;border-radius:10px;border:1px solid var(--line);display:block;margin:6px 0">` : '<div class="s" style="margin:4px 0">沒有圖片：系統會自動畫出白色格子和文字。</div>'}
-      <div class="acts"><button class="btn sm p" data-mpi="up">上傳圖片</button><button class="btn sm" data-mpi="sys">用系統的教室功能圖（4×2）</button>${st.image ? '<button class="btn sm ghost" data-mpi="none">不用圖片</button>' : ''}</div>
-      <div class="s" style="margin-top:4px">建議 2500×1686 像素（和 LINE 官方帳號後台的大型選單相同），可直接上傳您原本的選單圖。</div>`;
+    $('#mp-img', m).innerHTML = `${st.image ? `<img src="${esc(st.image)}" style="width:100%;max-width:420px;border-radius:10px;border:1px solid var(--line);display:block;margin:6px 0">` : '<div class="s" style="margin:4px 0">目前由系統繪製（依下方每一格的圖示、名稱、小字，和其他頁面同一種風格）。</div>'}
+      <div class="acts"><button class="btn sm" data-mpi="up">改用自己的圖片</button><button class="btn sm" data-mpi="sys">填入教室功能 8 格</button>${st.image ? '<button class="btn sm ghost" data-mpi="none">改回系統繪製</button>' : ''}</div>
+      <div class="s" style="margin-top:4px">自己的圖片建議 2500×1686 像素；用了圖片，這一頁就不會套用系統配色。</div>`;
     const n = st.cols * st.rows; st.cells.length = n;
-    $('#mp-cells', m).innerHTML = [...Array(n)].map((_, i) => { const c = st.cells[i] || (st.cells[i] = { label: '', type: 'none', value: '' });
+    $('#mp-cells', m).innerHTML = [...Array(n)].map((_, i) => { const c = st.cells[i] || (st.cells[i] = { label: '', type: 'none', value: '', icon: '', sub: '', hl: false });
       const val = c.type === 'fn' ? `<select data-k="value">${d.fns.map(f => `<option value="${f[0]}" ${c.value === f[0] ? 'selected' : ''}>${f[1]}</option>`).join('')}</select>`
         : c.type === 'reply' ? (d.replies.length ? `<select data-k="value">${d.replies.map(r => `<option value="${esc(r.id)}" ${c.value === r.id ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}</select>` : '<div class="s" style="color:var(--warn)">還沒有回覆內容，請先存檔，到下方「回覆內容」新增後再回來選。</div>')
         : c.type === 'url' ? `<input data-k="value" value="${esc(c.value)}" placeholder="https://…" inputmode="url">` : c.type === 'text' ? `<input data-k="value" value="${esc(c.value)}" placeholder="客人按下後，會以他的名義傳出這段文字">` : '';
-      return `<div class="mpc"><div class="mpn">${i + 1}</div><div class="g"><input data-k="label" value="${esc(c.label)}" placeholder="這一格的名稱（例：租借須知）"><select data-k="type" style="margin-top:6px">${types.map(t => `<option value="${t[0]}" ${c.type === t[0] ? 'selected' : ''}>${t[1]}</option>`).join('')}</select>${val ? `<div style="margin-top:6px">${val}</div>` : ''}</div></div>`; }).join('');
+      return `<div class="mpc"><div class="mpn">${i + 1}</div><div class="g"><input data-k="label" value="${esc(c.label)}" placeholder="這一格的名稱（例：租借須知）"><select data-k="type" style="margin-top:6px">${types.map(t => `<option value="${t[0]}" ${c.type === t[0] ? 'selected' : ''}>${t[1]}</option>`).join('')}</select>${val ? `<div style="margin-top:6px">${val}</div>` : ''}
+        <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center${st.image ? ';display:none' : ''}"><select data-k="icon" style="flex:1 1 110px;min-width:0"><option value="">不放圖示</option>${Object.entries(RM_ICONS).map(([k, v]) => `<option value="${k}" ${c.icon === k ? 'selected' : ''}>圖示：${v[0]}</option>`).join('')}</select><input data-k="sub" value="${esc(c.sub || '')}" placeholder="小字說明（選填）" style="flex:2 1 150px;min-width:0"><label class="s" style="white-space:nowrap"><input type="checkbox" data-k="hl" ${c.hl ? 'checked' : ''} style="width:auto"> 強調色</label></div></div></div>`; }).join('');
   };
   paint();
-  m.addEventListener('change', e => { if (e.target.id === 'mp-lay') { grab(); [st.cols, st.rows] = e.target.value.split('x').map(Number); paint(); } if (e.target.dataset.k === 'type') { grab(); const i = $$('.mpc', m).indexOf(e.target.closest('.mpc')); st.cells[i].value = ''; paint(); } });
+  m.addEventListener('change', e => { if (e.target.id === 'mp-lay') { grab(); [st.cols, st.rows] = e.target.value.split('x').map(Number); paint(); } if (e.target.dataset.k === 'type') { grab(); const i = $$('.mpc', m).indexOf(e.target.closest('.mpc')); st.cells[i].value = ''; paint(); } if (e.target.dataset.k === 'value' && e.target.tagName === 'SELECT') { const row = e.target.closest('.mpc'), lk = d.look[e.target.value]; if (lk && $('[data-k=type]', row).value === 'fn') { $('[data-k=icon]', row).value = lk[0]; $('[data-k=sub]', row).value = lk[1]; if (!$('[data-k=label]', row).value) $('[data-k=label]', row).value = d.fns.find(f => f[0] === e.target.value)[1]; } } });
   m.addEventListener('click', async e => { const b = e.target.closest('button'); if (!b) return;
     try {
       if (b.dataset.mpi === 'up') { const r = await pickUpload('image/jpeg,image/png'); if (r) { grab(); st.image = r.path; paint(); } }
       if (b.dataset.mpi === 'none') { grab(); st.image = ''; paint(); }
-      if (b.dataset.mpi === 'sys') { grab(); st.image = '/richmenu.jpg'; st.cols = 4; st.rows = 2; st.cells = ['checkin', 'card', 'schedule', 'leave', 'attendance', 'video', 'rent', 'bind'].map(f => ({ label: d.fns.find(x => x[0] === f)[1], type: 'fn', value: f })); $('#mp-lay', m).value = '4x2'; paint(); }
+      if (b.dataset.mpi === 'sys') { grab(); st.image = ''; st.cols = 4; st.rows = 2; st.cells = ['checkin', 'card', 'schedule', 'leave', 'attendance', 'video', 'rent', 'bind'].map(f => ({ label: d.fns.find(x => x[0] === f)[1], type: 'fn', value: f, icon: d.look[f][0], sub: d.look[f][1], hl: f === 'checkin' })); $('#mp-lay', m).value = '4x2'; paint(); }
       if ('mpsave' in b.dataset) { grab(); st.cells.forEach(c => { if (c.type === 'fn' && !c.value) c.value = d.fns[0][0]; if (c.type === 'reply' && !c.value && d.replies[0]) c.value = d.replies[0].id; });
         await api('a.menuPageSave', { id: id || undefined, ...st }); toast('已儲存，記得按「發布到 LINE」'); m.remove(); show(); }
     } catch (err) { toast(err.message, true); } });
@@ -898,6 +917,7 @@ async function menuAct(act, id, el) {
   const d = A.menu;
   if (act === 'edit' || act === 'add') return editMenuPage(act === 'edit' ? id : '');
   if (act === 'reply') return editReply(id);
+  if (act === 'theme') { await api('a.menuTheme', { theme: id }); return show(); }
   if (act === 'up' || act === 'down') { await api('a.menuPageMove', { id, dir: act === 'up' ? -1 : 1 }); return show(); }
   if (act === 'del') { if (!confirm('確定刪除這一頁？')) return; await api('a.menuPageDelete', { id }); return show(); }
   if (act === 'unpublish') { if (!confirm('確定停用系統的圖文選單？\n停用後，聊天室會改回顯示 LINE 官方帳號管理後台設定的選單。')) return; await api('a.menuUnpublish'); toast('已停用'); return show(); }
@@ -905,7 +925,7 @@ async function menuAct(act, id, el) {
     if (!d.pages.length) return toast('請先新增至少一頁', true);
     if (!d.ready) return toast('伺服器還沒設定 LINE 金鑰，無法發布', true);
     const noImg = d.pages.filter(p => !p.image).map(p => p.name);
-    if (!confirm(`確定把這 ${d.pages.length} 頁選單發布到 LINE？\n所有好友的聊天室選單會立刻換成這一套。` + (noImg.length ? `\n\n注意：「${noImg.join('、')}」還沒有上傳圖片，會用系統自動畫的格子。` : ''))) return;
+    if (!confirm(`確定把這 ${d.pages.length} 頁選單發布到 LINE？\n所有好友的聊天室選單會立刻換成這一套。` + '')) return;
     el.disabled = true;
     try { const images = {};
       for (let n = 0; n < d.pages.length; n++) { toast(`準備第 ${n + 1}／${d.pages.length} 頁…`); images[d.pages[n].id] = (await uploadData(toJpeg(await composePage(d.pages[n], n, d.pages.length), 950000))).path; }
