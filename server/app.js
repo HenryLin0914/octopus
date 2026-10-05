@@ -73,7 +73,7 @@ const PLANS = [['P01', '單堂', 1, 500, 30], ['P02', '10堂卡', 10, 4500, 90],
 const COLORS = ['#D6336C', '#1971C2', '#2B8A3E', '#E67700', '#7048E8', '#0C8599', '#C2255C', '#5C940D'];
 
 const OWNER_ONLY = new Set(['a.studentSave', 'a.enroll', 'a.unbind', 'a.topup', 'a.cardSave', 'a.courseSave', 'a.sessionSave', 'a.sessionDelete', 'a.genSessions',
-  'a.videoSave', 'a.videoDelete', 'a.planSave', 'a.settingSave', 'a.adminSave', 'a.export', 'a.student', 'a.videos', 'a.plans', 'a.settings', 'a.admins', 'a.cards', 'a.ledger', 'a.topupSave', 'a.videoInfo', 'a.dayOff', 'a.familySave', 'a.courseDelete', 'a.courseStudents', 'a.signupSave', 'a.rent', 'a.roomSave', 'a.roomDelete', 'a.rentBlockSave', 'a.rentBlockDelete', 'a.rentTagSave', 'a.rentTagDelete', 'a.bookingSave', 'a.rentSlots', 'a.roomCal', 'a.roomHours', 'a.ruleSave', 'a.ruleDelete', 'a.upload', 'a.menu', 'a.menuPageSave', 'a.menuTheme', 'a.resetInfo', 'a.resetData', 'a.attCard', 'a.menuPageDelete', 'a.menuPageMove', 'a.replySave', 'a.replyDelete', 'a.menuPublish', 'a.menuUnpublish']);
+  'a.videoSave', 'a.videoDelete', 'a.planSave', 'a.settingSave', 'a.adminSave', 'a.export', 'a.student', 'a.videos', 'a.plans', 'a.settings', 'a.admins', 'a.cards', 'a.ledger', 'a.topupSave', 'a.videoInfo', 'a.dayOff', 'a.familySave', 'a.courseDelete', 'a.courseStudents', 'a.signupSave', 'a.rent', 'a.roomSave', 'a.roomDelete', 'a.rentBlockSave', 'a.rentBlockDelete', 'a.rentTagSave', 'a.rentTagDelete', 'a.bookingSave', 'a.rentSlots', 'a.roomCal', 'a.roomHours', 'a.ruleSave', 'a.ruleDelete', 'a.upload', 'a.menu', 'a.menuPageSave', 'a.menuTheme', 'a.resetInfo', 'a.resetData', 'a.teacherSave', 'a.teacherDelete', 'a.attCard', 'a.menuPageDelete', 'a.menuPageMove', 'a.replySave', 'a.replyDelete', 'a.menuPublish', 'a.menuUnpublish']);
 const ASYNC = new Set(['a.resetData', 'a.menuPublish', 'a.menuUnpublish', 'a.videoInfo']);
 /** 從各種 YouTube 網址取出影片 ID（watch、youtu.be、shorts、live、embed） */
 export const ytId = url => { const m = String(url || '').match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^#]*&)?v=|shorts\/|live\/|embed\/|v\/))([\w-]{11})(?![\w-])/); return m ? m[1] : ''; };
@@ -108,6 +108,16 @@ export function createApp(opts = {}) {
   const all = (sql, ...a) => db.prepare(sql).all(...a);
   const get = (sql, ...a) => db.prepare(sql).get(...a);
   const run = (sql, ...a) => db.prepare(sql).run(...a);
+  /* 老師名單：課程與課表上的老師都從這份名單選，統一管理 */
+  db.exec("CREATE TABLE IF NOT EXISTS teachers(id TEXT PRIMARY KEY, name TEXT UNIQUE, color TEXT, status TEXT DEFAULT '啟用', sort INTEGER DEFAULT 0)");
+  { const tc = db.prepare('PRAGMA table_info(teachers)').all().map(c => c.name); // 老師的個人資料：照片、專長、介紹、作品
+    for (const [k, def] of [['photo', "''"], ['title', "''"], ['intro', "''"], ['works', "'[]'"], ['images', "'[]'"]]) if (!tc.includes(k)) db.exec('ALTER TABLE teachers ADD COLUMN ' + k + ' TEXT DEFAULT ' + def); }
+  const jarr = v => { try { const a = JSON.parse(v || '[]'); return Array.isArray(a) ? a : []; } catch { return []; } };
+  const teacherOut = t => ({ id: t.id, name: t.name, color: t.color, status: t.status, photo: t.photo || '', title: t.title || '', intro: t.intro || '', works: jarr(t.works), images: jarr(t.images) });
+  const TEACHER_COLORS = ['#1971C2', '#E67700', '#2B8A3E', '#7048E8', '#C2255C', '#0C8599', '#5C940D', '#9C36B5', '#D9480F', '#495057'];
+  const ensureTeacher = name => { name = String(name || '').trim().slice(0, 40); if (!name || get('SELECT 1 x FROM teachers WHERE name=?', name)) return;
+    const n = get('SELECT COUNT(*) n FROM teachers').n; run('INSERT INTO teachers(id,name,color,sort) VALUES(?,?,?,?)', 'H' + Date.now().toString(36) + crypto.randomBytes(2).toString('hex'), name, TEACHER_COLORS[n % TEACHER_COLORS.length], n); };
+  all("SELECT DISTINCT teacher t FROM courses WHERE teacher<>'' UNION SELECT DISTINCT teacher FROM sessions WHERE teacher<>''").forEach(r => ensureTeacher(r.t)); // 既有課程用過的老師自動帶進名單
 
   // 初始資料
   Object.entries(SETTINGS).forEach(([k, v], i) => run('INSERT OR IGNORE INTO settings(key,value,note,kind,sort) VALUES(?,?,?,?,?)', k, v[0], v[1], v[2], i));
@@ -555,7 +565,8 @@ export function createApp(opts = {}) {
           canSignup: open && c.status === '啟用' && !mine.includes(id) && !pending.includes(id) && !(c.capacity > 0 && count >= c.capacity) && !!next && !(c.date_to && c.date_to < t) }); };
       // 教室全部課程：固定課程（未結束）＋還沒上的單次課程
       const courses = all("SELECT * FROM courses WHERE status='啟用' ORDER BY weekdays='' , start").filter(c => !(c.date_to && c.date_to < t)).map(c => addInfo(c.id)).filter(Boolean);
-      const out = { upcoming, courses, enrolledOnly: mine.length > 0, today: t, info, signupOpen: open, review: cfgOn('報名需審核') };
+      const out = { upcoming, courses, enrolledOnly: mine.length > 0, today: t, info, signupOpen: open, review: cfgOn('報名需審核'),
+        teachers: Object.fromEntries(all("SELECT * FROM teachers WHERE status='啟用'").map(teacherOut).filter(x => x.photo || x.title || x.intro || x.works.length || x.images.length).map(x => [x.name, { name: x.name, photo: x.photo, title: x.title, intro: x.intro, works: x.works, images: x.images }])) };
       upcoming.forEach(u => addInfo(u.courseId));
       if (b.month !== undefined) { // 月曆：整個月（含過去）的課
         out.month = /^\d{4}-\d{2}$/.test(b.month || '') ? b.month : t.slice(0, 7);
@@ -664,7 +675,8 @@ export function createApp(opts = {}) {
     /* ---------- 後台：共用 ---------- */
     'a.meta'(b, user) {
       return { studio: cfg('教室名稱', '舞蹈教室'), role: user.admin.role, name: user.admin.name || user.name, today: today(), liffId: env.LIFF_ID || '',
-        plans: all('SELECT * FROM plans WHERE active=1 ORDER BY sort,id'), courses: all("SELECT * FROM courses ORDER BY status DESC, start, id"), colors: COLORS };
+        plans: all('SELECT * FROM plans WHERE active=1 ORDER BY sort,id'), courses: all("SELECT * FROM courses ORDER BY status DESC, start, id"), colors: COLORS,
+        rooms: all('SELECT name FROM rooms ORDER BY sort,id').map(r => r.name), teachers: all("SELECT t.*, (SELECT COUNT(*) FROM courses c WHERE c.teacher=t.name AND c.status='啟用') courses FROM teachers t ORDER BY (t.status='啟用') DESC, t.sort, t.name").map(t => ({ ...teacherOut(t), courses: t.courses })), teacherColors: TEACHER_COLORS };
     },
     'a.overview'(b) {
       const d = nd(b.date) || today(), low = cfgNum('低堂數門檻', 2);
@@ -793,7 +805,10 @@ export function createApp(opts = {}) {
       const unit = [30, 60].includes(Number(b.unit)) ? Number(b.unit) : 60;
       const v = [name, Math.max(0, Math.floor(Number(b.capacity)) || 0), Math.max(0, Math.floor(Number(b.price)) || 0), unit, str(b.intro, 1000), '{}', b.status === '關閉' ? '關閉' : '開放'];
       const id = b.id || nextId('rooms', 'R', 2);
-      if (b.id) { if (!get('SELECT 1 x FROM rooms WHERE id=?', id)) throw new Error('找不到教室'); run('UPDATE rooms SET name=?,capacity=?,price=?,unit=?,intro=?,open=?,status=? WHERE id=?', ...v, id); }
+      if (b.id) { const old = get('SELECT * FROM rooms WHERE id=?', id); if (!old) throw new Error('找不到教室');
+        if (old.name !== name && get('SELECT 1 x FROM rooms WHERE name=? AND id<>?', name, id)) throw new Error('已經有同名的教室');
+        run('UPDATE rooms SET name=?,capacity=?,price=?,unit=?,intro=?,open=?,status=? WHERE id=?', ...v, id);
+        if (old.name !== name) { run('UPDATE courses SET room=? WHERE room=?', name, old.name); run('UPDATE sessions SET room=? WHERE room=?', name, old.name); } } // 教室改名：課程與課表一起改，維持同步
       else run('INSERT INTO rooms(name,capacity,price,unit,intro,open,status,id,sort) VALUES(?,?,?,?,?,?,?,?,?)', ...v, id, get('SELECT COUNT(*) n FROM rooms').n);
       if (b.open !== undefined) { // 一次給定每週時段（匯入用）：取代沒有期間的規則
         run("DELETE FROM room_rules WHERE room_id=? AND date_from='' AND date_to=''", id);
@@ -1042,6 +1057,7 @@ export function createApp(opts = {}) {
       return { ok: true };
     },
     'a.courseSave'(b) {
+      ensureTeacher(b.teacher);
       const name = str(b.name, 60), start = nt(b.start), end = nt(b.end);
       if (!name) throw new Error('請輸入課程名稱');
       if (!start || !end || end <= start) throw new Error('上課時間不正確');
@@ -1080,6 +1096,7 @@ export function createApp(opts = {}) {
       return { deleted: true, sessions: n };
     },
     'a.sessionSave'(b) {
+      ensureTeacher(b.teacher); if (b.newCourse) ensureTeacher(b.newCourse.teacher);
       const date = nd(b.date), start = nt(b.start), end = nt(b.end);
       if (!date || !start || !end || end <= start) throw new Error('日期或時間不正確');
       const status = ['正常', '停課', '已結算'].includes(b.status) ? b.status : '正常';
@@ -1303,6 +1320,38 @@ export function createApp(opts = {}) {
         db.exec('COMMIT');
       } catch (e) { db.exec('ROLLBACK'); throw e; }
       return { removed, backup, groups: groups.map(g => g.name) };
+    },
+    'a.teacherSave'(b) {
+      const name = str(b.name, 40);
+      if (!name) throw new Error('請輸入老師的名字');
+      const color = TEACHER_COLORS.includes(b.color) ? b.color : null, status = b.status === '停用' ? '停用' : '啟用';
+      const okImg = u => /^\/files\/[\w-]+\.(jpg|png)$/.test(u || ''), okUrl = u => /^https:\/\/\S+$/.test(u || '') || /^\/files\/[\w-]+\.(jpg|png|pdf)$/.test(u || '');
+      if ((b.works || []).some(w => w && (w.label || w.url) && !(str(w.label, 30) && okUrl(str(w.url, 500))))) throw new Error('每個作品都要有名稱和 https:// 開頭的連結');
+      const saveProfile = id => { // 只更新有帶進來的欄位
+        if (b.photo !== undefined) run('UPDATE teachers SET photo=? WHERE id=?', okImg(b.photo) ? b.photo : '', id);
+        if (b.title !== undefined) run('UPDATE teachers SET title=? WHERE id=?', str(b.title, 60), id);
+        if (b.intro !== undefined) run('UPDATE teachers SET intro=? WHERE id=?', str(b.intro, 2000), id);
+        if (b.works !== undefined) run('UPDATE teachers SET works=? WHERE id=?', JSON.stringify((b.works || []).filter(w => w && w.label && w.url).map(w => ({ label: str(w.label, 30), url: str(w.url, 500) })).slice(0, 8)), id);
+        if (b.images !== undefined) run('UPDATE teachers SET images=? WHERE id=?', JSON.stringify((b.images || []).filter(okImg).slice(0, 9)), id); };
+      if (b.id) { const old = get('SELECT * FROM teachers WHERE id=?', b.id); if (!old) throw new Error('找不到這位老師');
+        if (old.name !== name && get('SELECT 1 x FROM teachers WHERE name=?', name)) throw new Error('已經有同名的老師');
+        run('UPDATE teachers SET name=?, color=?, status=? WHERE id=?', name, color || old.color, status, b.id);
+        if (old.name !== name) { run('UPDATE courses SET teacher=? WHERE teacher=?', name, old.name); run('UPDATE sessions SET teacher=? WHERE teacher=?', name, old.name); } // 改名：課程與課表一起改
+        saveProfile(b.id);
+        return { id: b.id, name }; }
+      if (get('SELECT 1 x FROM teachers WHERE name=?', name)) throw new Error('已經有同名的老師');
+      ensureTeacher(name); const t = get('SELECT * FROM teachers WHERE name=?', name);
+      if (color) run('UPDATE teachers SET color=? WHERE id=?', color, t.id);
+      saveProfile(t.id);
+      return { id: t.id, name };
+    },
+    'a.teacherDelete'(b) {
+      const t = get('SELECT * FROM teachers WHERE id=?', b.id);
+      if (!t) throw new Error('找不到這位老師');
+      const n = get('SELECT COUNT(*) n FROM courses WHERE teacher=?', t.name).n + get('SELECT COUNT(*) n FROM sessions WHERE teacher=?', t.name).n;
+      if (n) throw new Error('還有課程或課表在使用這位老師，請改成「停用」，就不會再出現在選單裡');
+      run('DELETE FROM teachers WHERE id=?', t.id);
+      return { ok: true };
     },
     'a.menuTheme'(b) {
       if (!MENU_THEMES.includes(b.theme)) throw new Error('沒有這個配色');

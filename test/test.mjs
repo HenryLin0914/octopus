@@ -471,6 +471,25 @@ let bad = ''; try { pushes.forEach(p => p.body && p.body.messages && p.body.mess
   await call('boss', 'a.courseSave', { id: c2, name: '限定測試甲', weekdays: [1], start: '06:00', end: '06:30', status: '停開' }); await call('boss', 'a.courseSave', { id: c3, name: '限定測試乙', weekdays: [1], start: '07:00', end: '07:30', status: '停開' });
   await call('boss', 'a.studentSave', { id: sid, name: '限定生', status: '停用', courses: [] });
 }
+{ // 教室清單與課程同步
+  const m0 = (await call('boss', 'a.meta')).data, rm = (await call('boss', 'a.rent')).data.rooms[0];
+  ok(Array.isArray(m0.rooms) && m0.rooms.includes(rm.name) && m0.teachers.length > 0 && m0.teachers.every(t => t.name && t.color), '後台取得教室清單與老師名單（既有課程的老師自動帶入）');
+  const th = (await call('boss', 'a.teacherSave', { name: '測試老師甲' })).data, tc = (await call('boss', 'a.courseSave', { name: '老師同步', weekdays: [1], start: '04:00', end: '04:30', teacher: '測試老師甲' })).data.id;
+  ok(!(await call('boss', 'a.teacherSave', { name: '測試老師甲' })).ok && /僅限管理員/.test((await call('teacher', 'a.teacherSave', { name: 'x' })).error), '老師不能重名，只有管理員能管理');
+  await call('boss', 'a.teacherSave', { id: th.id, name: '測試老師乙', title: 'K-POP', intro: '教學八年', photo: '/files/abc.jpg', images: ['/files/a1.jpg', 'http://bad'], works: [{ label: '成果發表', url: 'https://youtu.be/x' }] });
+  const tp = (await call('boss', 'a.meta')).data.teachers.find(t => t.id === th.id);
+  ok(tp.title === 'K-POP' && tp.photo === '/files/abc.jpg' && tp.images.length === 1 && tp.works[0].label === '成果發表' && !(await call('boss', 'a.teacherSave', { id: th.id, name: '測試老師乙', works: [{ label: 'x', url: 'javascript:1' }] })).ok, '老師可設定照片、專長、介紹與作品');
+  { const kid = (await call('mom', 'init')).data.students[0].id, sc = (await call('mom', 'schedule', { studentId: kid })).data; ok(sc.teachers['測試老師乙'] && sc.teachers['測試老師乙'].intro === '教學八年' && !('color' in sc.teachers['測試老師乙']), '家長課表可取得有填介紹的老師資料'); }
+  ok((await call('boss', 'a.meta')).data.courses.find(c => c.id === tc).teacher === '測試老師乙' && /停用/.test((await call('boss', 'a.teacherDelete', { id: th.id })).error), '老師改名時課程一起更新，還有課程時不能刪除');
+  await call('boss', 'a.courseSave', { name: '自動加入', id: tc, weekdays: [1], start: '04:00', end: '04:30', teacher: '臨時新老師' });
+  ok((await call('boss', 'a.meta')).data.teachers.some(t => t.name === '臨時新老師') && (await call('boss', 'a.teacherDelete', { id: th.id })).ok, '課程填了新名字會自動進名單；沒課程的老師可刪除');
+  await call('boss', 'a.courseDelete', { id: tc });
+  const cid = (await call('boss', 'a.courseSave', { name: '同步測試', weekdays: [1], start: '05:00', end: '05:30', room: rm.name })).data.id;
+  await call('boss', 'a.roomSave', { id: rm.id, name: rm.name + '改', capacity: rm.capacity, price: rm.price, unit: rm.unit, intro: rm.intro, status: rm.status });
+  ok((await call('boss', 'a.meta')).data.courses.find(c => c.id === cid).room === rm.name + '改', '教室改名時課程一起更新');
+  await call('boss', 'a.roomSave', { id: rm.id, name: rm.name, capacity: rm.capacity, price: rm.price, unit: rm.unit, intro: rm.intro, status: rm.status });
+  await call('boss', 'a.courseDelete', { id: cid });
+}
 { // 上線前清除測試資料
   const before = (await call('boss', 'a.resetInfo')).data, stu = (await call('boss', 'a.students')).data.length;
   ok(before.groups.find(g => g.key === 'money').count > 0 && /僅限管理員/.test((await call('teacher', 'a.resetData', { groups: ['money'], confirm: '清除' })).error) && !(await call('boss', 'a.resetData', { groups: ['money'], confirm: 'x' })).ok, '清除資料需管理員且要輸入確認字');

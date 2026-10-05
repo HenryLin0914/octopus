@@ -123,11 +123,24 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 .wk .hrs{position:relative}.wk .hrs span{position:absolute;right:6px;font-size:11px;color:var(--sub);transform:translateY(-50%)}
 .wk .day{position:relative;border-left:1px solid var(--line);background-image:linear-gradient(var(--line) 1px,transparent 1px);background-size:100% var(--hh)}
 .wk .day.today{background-color:#fff8fb}
-.ev{position:absolute;border-radius:8px;padding:5px 7px;font-size:12px;line-height:1.3;overflow:hidden;color:#fff;border:0;text-align:left;box-shadow:0 1px 2px rgba(0,0,0,.15)}
-.ev b,.ev span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ev b{font-size:13px}
-.ev.off{background:repeating-linear-gradient(45deg,#b9b0b6,#b9b0b6 6px,#a79da4 6px,#a79da4 12px)!important}
-.ev.done{opacity:.72}
-.ev:hover{filter:brightness(1.08)}
+.ev{position:absolute;border-radius:8px;padding:5px 7px 5px 9px;font-size:12px;line-height:1.35;overflow:hidden;color:var(--ink);border:1px solid color-mix(in srgb,var(--c) 30%,#fff);border-left:5px solid var(--c);background:color-mix(in srgb,var(--c) 13%,#fff);text-align:left;display:flex;flex-direction:column;gap:1px}
+.ev>*{display:block;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:none}
+.ev .et{font-size:11.5px;font-weight:700;font-variant-numeric:tabular-nums;color:color-mix(in srgb,var(--c) 70%,#000)}
+.ev .en{font-size:14px;font-weight:800;line-height:1.3}
+.ev .ep{font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:4px}.ev .ep svg{width:13px;height:13px;flex:none;color:color-mix(in srgb,var(--c) 70%,#000)}.ev .ep span{overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;min-width:2.5em}.ev .ep i{font-style:normal;font-weight:400;color:var(--sub);flex:0 9999 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.ev.nar{padding-left:6px;padding-right:4px}.ev.nar .et{font-size:10.5px;letter-spacing:-.2px}.ev.nar .en{font-size:13px}
+.rv{position:absolute;left:3px;right:3px;border:1px dashed #9aa5b1;background:repeating-linear-gradient(135deg,#f3f5f7,#f3f5f7 6px,#e9edf1 6px,#e9edf1 12px);border-radius:8px;padding:4px 7px;font-size:11.5px;line-height:1.35;color:#3d4852;overflow:hidden;text-decoration:none;display:block;opacity:.92}.rv b{display:block;font-size:12px}.rv span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wk .day{cursor:copy}.wk .day .ev{cursor:pointer}.nowl{position:absolute;left:0;right:0;height:0;border-top:2px solid var(--brand);z-index:3;pointer-events:none}.nowl:before{content:"";position:absolute;left:-4px;top:-5px;width:8px;height:8px;border-radius:50%;background:var(--brand)}
+.chip b{font-variant-numeric:tabular-nums}.chip em{font-style:normal;color:var(--sub);font-size:11px;white-space:nowrap}
+.ev .ef{font-size:11.5px;color:var(--sub);margin-top:auto;display:flex;gap:6px;justify-content:space-between}.ev .ef b{font-weight:700;color:var(--ink)}.ev .ef .w{color:var(--warn);font-weight:700}
+.ev.off{background:repeating-linear-gradient(45deg,#efecee,#efecee 6px,#e3dfe2 6px,#e3dfe2 12px);border-color:#cfc8cc;border-left-color:#a79da4;color:var(--sub)}.ev.off .en{text-decoration:line-through}
+.ev.done{opacity:.7}
+.ev:hover{background:color-mix(in srgb,var(--c) 22%,#fff)}
+.tleg{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 12px}.tleg .lb{font-size:13px;color:var(--sub);margin-right:2px}
+.tleg button{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:#fff;border-radius:999px;padding:5px 11px;font:inherit;font-size:13px;font-weight:600;color:var(--ink)}
+.tleg button i{width:10px;height:10px;border-radius:50%;flex:none}.tleg button em{font-style:normal;font-weight:400;color:var(--sub)}
+.tleg button.on{background:var(--ink);border-color:var(--ink);color:#fff}.tleg button.on em{color:#ddd}
+.sess .tch{display:inline-flex;align-items:center;gap:4px;font-weight:700;color:var(--ink)}.sess .tch svg{width:13px;height:13px}
 .mcal{background:var(--card);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
 .mh{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));border-bottom:1px solid var(--line)}.mh span{text-align:center;font-size:12px;color:var(--sub);padding:7px 0}
 .mg{display:grid;grid-template-columns:repeat(7,minmax(0,1fr))}
@@ -170,6 +183,15 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 .mask{position:fixed;inset:0;background:rgba(35,26,32,.45);z-index:50;display:flex;align-items:flex-start;justify-content:center;padding:5vh 14px;overflow:auto}
 .dlg{background:#fff;border-radius:16px;width:100%;max-width:520px;box-shadow:0 20px 60px rgba(0,0,0,.25);min-width:0}
 .dlg.wide{max-width:760px}
+.dlg.xl{max-width:1120px}
+.dlg.fix{display:flex;flex-direction:column;max-height:90vh;max-height:90dvh;overflow:hidden}.dlg.fix .bd{overflow:auto;flex:1;min-height:0}.dlg.fix header,.dlg.fix footer{flex:none}
+.cbar{position:sticky;top:0;background:#fff;z-index:2;display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:12px 0 10px;border-bottom:1px solid var(--line);margin-bottom:4px}
+.cbar input{flex:1 1 180px;min-width:0}.cbar select{flex:0 1 150px;min-width:0;width:auto}
+.ctab{width:100%;border-collapse:collapse;font-size:14px}
+.ctab th{position:sticky;top:59px;background:#fff;text-align:left;font-size:12px;font-weight:600;color:var(--sub);padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap;z-index:1}
+.ctab td{padding:10px;border-bottom:1px solid var(--line);vertical-align:middle}
+.ctab tr[data-c]{cursor:pointer}.ctab tr[data-c]:hover td{background:var(--soft)}
+.ctab .nm{font-weight:700}.ctab .nm .dot{display:inline-block;margin-right:8px;vertical-align:1px}.ctab .num{font-variant-numeric:tabular-nums;white-space:nowrap}
 .dlg header{display:flex;align-items:center;padding:16px 18px;border-bottom:1px solid var(--line);gap:10px}
 .dlg header h3{margin:0;font-size:17px;flex:1;min-width:0;overflow-wrap:anywhere}
 .dlg header button{border:0;background:none;font-size:22px;line-height:1;color:var(--sub);padding:0 4px}
@@ -245,7 +267,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 <script src="config.js"></script>
 <script src="common.js"></script>
 <script>
-const A = { meta: null, students: [], page: 'home', week: null, filter: { kw: '', f: 'all', course: '' }, money: { tab: 'log', month: '' }, vf: '', cf: '', rent: { tab: 'list', f: 'todo' }, view: 'week', mon: '', day: '', att: { tab: 'log', month: '', course: '', student: '' } };
+const A = { tf: '', colorBy: (() => { try { return localStorage.getItem('octo_colorby') || 'teacher'; } catch { return 'teacher'; } })(), meta: null, students: [], page: 'home', week: null, filter: { kw: '', f: 'all', course: '' }, money: { tab: 'log', month: '' }, vf: '', cf: '', rent: { tab: 'list', f: 'todo' }, view: 'week', mon: '', day: '', att: { tab: 'log', month: '', course: '', student: '' } };
 const owner = () => A.meta && A.meta.role === 'owner';
 const ICON = {
   home: '<svg viewBox="0 0 24 24"><path d="M3 11l9-8 9 8M5 10v10h14V10"/></svg>',
@@ -260,6 +282,10 @@ const ICON = {
 };
 const NAV = [['home', '總覽'], ['schedule', '課表'], ['students', '學生'], ['money', '帳務', true], ['attend', '出席'], ['videos', '影片', true], ['rent', '租借', true], ['settings', '設定', true]];
 const tag = (st, text) => { const c = ['出席', '已登記', '在學', '啟用', '正常'].includes(st) ? 'ok' : ['請假', '用完', '已結算'].includes(st) ? 'warn' : ['缺席', '停課', '停用', '過期'].includes(st) ? 'bad' : ''; return `<span class="tag ${c}">${esc(text || st)}</span>`; };
+/** 教室欄位：有在「租借 → 教室與時段」建立教室時是下拉選單（兩邊同一份清單），還沒建立時才手動輸入 */
+const roomField = (label, cur, blank) => { const R = (A.meta.rooms || []); return R.length ? { k: 'room', label, type: 'select', half: 1, opts: [['', blank], ...R.map(r => [r, r]), ...(cur && !R.includes(cur) ? [[cur, cur + '（不在教室清單）']] : [])] } : { k: 'room', label: label + '（可到「租借」建立教室清單）', half: 1 }; };
+/** 老師欄位：從老師名單挑，也可以直接打新的名字，儲存時會自動加進名單 */
+const teacherField = (label, cur, blank) => ({ k: 'teacher', label, half: 1, ph: blank, list: (A.meta.teachers || []).filter(t => t.status === '啟用').map(t => t.name) });
 const courseOf = id => (A.meta.courses.find(c => c.id === id) || {});
 const monday = d => dAdd(d, -((dDay(d) + 6) % 7));
 const money = n => '$' + Number(n || 0).toLocaleString();
@@ -282,7 +308,7 @@ function fieldsHtml(fields, v = {}) {
     if (f.type === 'days') return `<div class="f s" data-f="${f.k}" style="margin-top:12px">${esc(f.label)}<div class="chk">${[1, 2, 3, 4, 5, 6, 0].map(d => `<label><input type="checkbox" name="${f.k}" value="${d}" ${(val || []).map(Number).includes(d) ? 'checked' : ''}>週${WD[d]}</label>`).join('')}</div></div>`;
     if (f.type === 'checks') return `<div class="f s" data-f="${f.k}" style="margin-top:12px">${esc(f.label)}<div class="chk">${f.opts.map(o => `<label><input type="checkbox" name="${f.k}" value="${esc(o[0])}" ${(val || []).includes(o[0]) ? 'checked' : ''}>${esc(o[1])}</label>`).join('') || '<span class="s">（尚無選項）</span>'}</div></div>`;
     if (f.type === 'color') return `<div class="f s" data-f="${f.k}" style="margin-top:12px">${esc(f.label)}<div class="sw">${f.opts.map(c => `<label style="background:${c}"><input type="radio" name="${f.k}" value="${c}" ${c === (val || f.opts[0]) ? 'checked' : ''}></label>`).join('')}</div></div>`;
-    return `<label class="f" data-f="${f.k}">${esc(f.label)}<input name="${f.k}" type="${f.type || 'text'}" value="${esc(val)}" placeholder="${esc(f.ph || '')}" ${f.type === 'number' ? 'inputmode="numeric"' : ''}></label>`;
+    return `<label class="f" data-f="${f.k}">${esc(f.label)}<input name="${f.k}" type="${f.type || 'text'}" value="${esc(val)}" placeholder="${esc(f.ph || '')}" ${f.type === 'number' ? 'inputmode="numeric"' : ''} ${f.list ? `list="dl-${f.k}" autocomplete="off"` : ''}>${f.list ? `<datalist id="dl-${f.k}">${f.list.map(x => `<option value="${esc(x)}">`).join('')}</datalist>` : ''}</label>`;
   };
   let out = '', i = 0;
   while (i < fields.length) {
@@ -346,7 +372,15 @@ const PAGES = {
     const d = await api('a.week', isM ? { start: gridStart, days: nWeeks * 7 } : { start: A.week });
     const days = [...Array(isM ? nWeeks * 7 : 7)].map((_, i) => dAdd(isM ? gridStart : A.week, i));
     const by = Object.fromEntries(days.map(x => [x, []]));
-    d.sessions.forEach(s => by[s.date] && (!A.cf || s.courseId === A.cf) && by[s.date].push(s));
+    const TL = A.meta.teachers || [], tNames = [...new Set([...TL.map(t => t.name), ...d.sessions.map(s => s.teacher)].filter(Boolean))];
+    const tColor = t => (TL.find(x => x.name === t) || {}).color || '#868e96';
+    if (A.tf && !tNames.includes(A.tf)) A.tf = '';
+    const byT = A.colorBy !== 'course';
+    d.sessions.forEach(s => { s._c = byT ? tColor(s.teacher) : s.color; });
+    const inView = d.sessions.filter(s => by[s.date] && (!A.cf || s.courseId === A.cf) && (!isM || s.date.slice(0, 7) === A.mon));
+    d.sessions.forEach(s => by[s.date] && (!A.cf || s.courseId === A.cf) && (!A.tf || s.teacher === A.tf) && by[s.date].push(s));
+    const legend = tNames.length ? `<div class="tleg"><span class="lb">老師</span><button class="${A.tf ? '' : 'on'}" data-tf="">全部 <em>${inView.length}</em></button>${tNames.filter(t => inView.some(s => s.teacher === t) || t === A.tf).map(t => `<button class="${A.tf === t ? 'on' : ''}" data-tf="${esc(t)}">${byT ? `<i style="background:${tColor(t)}"></i>` : ''}${esc(t)} <em>${inView.filter(s => s.teacher === t).length}</em></button>`).join('')}
+      <span class="sp"></span><span class="lb">顏色</span><div class="seg"><button class="${byT ? 'on' : ''}" data-colorby="teacher">依老師</button><button class="${byT ? '' : 'on'}" data-colorby="course">依課程</button></div></div>` : '';
     const rentBy = {}; (d.rentals || []).forEach(b => (rentBy[b.date] = rentBy[b.date] || []).push(b));
     const rentRows = x => (rentBy[x] || []).map(b => `<a class="rrow" href="#rent">🏠 <b>${esc(b.start)}–${esc(b.end)}</b> ${esc(b.room)} 租借｜${esc(b.name)} <span class="tag ${b.status === '已確認' ? 'ok' : 'warn'}">${esc(b.status)}</span></a>`).join('');
     const todo = days.reduce((n, x) => n + by[x].filter(e => e.unmarked).length, 0);
@@ -356,15 +390,15 @@ const PAGES = {
       <span class="sp"></span>
       <div class="tools">${A.meta.courses.length > 1 ? `<select id="cf"><option value="">全部課程</option>${A.meta.courses.filter(c => c.status === '啟用' || c.id === A.cf).map(c => `<option value="${esc(c.id)}" ${A.cf === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>` : ''}
       ${owner() ? '<button class="btn" data-courses>課程管理</button><button class="btn p" data-newsess>＋ 加課</button>' : ''}</div></div>
-      ${todo ? `<div class="note">這段期間有 <b>${todo}</b> 堂已經上完的課還沒點名（標示「未點名」），點進去可以補點名。</div>` : ''}`;
+      ${todo ? `<div class="note">這段期間有 <b>${todo}</b> 堂已經上完的課還沒點名（標示「未點名」），點進去可以補點名。</div>` : ''}${legend}`;
     if (!A.meta.courses.length) return head + `<div class="card empty">還沒有任何課程。${owner() ? '<br><br><button class="btn p" data-newcourse>＋ 建立第一門課程</button><br><br><span class="s">設定每週上課日與時間後，系統會自動排出未來的課表。</span>' : ''}</div>`;
     if (isM) {
       const small = window.innerWidth <= 860;
       if (!A.day || A.day.slice(0, 7) !== A.mon) A.day = T.slice(0, 7) === A.mon ? T : first;
       const cell = x => { const L = by[x], out = x.slice(0, 7) !== A.mon;
         return `<button class="mc ${out ? 'out' : ''} ${x === T ? 'today' : ''} ${x === A.day ? 'sel' : ''}" data-day="${x}"><span class="dn">${+x.slice(8)}${rentBy[x] ? '<em class="rm" title="有教室租借">租</em>' : ''}</span>${small
-          ? `<span class="dots">${L.slice(0, 4).map(e => `<i class="${e.unmarked ? 'todo' : ''}" style="background:${e.status === '停課' ? '#b9b0b6' : esc(e.color)}"></i>`).join('')}${L.length > 4 ? '<em>+' + (L.length - 4) + '</em>' : ''}</span>`
-          : L.slice(0, 4).map(e => `<span class="chip ${e.status === '停課' ? 'off' : ''} ${e.unmarked ? 'todo' : ''}" style="--c:${esc(e.color)}">${esc(e.start)} ${esc(e.course)}</span>`).join('') + (L.length > 4 ? `<span class="more">還有 ${L.length - 4} 堂</span>` : '')}</button>`; };
+          ? `<span class="dots">${L.slice(0, 4).map(e => `<i class="${e.unmarked ? 'todo' : ''}" style="background:${e.status === '停課' ? '#b9b0b6' : esc(e._c)}"></i>`).join('')}${L.length > 4 ? '<em>+' + (L.length - 4) + '</em>' : ''}</span>`
+          : L.slice(0, 4).map(e => `<span class="chip ${e.status === '停課' ? 'off' : ''} ${e.unmarked ? 'todo' : ''}" style="--c:${esc(e._c)}" title="${esc(e.start)}–${esc(e.end)} ${esc(e.course)}${e.teacher ? '｜' + esc(e.teacher) : ''}"><b>${esc(e.start)}</b> ${esc(e.course)}${e.teacher ? ` <em>${esc(e.teacher)}</em>` : ''}</span>`).join('') + (L.length > 4 ? `<span class="more">還有 ${L.length - 4} 堂</span>` : '')}</button>`; };
       const sel = by[A.day] || [], total = days.filter(x => x.slice(0, 7) === A.mon).reduce((n, x) => n + by[x].filter(e => e.status !== '停課').length, 0);
       return head + `<div class="mcal"><div class="mh">${[1, 2, 3, 4, 5, 6, 0].map(w => `<span>${WD[w]}</span>`).join('')}</div><div class="mg">${days.map(cell).join('')}</div></div>
         <div class="agenda"><div class="dayh dbar ${A.day === T ? 'today' : ''}"><span>${dLabel(A.day)}${A.day === T ? '｜今天' : ''}　<span style="font-weight:400">${sel.length ? sel.length + ' 堂課' : '沒有課程'}</span></span><span class="sp"></span>${owner() ? `${sel.some(e => e.status === '正常') ? `<button class="btn sm" data-dayoff="${A.day}" style="color:var(--bad)">整天停課</button>` : ''}<button class="btn sm" data-newsess>＋ 這天加課</button>` : ''}</div>${sel.map(sessRow).join('')}${rentRows(A.day)}</div>
@@ -372,18 +406,21 @@ const PAGES = {
     }
     if (window.innerWidth <= 860) return head + `<div class="agenda">${days.map(x => `<div class="dayh ${x === A.meta.today ? 'today' : ''}">${dLabel(x)}${x === A.meta.today ? '｜今天' : ''}</div>${by[x].length ? by[x].map(sessRow).join('') : '<div class="s" style="padding:2px 4px 6px">沒有課程</div>'}${rentRows(x)}`).join('')}</div>`;
     const mins = t => +t.slice(0, 2) * 60 + +t.slice(3);
-    const h0 = Math.min(9, ...d.sessions.map(s => Math.floor(mins(s.start) / 60))), h1 = Math.max(21, ...d.sessions.map(s => Math.ceil(mins(s.end) / 60))), HH = 54;
+    const span = [...d.sessions, ...(d.rentals || [])], h0 = span.length ? Math.max(0, Math.min(...span.map(s => Math.floor(mins(s.start) / 60))) - (span.some(s => mins(s.start) % 60 < 20) ? 1 : 0)) : 9, h1 = span.length ? Math.max(h0 + 6, ...span.map(s => Math.ceil(mins(s.end) / 60))) : 21, HH = 100;
+    const nowM = (() => { const n = new Date(Date.now() + 8 * 3600e3); return n.getUTCHours() * 60 + n.getUTCMinutes(); })();
     const col = x => {
       const list = by[x].slice().sort((a, b) => a.start < b.start ? -1 : 1), lanes = [];
       list.forEach(s => { let i = lanes.findIndex(end => end <= s.start); if (i < 0) { i = lanes.length; lanes.push(''); } lanes[i] = s.end; s._lane = i; });
       list.forEach(s => { s._n = Math.max(1, ...list.filter(o => o.start < s.end && o.end > s.start).map(o => o._lane + 1)); });
-      return `<div class="day ${x === A.meta.today ? 'today' : ''}" style="height:${(h1 - h0) * HH}px;--hh:${HH}px">${list.map(s => `<button class="ev ${s.status === '停課' ? 'off' : ''} ${s.status === '已結算' ? 'done' : ''}" data-sess="${esc(s.sessionId)}"
-        style="background:${esc(s.color)};top:${(mins(s.start) / 60 - h0) * HH + 1}px;height:${Math.max(26, (mins(s.end) - mins(s.start)) / 60 * HH - 3)}px;left:calc(${s._lane / s._n * 100}% + 2px);width:calc(${100 / s._n}% - 4px)">
-        <b>${s.unmarked ? '⚠ ' : ''}${esc(s.course)}</b><span>${s.status === '停課' ? '停課' : s.unmarked ? '未點名' : `到 ${s.present}／${s.enrolled}${s.leave ? '｜假 ' + s.leave : ''}`}</span><span>${esc(s.start)}–${esc(s.end)}${s.seq ? '｜第 ' + s.seq + '／' + s.total + ' 堂' : ''}${s.teacher ? '｜' + esc(s.teacher) : ''}</span></button>`).join('')}</div>`;
+      const att = s => s.status === '停課' ? '<span class="w">停課</span>' : s.unmarked ? '<span class="w">未點名</span>' : s.enrolled ? `<span>已到 <b>${s.present}／${s.enrolled}</b> 人${s.leave ? '・假 ' + s.leave : ''}</span>` : `<span>${s.present ? '已到 <b>' + s.present + '</b> 人' : '尚無名單'}</span>`;
+      return `<div class="day ${x === A.meta.today ? 'today' : ''}" data-slot="${x}" data-h0="${h0}" data-hh="${HH}" style="height:${(h1 - h0) * HH}px;--hh:${HH}px">${(rentBy[x] || []).map(b => `<a class="rv" href="#rent" title="${esc(b.start)}–${esc(b.end)} ${esc(b.room)} 租借｜${esc(b.name)}（${esc(b.status)}）" style="top:${(mins(b.start) / 60 - h0) * HH + 2}px;height:${Math.max(30, (mins(b.end) - mins(b.start)) / 60 * HH - 4)}px"><b>租借 ${esc(b.start)}–${esc(b.end)}</b><span>${esc(b.room)}｜${esc(b.name)}</span><span>${esc(b.status)}</span></a>`).join('')}${x === A.meta.today && nowM >= h0 * 60 && nowM <= h1 * 60 ? `<i class="nowl" style="top:${(nowM / 60 - h0) * HH}px"></i>` : ''}${list.map(s => { const h = Math.max(30, (mins(s.end) - mins(s.start)) / 60 * HH - 4);
+        return `<button class="ev ${s._n > 1 ? 'nar' : ''} ${s.status === '停課' ? 'off' : ''} ${s.status === '已結算' ? 'done' : ''}" data-sess="${esc(s.sessionId)}" title="${esc(s.start)}–${esc(s.end)} ${esc(s.course)}${s.teacher ? '｜' + esc(s.teacher) : ''}${s.room ? '｜' + esc(s.room) : ''}"
+        style="--c:${esc(s._c)};top:${(mins(s.start) / 60 - h0) * HH + 2}px;height:${h}px;left:calc(${s._lane / s._n * 100}% + 3px);width:calc(${100 / s._n}% - 6px)">
+        <span class="et">${esc(s.start)}–${esc(s.end)}</span><span class="en">${esc(s.course)}</span>${h >= 62 && (s.teacher || s.room) ? `<span class="ep">${s.teacher ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg><span>${esc(s.teacher)}</span>` : ''}${s.room ? `<i>${s.teacher ? '・' : ''}${esc(s.room)}</i>` : ''}</span>` : ''}${h >= 76 ? `<span class="ef">${att(s)}${s.seq ? `<span>第 ${s.seq}／${s.total} 堂</span>` : ''}</span>` : ''}</button>`; }).join('')}</div>`;
     };
     return head + `<div class="wk"><div class="hd"></div>${days.map(x => `<div class="hd ${x === A.meta.today ? 'today' : ''}">週${WD[dDay(x)]}<b>${+x.slice(8)}</b></div>`).join('')}
       <div class="hrs" style="height:${(h1 - h0) * HH}px">${[...Array(h1 - h0)].map((_, i) => i ? `<span style="top:${i * HH}px">${String(h0 + i).padStart(2, '0')}:00</span>` : '').join('')}</div>${days.map(col).join('')}</div>
-      <p class="s">點課程方塊可點名、顯示報到 QR Code、調課或停課。灰色斜紋為停課。</p>`;
+      <p class="s">點課程方塊可點名、顯示報到 QR Code、調課或停課。灰色斜紋為停課。點上方老師的名字可以只看那位老師的課。${owner() ? '點空白的時段可以直接在那個時間加課。' : ''}斜線虛框是教室租借。</p>`;
   },
 
   async students() {
@@ -546,9 +583,9 @@ const PAGES = {
 };
 function sessRow(s) {
   const pct = s.enrolled ? Math.min(100, Math.round(s.present / s.enrolled * 100)) : 0;
-  return `<button class="sess" data-sess="${esc(s.sessionId)}"><span class="strip" style="background:${s.status === '停課' ? '#b9b0b6' : esc(s.color)}"></span><span class="tm">${esc(s.start)}</span>
-    <span class="g" style="flex:1;min-width:0"><span class="t" style="display:block">${esc(s.course)} ${s.status !== '正常' ? tag(s.status) : ''}${s.unmarked ? '<span class="tag warn">未點名</span>' : ''}</span><span class="s">${[esc(s.start) + '–' + esc(s.end), s.seq ? '第 ' + s.seq + '／' + s.total + ' 堂' : '', esc(s.teacher), esc(s.room)].filter(Boolean).map(x => `<span class="pt">${x}</span>`).join('<span class="sepr">｜</span>')}</span>${s.note ? `<span class="s" style="color:var(--ink)">📝 ${esc(s.note)}</span>` : ''}</span>
-    ${s.status === '停課' ? '' : `<span style="text-align:right;flex:none"><span class="s">到 ${s.present}／${s.enrolled}${s.leave ? '｜假 ' + s.leave : ''}</span><span class="bar"><i style="width:${pct}%"></i></span></span>`}</button>`;
+  return `<button class="sess" data-sess="${esc(s.sessionId)}"><span class="strip" style="background:${s.status === '停課' ? '#b9b0b6' : esc(s._c || s.color)}"></span><span class="tm">${esc(s.start)}</span>
+    <span class="g" style="flex:1;min-width:0"><span class="t" style="display:block">${esc(s.course)} ${s.status !== '正常' ? tag(s.status) : ''}${s.unmarked ? '<span class="tag warn">未點名</span>' : ''}</span><span class="s">${[esc(s.start) + '–' + esc(s.end), s.teacher ? `<span class="tch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>${esc(s.teacher)}</span>` : '', esc(s.room), s.seq ? '第 ' + s.seq + '／' + s.total + ' 堂' : ''].filter(Boolean).map(x => `<span class="pt">${x}</span>`).join('<span class="sepr">｜</span>')}</span>${s.note ? `<span class="s" style="color:var(--ink)">📝 ${esc(s.note)}</span>` : ''}</span>
+    ${s.status === '停課' ? '' : `<span style="text-align:right;flex:none"><span class="s">${s.enrolled ? '已到 ' + s.present + '／' + s.enrolled + ' 人' : s.present ? '已到 ' + s.present + ' 人' : '尚無名單'}${s.leave ? '｜假 ' + s.leave : ''}</span><span class="bar"><i style="width:${pct}%"></i></span></span>`}</button>`;
 }
 
 /* ---------- 場次：點名／QR／調課 ---------- */
@@ -649,15 +686,15 @@ async function showQr(id, i) {
   clearTimeout(qrTimer); draw();
 }
 $('#qr-x').onclick = () => { clearTimeout(qrTimer); $('#qrbox').classList.remove('show'); };
-function editSession(i) {
+function editSession(i, preset) {
   const isNew = !i, act = A.meta.courses.filter(c => c.status === '啟用' && c.weekdays !== '');
   const F = [...(isNew ? [{ k: 'courseId', label: '課程', type: 'select', opts: [...act.map(c => [c.id, c.name]), ['__new', '＋ 新的課程（手動輸入名稱，只上這一天）']] }, { k: 'name', label: '新課程名稱', ph: '例：週末工作坊、體驗課' }] : []),
     { k: 'date', label: '日期', type: 'date' }, { k: 'start', label: '開始', type: 'time', half: 1 }, { k: 'end', label: '結束', type: 'time', half: 1 },
-    { k: 'teacher', label: isNew ? '老師' : '代課老師（留白＝原老師）', half: 1 }, { k: 'room', label: isNew ? '教室' : '教室（留白＝原教室）', half: 1 },
+    teacherField(isNew ? '老師' : '代課老師（留白＝原老師）', '', isNew ? '留白＝課程原本的老師' : '可選或直接輸入'), roomField('教室', isNew ? '' : i.rawRoom, isNew ? '依課程原本的教室' : '原教室（不變）'),
     ...(isNew ? [{ k: 'color', label: '課表顏色', type: 'color', opts: A.meta.colors }, { k: 'studentIds', label: '參加的學生（可之後在點名單再加）', type: 'checks', opts: A.students.filter(x => x.status !== '停用').map(x => [x.id, x.name]) }] : []),
     { k: 'note', label: '老師備註（家長看得到）', ph: '例：調課原因、要帶的東西' }, NOTIFY()];
   const c0 = act[0] || {};
-  const v = isNew ? { courseId: act.length ? act[0].id : '__new', date: A.view === 'month' && A.day ? A.day : A.meta.today, start: c0.start || '19:00', end: c0.end || '20:00', notify: '1', color: A.meta.colors[A.meta.courses.length % A.meta.colors.length], studentIds: [] } : { date: i.date, start: i.start, end: i.end, teacher: i.rawTeacher || '', room: i.rawRoom || '', note: i.note, notify: '1' };
+  const v = isNew ? { courseId: act.length ? act[0].id : '__new', date: A.view === 'month' && A.day ? A.day : A.meta.today, start: c0.start || '19:00', end: c0.end || '20:00', notify: '1', color: A.meta.colors[A.meta.courses.length % A.meta.colors.length], studentIds: [], ...(preset || {}) } : { date: i.date, start: i.start, end: i.end, teacher: i.rawTeacher || '', room: i.rawRoom || '', note: i.note, notify: '1' };
   const m = formDialog(isNew ? '加課' : '調課／代課｜' + i.course, F, v, async o => {
     const one = isNew && o.courseId === '__new';
     if (one && !o.name.trim()) throw new Error('請輸入課程名稱');
@@ -670,7 +707,7 @@ function editSession(i) {
   if (isNew) {
     const q = n => $(`[name=${n}]`, m), wrap = n => $(`[data-f="${n}"]`, m);
     const sync = () => { const one = q('courseId').value === '__new'; wrap('name').hidden = !one; if (one && window.innerWidth > 860) q('name').focus(); wrap('color').hidden = !one; wrap('studentIds').hidden = !one;
-      q('teacher').placeholder = one ? '' : '留白＝原老師'; q('room').placeholder = one ? '' : '留白＝原教室'; };
+      q('teacher').placeholder = one ? '可選或直接輸入' : '留白＝課程原本的老師'; if (q('room').tagName === 'SELECT') q('room').options[0].textContent = one ? '（不指定）' : '依課程原本的教室'; else q('room').placeholder = one ? '' : '留白＝原教室'; };
     q('courseId').onchange = e => { sync(); const c = courseOf(e.target.value); if (c.start) { q('start').value = c.start; q('end').value = c.end; } }; sync();
   }
 }
@@ -683,22 +720,78 @@ function dayOff(date) {
 
 /* ---------- 課程管理 ---------- */
 function coursesDialog() {
-  const C = A.meta.courses, T = A.meta.today;
-  const row = c => `<div class="row"><span class="dot" style="background:${esc(c.color)}"></span><div class="g"><div class="t">${esc(c.name)} ${c.status === '停用' ? tag('停用', '已停開') : ''}</div>
-    <div class="s">${c.weekdays === '' ? esc((c.date_from || '').replace(/-/g, '/')) : '每週' + String(c.weekdays).split('').map(d => WD[d]).join('、')} ${esc(c.start)}–${esc(c.end)}${c.teacher ? '｜' + esc(c.teacher) : ''}${c.room ? '｜' + esc(c.room) : ''}</div>
-    ${c.weekdays === '' ? '' : `<div class="s">${c.date_to ? `期間 ${esc((c.date_from || '').slice(5).replace('-', '/') || '即日')} – ${esc(c.date_to.slice(2).replace(/-/g, '/'))}${c.date_to < T ? ' <span class="tag">已結束</span>' : ''}` : '持續開課（未設結束日期）'}</div>`}</div><button class="btn sm" data-c="${esc(c.id)}">編輯</button></div>`;
-  const sec = (title, list, empty) => list.length || empty ? `<h4 style="margin:14px 0 2px">${title}（${list.length}）</h4>${list.length ? list.map(row).join('') : `<div class="s">${empty}</div>`}` : '';
-  const on = C.filter(c => c.status === '啟用');
-  const m = dialog('課程管理', sec('固定課程', on.filter(c => c.weekdays !== ''), '還沒有固定課程，按下方「＋ 新增課程」') + sec('單次課程', on.filter(c => c.weekdays === '').sort((a, b) => (b.date_from || '').localeCompare(a.date_from || '')), '') + sec('已停開', C.filter(c => c.status !== '啟用'), '')
-    + '<p class="s">固定課程每週自動排課；單次課程是在課表「＋ 加課」時輸入新名稱建立的，只上一天。</p>', { foot: '<span class="sp"></span><button class="btn p" data-c="">＋ 新增課程</button>' });
-  m.addEventListener('click', e => { const b = e.target.closest('[data-c]'); if (b) { m.remove(); editCourse(b.dataset.c); } });
+  const C = A.meta.courses, T = A.meta.today, st = coursesDialog.st || (coursesDialog.st = { tab: 'fixed', kw: '', teacher: '' });
+  const wdKey = c => { const w = String(c.weekdays).split('').map(d => (+d + 6) % 7); return Math.min(...w); }; // 週一排最前面
+  const wdText = c => '週' + String(c.weekdays).split('').sort((a, b) => (+a + 6) % 7 - (+b + 6) % 7).map(d => WD[d]).join('、');
+  const period = c => c.date_to ? `${esc((c.date_from || '').slice(5).replace('-', '/') || '即日')} – ${esc(c.date_to.slice(2).replace(/-/g, '/'))}${c.date_to < T ? ' <span class="tag">已結束</span>' : ''}` : '持續開課';
+  const groups = { fixed: C.filter(c => c.status === '啟用' && c.weekdays !== '').sort((a, b) => wdKey(a) - wdKey(b) || a.start.localeCompare(b.start)),
+    once: C.filter(c => c.status === '啟用' && c.weekdays === '').sort((a, b) => (b.date_from || '').localeCompare(a.date_from || '')), off: C.filter(c => c.status !== '啟用'), teacher: A.meta.teachers || [] };
+  const teachers = (A.meta.teachers || []).map(t => t.name);
+  const body = () => { if (st.tab === 'teacher') { const kw = st.kw.trim().toLowerCase(), L = groups.teacher.filter(t => !kw || t.name.toLowerCase().includes(kw));
+      return (L.length ? L.map(t => `<div class="row">${t.photo ? `<img src="${esc(t.photo)}" style="width:40px;height:40px;border-radius:50%;object-fit:cover;flex:none;border:2px solid ${esc(t.color)}">` : `<span style="width:40px;height:40px;border-radius:50%;flex:none;background:${esc(t.color)};color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700">${esc(t.name.slice(0, 1))}</span>`}<div class="g"><div class="t">${esc(t.name)} ${t.status === '啟用' ? '' : tag('停用')}</div><div class="s">${[t.title, t.courses ? '目前帶 ' + t.courses + ' 門課' : '目前沒有課程', (t.photo || t.intro || t.works.length || t.images.length) ? '已填個人介紹' : '尚未填個人介紹'].filter(Boolean).map(esc).join('｜')}</div></div><button class="btn sm" data-th="${esc(t.id)}">編輯</button></div>`).join('') : '<div class="empty">還沒有老師，按下方「＋ 新增老師」</div>')
+        + '<p class="s">新增課程、加課、代課時的老師選單都從這份名單來。改名會同步更新所有課程與課表；顏色用在課表「依老師」上色。照片、介紹與作品會顯示在家長的 LINE 課表（點老師名字）。</p>'; }
+    const kw = st.kw.trim().toLowerCase(), list = groups[st.tab].filter(c => (!st.teacher || c.teacher === st.teacher) && (!kw || [c.name, c.teacher, c.room].join(' ').toLowerCase().includes(kw)));
+    const when = c => c.weekdays === '' ? esc((c.date_from || '').replace(/-/g, '/')) : wdText(c);
+    if (!list.length) return `<div class="empty">${groups[st.tab].length ? '沒有符合的課程' : st.tab === 'fixed' ? '還沒有固定課程，按下方「＋ 新增課程」' : st.tab === 'once' ? '還沒有單次課程。在課表「＋ 加課」時輸入新名稱就會建立。' : '沒有停開的課程'}</div>`;
+    if (window.innerWidth <= 860) return list.map(c => `<div class="row"><span class="dot" style="background:${esc(c.color)}"></span><div class="g"><div class="t">${esc(c.name)}</div>
+      <div class="s">${when(c)} ${esc(c.start)}–${esc(c.end)}${c.teacher ? '｜' + esc(c.teacher) : ''}${c.room ? '｜' + esc(c.room) : ''}</div>${c.weekdays === '' ? '' : `<div class="s">${c.date_to ? '期間 ' : ''}${period(c)}</div>`}</div><button class="btn sm" data-c="${esc(c.id)}">編輯</button></div>`).join('');
+    return `<table class="ctab"><thead><tr><th>課程</th><th>${st.tab === 'once' ? '日期' : '上課日'}</th><th>時間</th><th>老師</th><th>教室</th>${st.tab === 'once' ? '' : '<th>期間</th>'}<th></th></tr></thead><tbody>${list.map(c => `<tr data-c="${esc(c.id)}">
+      <td class="nm"><span class="dot" style="background:${esc(c.color)}"></span>${esc(c.name)}</td><td class="num">${when(c)}</td><td class="num">${esc(c.start)}–${esc(c.end)}</td><td>${esc(c.teacher || '—')}</td><td>${esc(c.room || '—')}</td>${st.tab === 'once' ? '' : `<td class="num">${period(c)}</td>`}
+      <td style="text-align:right"><button class="btn sm" data-c="${esc(c.id)}">編輯</button></td></tr>`).join('')}</tbody></table>`; };
+  const bar = () => `<div class="seg">${[['fixed', '固定課程'], ['once', '單次課程'], ['off', '已停開'], ['teacher', '老師']].map(x => `<button class="${st.tab === x[0] ? 'on' : ''}" data-ct="${x[0]}">${x[1]} ${groups[x[0]].length}</button>`).join('')}</div>`;
+  const m = dialog('課程管理', `<div class="cbar"><span id="c-seg">${bar()}</span><input id="c-kw" placeholder="搜尋課程、老師、教室" value="${esc(st.kw)}">${teachers.length > 1 ? `<select id="c-t"><option value="">全部老師</option>${teachers.map(t => `<option ${st.teacher === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>` : ''}</div><div id="c-list">${body()}</div>`,
+    { wide: true, foot: '<span class="s" style="flex:1;min-width:0">固定課程每週自動排課，依星期與時間排序；單次課程只上一天；老師名單在「老師」分頁管理。</span><span id="c-add"></span>' });
+  $('.dlg', m).classList.add('xl', 'fix');
+  const paint = () => { $('#c-seg', m).innerHTML = bar(); $('#c-list', m).innerHTML = body(); $('#c-add', m).innerHTML = st.tab === 'teacher' ? '<button class="btn p" data-th="">＋ 新增老師</button>' : '<button class="btn p" data-c="">＋ 新增課程</button>'; if ($('#c-t', m)) $('#c-t', m).style.display = st.tab === 'teacher' ? 'none' : ''; };
+  paint();
+  const editTeacher = id => { m.remove(); teacherDialog(id); };
+  m.addEventListener('input', e => { if (e.target.id === 'c-kw') { st.kw = e.target.value; $('#c-list', m).innerHTML = body(); } });
+  m.addEventListener('change', e => { if (e.target.id === 'c-t') { st.teacher = e.target.value; paint(); } });
+  m.addEventListener('click', e => { const t = e.target.closest('[data-ct]'); if (t) { st.tab = t.dataset.ct; return paint(); }
+    const h = e.target.closest('[data-th]'); if (h) return editTeacher(h.dataset.th);
+    const b = e.target.closest('[data-c]'); if (b) { m.remove(); editCourse(b.dataset.c); } });
+}
+/* 老師資料：名字、顏色，以及給家長看的照片、專長、介紹、作品 */
+function teacherDialog(id) {
+  const src = id ? (A.meta.teachers || []).find(x => x.id === id) : null, PAL = A.meta.teacherColors;
+  const st = src ? JSON.parse(JSON.stringify(src)) : { name: '', color: PAL[(A.meta.teachers || []).length % PAL.length], status: '啟用', photo: '', title: '', intro: '', works: [], images: [] };
+  const m = dialog(src ? '編輯老師｜' + src.name : '新增老師', `
+    <div style="display:flex;gap:14px;align-items:center;margin-top:12px"><div id="t-ph"></div><div style="flex:1;min-width:0"><label class="f" style="margin-top:0">老師的名字<input id="t-name" value="${esc(st.name)}" placeholder="例：章魚老師"></label></div></div>
+    <label class="f">專長／頭銜（選填）<input id="t-title" value="${esc(st.title)}" placeholder="例：K-POP、Jazz Funk｜教學 8 年"></label>
+    <label class="f">個人介紹（選填，家長在 LINE 課表點老師名字看得到）<textarea id="t-intro" rows="4" placeholder="經歷、教學風格、得獎紀錄…">${esc(st.intro)}</textarea></label>
+    <div class="f s" style="margin-top:12px">作品與上課照片（最多 9 張）</div><div id="t-imgs"></div>
+    <div class="f s" style="margin-top:12px">作品連結（最多 8 個，例如 YouTube、Instagram）</div><div id="t-works"></div>
+    <div class="f s" style="margin-top:12px">課表上的顏色</div><div class="sw" id="t-col">${PAL.map(c => `<label style="background:${c}"><input type="radio" name="tcol" value="${c}" ${c === st.color ? 'checked' : ''}></label>`).join('')}</div>
+    ${src ? `<label class="f">狀態<select id="t-st"><option ${st.status === '啟用' ? 'selected' : ''}>啟用</option><option value="停用" ${st.status === '停用' ? 'selected' : ''}>停用（不再出現在選單，原有課程不受影響）</option></select></label><p class="s">改名後，所有課程與課表上的這位老師會一起更新。</p>` : ''}`,
+    { wide: true, foot: `${src && !src.courses ? '<button class="btn ghost" style="color:var(--bad)" data-tdel>刪除</button>' : ''}<span class="sp"></span><button class="btn" data-x>取消</button><button class="btn p" data-tsave>儲存</button>` });
+  $('.dlg', m).classList.add('fix');
+  const grab = () => { st.name = $('#t-name', m).value.trim(); st.title = $('#t-title', m).value.trim(); st.intro = $('#t-intro', m).value.trim(); st.color = ($('[name=tcol]:checked', m) || {}).value || st.color; if ($('#t-st', m)) st.status = $('#t-st', m).value;
+    $$('.twk', m).forEach((row, i) => { st.works[i] = { label: $('[data-k=label]', row).value.trim(), url: $('[data-k=url]', row).value.trim() }; }); };
+  const paint = () => {
+    $('#t-ph', m).innerHTML = `<button data-tp="photo" style="width:84px;height:84px;border-radius:50%;border:2px dashed var(--line);background:${st.photo ? `center/cover url('${esc(st.photo)}')` : 'var(--soft)'};color:var(--sub);font-size:12px;line-height:1.3;padding:0">${st.photo ? '' : '上傳<br>照片'}</button>${st.photo ? '<div style="text-align:center"><button class="btn sm ghost" data-tp="nophoto" style="padding:2px 6px">移除</button></div>' : ''}`;
+    $('#t-imgs', m).innerHTML = `<div class="rpi">${st.images.map((u, i) => `<span><img src="${esc(u)}"><button data-ti="${i}" aria-label="移除">×</button></span>`).join('')}</div>${st.images.length < 9 ? '<button class="btn sm" data-tp="img">＋ 上傳圖片</button>' : ''}`;
+    $('#t-works', m).innerHTML = st.works.map((w, i) => `<div class="twk mpc"><div class="mpn">${i + 1}</div><div class="g"><input data-k="label" value="${esc(w.label)}" placeholder="名稱（例：2025 成果發表）"><input data-k="url" value="${esc(w.url)}" placeholder="https://…" inputmode="url" style="margin-top:6px"><div class="acts" style="margin-top:6px"><button class="btn sm ghost" style="color:var(--bad)" data-tw="${i}">移除</button></div></div></div>`).join('') + (st.works.length < 8 ? '<button class="btn sm" data-tp="work">＋ 新增作品連結</button>' : '');
+  };
+  paint();
+  const back = async () => { A.meta = await api('a.meta'); m.remove(); await show(); coursesDialog.st = { ...(coursesDialog.st || { kw: '', teacher: '' }), tab: 'teacher' }; coursesDialog(); };
+  m.addEventListener('click', async e => { const b = e.target.closest('button'); if (!b) return;
+    try {
+      if (b.dataset.tp === 'photo') { const r = await pickUpload('image/jpeg,image/png'); if (r) { grab(); st.photo = r.path; paint(); } }
+      if (b.dataset.tp === 'nophoto') { grab(); st.photo = ''; paint(); }
+      if (b.dataset.tp === 'img') { const r = await pickUpload('image/jpeg,image/png'); if (r) { grab(); st.images.push(r.path); paint(); } }
+      if (b.dataset.ti) { grab(); st.images.splice(+b.dataset.ti, 1); paint(); }
+      if (b.dataset.tp === 'work') { grab(); st.works.push({ label: '', url: '' }); paint(); }
+      if (b.dataset.tw) { grab(); st.works.splice(+b.dataset.tw, 1); paint(); }
+      if ('tsave' in b.dataset) { grab(); await api('a.teacherSave', { id: id || undefined, ...st, works: st.works.filter(w => w.label || w.url) }); toast('已儲存'); await back(); }
+      if ('tdel' in b.dataset) { if (!confirm('確定刪除這位老師？')) return; await api('a.teacherDelete', { id }); toast('已刪除'); await back(); }
+    } catch (err) { toast(err.message, true); } });
 }
 function editCourse(id, renew) {
   const c = id ? courseOf(id) : null, src = renew ? courseOf(renew) : null;
   const one = c && c.weekdays === '';
   const F = [{ k: 'name', label: '課程名稱', ph: '例：兒童街舞初級' }, ...(one ? [] : [{ k: 'weekdays', label: '每週上課日（可複選）', type: 'days' },
     { k: 'dateFrom', label: '開課日期', type: 'date', half: 1 }, { k: 'dateTo', label: '結束日期（留白＝持續開課）', type: 'date', half: 1 },
-    { k: 'start', label: '開始時間', type: 'time', half: 1 }, { k: 'end', label: '結束時間', type: 'time', half: 1 }]), { k: 'teacher', label: '老師', half: 1 }, { k: 'room', label: '教室', half: 1 },
+    { k: 'start', label: '開始時間', type: 'time', half: 1 }, { k: 'end', label: '結束時間', type: 'time', half: 1 }]), teacherField('老師（可選，或直接輸入新名字）', '', '例：章魚老師'), roomField('教室', (c || src || {}).room, '（不指定）'),
     { k: 'capacity', label: '人數上限（0＝不限）', type: 'number', half: 1 }, { k: 'deduct', label: '每堂扣幾堂', type: 'number', half: 1 }, { k: 'color', label: '課表顏色', type: 'color', opts: A.meta.colors },
     { k: 'intro', label: '課程介紹（家長在 LINE 課表點「課程介紹」看得到）', type: 'textarea', rows: 4, ph: '例：適合 6–10 歲，從基本律動開始。請穿運動鞋、帶水壺。' },
     ...(src ? [{ k: 'copy', label: '學生名單', type: 'select', opts: [['1', '帶入上一期的學生'], ['', '不帶入，之後再排']] }] : []),
@@ -1149,7 +1242,7 @@ document.addEventListener('change', async e => {
 });
 document.addEventListener('click', async e => {
   if (e.target.closest('.mask')) return;
-  const el = e.target.closest('button,tr[data-stu]'); if (!el) return;
+  const el = e.target.closest('button,tr[data-stu],[data-slot]'); if (!el) return;
   const ds = el.dataset;
   try {
     if (ds.sess) { if (!A.students.length) A.students = await api('a.students'); return openSession(ds.sess); }
@@ -1196,6 +1289,10 @@ document.addEventListener('click', async e => {
       const text = ds.copy === 'url' ? url : `【${A.meta.studio}】後台邀請\n1. 用 LINE 開啟這個連結：${url}\n2. 按「申請開通」\n3. 跟我說一聲，我開通後頁面會自動進入後台`;
       let ok = false; try { await navigator.clipboard.writeText(text); ok = true; } catch { const t = document.createElement('textarea'); t.value = text; t.style.cssText = 'position:fixed;opacity:0'; document.body.appendChild(t); t.select(); try { ok = document.execCommand('copy'); } catch { /* 不支援 */ } t.remove(); }
       return toast(ok ? '已複製，貼到 LINE 傳給對方即可' : '無法自動複製，請長按上方網址手動複製', !ok); }
+    if (ds.slot && owner() && !e.target.closest('.ev,.rv')) { const r = el.getBoundingClientRect(), m0 = Math.max(0, ((e.clientY - r.top) / +ds.hh + +ds.h0) * 60), hm = v => String(Math.floor(v / 60)).padStart(2, '0') + ':' + String(v % 60).padStart(2, '0');
+      if (!A.students.length) A.students = await api('a.students'); return editSession(null, { date: ds.slot, start: hm(Math.floor(m0 / 30) * 30), end: hm(Math.min(1439, Math.floor(m0 / 30) * 30 + 60)) }); }
+    if ('tf' in ds) { A.tf = ds.tf; return show(); }
+    if (ds.colorby) { A.colorBy = ds.colorby; try { localStorage.setItem('octo_colorby', ds.colorby); } catch { /* 不能存也沒關係 */ } return show(); }
     if (ds.mn) return menuAct(ds.mn, ds.id, el);
     if (ds.reset) return resetData();
     if (ds.export) { const r = await api('a.export', { table: ds.export }); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([r.csv], { type: 'text/csv' })); a.download = r.name; a.click(); return; }
