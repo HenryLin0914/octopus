@@ -141,7 +141,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 .tdl button{display:flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--soft);border-radius:10px;padding:10px 12px;font:inherit;color:var(--ink);text-align:left;min-width:0}
 .tdl button b{font-size:22px;line-height:1;font-variant-numeric:tabular-nums;flex:none}.tdl button span{flex:1;min-width:0;font-size:14px}.tdl button i{font-style:normal;color:var(--sub);flex:none}
 .tdl button.warn{background:#fff7e6;border-color:#f3dca6}.tdl button.warn b{color:#b35c00}.tdl button.bad{background:#fdecec;border-color:#f1b7b7}.tdl button.bad b{color:var(--bad)}
-.stat b small{font-size:14px;font-weight:600;color:var(--sub)}.stat em{font-style:normal;font-weight:700}.stat em.on,.stat em.up{color:var(--ok)}.stat em.dn{color:var(--bad)}.stat{min-width:0}.stat span{display:block;white-space:normal!important;overflow:visible!important;overflow-wrap:anywhere;flex:1 1 100%;min-width:0}
+.stat b small{font-size:14px;font-weight:600;color:var(--sub)}.stat em{font-style:normal;font-weight:700}.stat em.on,.stat em.up{color:var(--ok)}.stat em.dn{color:var(--bad)}.stat{min-width:0;display:block!important;text-decoration:none;color:inherit}.stat b{white-space:nowrap}.stat span{display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
 .aubar{display:flex;gap:10px;flex-wrap:wrap}.aubar .f{flex:1 1 140px;margin-top:0;min-width:0}
 .auday{font-size:13px;font-weight:700;color:var(--sub);padding:12px 0 4px;border-bottom:1px solid var(--line)}.auday:first-child{padding-top:0}
 .aurow{display:grid;grid-template-columns:46px 130px auto 1fr;gap:10px;align-items:baseline;padding:9px 0;border-bottom:1px solid var(--line);font-size:14px}
@@ -373,15 +373,15 @@ const PAGES = {
     <div class="card todo"><h2>待處理${todo.length ? `<span class="tag ${todo.some(t => t[0] === 'bad') ? 'bad' : 'warn'}">${todo.length} 項</span>` : ''}</h2>
       ${todo.length ? `<div class="tdl">${todo.map(t => `<button class="${t[0]}" data-jump="${t[3]}"><b>${t[1]}</b><span>${t[2]}</span><i>›</i></button>`).join('')}</div>` : '<div class="s" style="padding:4px 0 2px">目前沒有需要處理的事項 👍</div>'}</div>
     <div class="grid stats" style="margin:14px 0">
-      <div class="card stat"><b>${live.length}<small> 堂</small></b><span>今天的課${cur ? `｜<em class="on">進行中 ${esc(cur.course)}</em>` : next ? `｜下一堂 ${esc(next.start)} ${esc(next.course)}` : live.length ? '｜今天的課都上完了' : ''}</span></div>
-      <div class="card stat"><b>${here}<small>${roll > here ? `／${roll}` : ''} 人</small></b><span>今天已報到${roll > here ? `（應到 ${roll} 人）` : ''}${todayLeaves.length ? `｜請假 ${todayLeaves.length} 人` : ''}</span></div>
-      <a class="card stat" href="#schedule" style="text-decoration:none;color:inherit"><b>${st.weekSessions}<small> 堂</small></b><span>未來 7 天的課｜在學 ${st.students} 人 ›</span></a>
-      <a class="card stat" href="#attend" style="text-decoration:none;color:inherit"><b>${d.monthAttend}<small> 人次</small></b><span>本月出席 ›</span></a>
+      <a class="card stat" href="#schedule"><b>${live.length}<small> 堂</small></b><span>今天的課</span></a>
+      <div class="card stat"><b>${here}<small>${roll > here ? `／${roll}` : ''} 人</small></b><span>今天已報到</span></div>
+      <a class="card stat" href="#schedule"><b>${st.weekSessions}<small> 堂</small></b><span>未來 7 天的課</span></a>
+      <a class="card stat" href="#attend"><b>${d.monthAttend}<small> 人次</small></b><span>本月出席</span></a>
     </div>
     ${sg.length ? `<div class="card" id="ov-signups" style="margin-bottom:14px;border-color:#f3dca6;background:#fffaf0"><h2 style="color:#8a4b00">報名申請（${sg.length}）</h2>${sg.map(g => `<div class="row"><div class="g"><div class="t">${esc(g.student)} → ${esc(g.course)}</div><div class="s">${esc(g.by || '家長')} 於 ${esc(g.time.slice(5, 16))} 申請｜剩 ${g.remain} 堂｜目前 ${g.count}${g.capacity ? '／' + g.capacity : ''} 人</div></div><div class="acts"><button class="btn sm ok" data-sg="${esc(g.id)}" data-ok="1">同意</button><button class="btn sm" data-sg="${esc(g.id)}">婉拒</button></div></div>`).join('')}<p class="s" style="margin-bottom:0">同意後學生會加入該課程的固定名單，並用 LINE 通知家長結果。</p></div>` : ''}
     <div class="grid cols">
       <div class="grid">
-        <div class="card"><h2>今天的課<span class="s" style="font-weight:400;margin-left:8px">${dLabel(T)}</span><span class="sp"></span><a class="btn sm ghost" href="#schedule">看整週 ›</a></h2>
+        <div class="card"><h2>今天的課<span class="s" style="font-weight:400;margin-left:8px">${dLabel(T)}</span>${cur ? `<span class="tag ok" style="margin-left:8px">進行中：${esc(cur.course)}</span>` : next ? `<span class="tag" style="margin-left:8px">下一堂 ${esc(next.start)}</span>` : live.length ? '<span class="tag" style="margin-left:8px">都上完了</span>' : ''}<span class="sp"></span><a class="btn sm ghost" href="#schedule">看整週 ›</a></h2>
           ${d.sessions.length ? d.sessions.map(x => sessRow(x)).join('') : '<div class="empty">今天沒有課程</div>'}
           ${d.rentals.filter(b => b.date === T).map(b => `<a class="rrow" href="#rent">🏠 <b>${esc(b.start)}–${esc(b.end)}</b> ${esc(b.room)} 租借｜${esc(b.name)} <span class="tag ${b.status === '已確認' ? 'ok' : 'warn'}">${esc(b.status)}</span></a>`).join('')}
           ${todayLeaves.length ? `<div class="s" style="margin-top:8px">今天請假：${todayLeaves.map(l => `${esc(l.student)}（${esc(l.start)} ${esc(l.course)}）`).join('、')}</div>` : ''}</div>
