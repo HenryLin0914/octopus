@@ -157,11 +157,32 @@ export function createApp(opts = {}) {
     return { userId: d.sub, name: d.name || '' };
   });
   const hmac = (s, key = SECRET) => crypto.createHmac('sha256', key).update(s).digest('base64url');
-  const sign = o => { const p = Buffer.from(JSON.stringify(o)).toString('base64url'); return p + '.' + hmac(p); };
+  /* 登入憑證綁定目前的 LINE Login channel：換了官方帳號（不同 Provider）之後，舊憑證裡的使用者 ID 是舊 Provider 的，
+     推播會發不到，所以一律失效、要求重新登入拿新的 ID。 */
+  const chanNow = () => String(env.LINE_LOGIN_CHANNEL_ID || '');
+  const sign = o => { const p = Buffer.from(JSON.stringify({ ...o, c: chanNow() })).toString('base64url'); return p + '.' + hmac(p); };
+  /** 只驗簽章與期限，不管是哪個 channel 發的（用來把舊 ID 的資料轉到新 ID） */
+  const unsignAny = t => { const [p, s] = String(t || '').split('.');
+    if (!p || !s || s.length !== hmac(p).length || !crypto.timingSafeEqual(Buffer.from(s), Buffer.from(hmac(p)))) return null;
+    try { const o = JSON.parse(Buffer.from(p, 'base64url').toString()); return o.exp > Date.now() ? { userId: o.u, name: o.n, chan: String(o.c || '') } : null; } catch { return null; } };
+  /** 同一個人在新舊 Provider 的 ID 不同：把舊 ID 名下的管理員身分、學生綁定、租借、報名轉到新 ID */
+  function migrateUser(oldId, newId, name) {
+    if (!oldId || !newId || oldId === newId) return false;
+    const has = ['admins', 'bindings'].some(t => get('SELECT 1 x FROM ' + t + ' WHERE user_id=?', oldId)) || get('SELECT 1 x FROM bookings WHERE user_id=?', oldId);
+    if (!has) return false;
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      if (get('SELECT 1 x FROM admins WHERE user_id=?', newId)) run('DELETE FROM admins WHERE user_id=?', oldId); else run('UPDATE admins SET user_id=? WHERE user_id=?', newId, oldId);
+      run('UPDATE OR IGNORE bindings SET user_id=? WHERE user_id=?', newId, oldId); run('DELETE FROM bindings WHERE user_id=?', oldId);
+      run('UPDATE bookings SET user_id=? WHERE user_id=?', newId, oldId); run('UPDATE signups SET by_user=? WHERE by_user=?', newId, oldId); run('UPDATE leaves SET by_user=? WHERE by_user=?', newId, oldId);
+      run('INSERT INTO audit(time,user_id,name,role,action,cat,summary) VALUES(?,?,?,?,?,?,?)', now(), newId, name || '', '系統', 'login', '設定', '切換官方帳號後重新登入，系統自動把這個帳號的管理員身分與學生綁定轉到新的 LINE 使用者 ID');
+      db.exec('COMMIT'); return true;
+    } catch (e) { db.exec('ROLLBACK'); console.error('migrateUser', e.message); return false; }
+  }
   const unsign = t => {
     const [p, s] = String(t || '').split('.');
     if (!p || !s || s.length !== hmac(p).length || !crypto.timingSafeEqual(Buffer.from(s), Buffer.from(hmac(p)))) return null;
-    try { const o = JSON.parse(Buffer.from(p, 'base64url').toString()); return o.exp > Date.now() ? { userId: o.u, name: o.n } : null; } catch { return null; }
+    try { const o = JSON.parse(Buffer.from(p, 'base64url').toString()); return o.exp > Date.now() && String(o.c || '') === chanNow() ? { userId: o.u, name: o.n } : null; } catch { return null; }
   };
 
   /* ---------- Flex 卡片 ---------- */
@@ -1416,7 +1437,7 @@ export function createApp(opts = {}) {
     /** 操作紀錄查詢（只有管理員）：可依日期、分類、操作人、關鍵字篩選 */
     /** 推播檢查：確認連到哪個官方帳號、額度、自己是不是好友、家長的 ID 是否有效，並實際發一則測試訊息給自己 */
     async 'a.pushCheck'(b, user) {
-      const out = { steps: [], recent: pushLog.slice(0, 15), userId: user.userId };
+      const out = { steps: [], recent: pushLog.slice(0, 15), userId: user.userId, liffId: env.LIFF_ID || '', loginChannel: env.LINE_LOGIN_CHANNEL_ID || '' };
       const add = (name, ok, text, hint = '') => out.steps.push({ name, ok, text, hint });
       if (!env.LINE_CHANNEL_ACCESS_TOKEN) { add('伺服器金鑰', false, '伺服器沒有設定 Channel access token', '請在主機執行 deploy/set-line.sh'); return out; }
       const call = async (url, init) => { try { const r = await lineFetch(url, { ...(init || {}), headers: { 'Content-Type': 'application/json', ...authHdr() } }); let j = {}; const t = await r.text(); try { j = JSON.parse(t || '{}'); } catch { /* 不是 JSON */ } return { ok: !!r.ok, status: r.status || (r.ok ? 200 : 0), j, t: (t || '').slice(0, 300) }; } catch (e) { return { ok: false, status: 0, j: {}, t: '連不上 LINE：' + e.message }; } };
@@ -1428,7 +1449,7 @@ export function createApp(opts = {}) {
         add('本月推播額度', !full, lim == null ? '不限則數' : `已用 ${used ?? '?'}／${lim} 則`, full ? '這個月的免費推播則數用完了，LINE 會擋下所有主動推播（回覆訊息不受影響）。請到 LINE Official Account Manager 升級方案或等下個月。' : ''); }
       const me = await call('https://api.line.me/v2/bot/profile/' + encodeURIComponent(user.userId));
       add('您的 LINE 帳號', me.ok, me.ok ? `${me.j.displayName || ''}：是這個官方帳號的好友` : `這個官方帳號找不到您的帳號（${me.status}）`,
-        me.ok ? '' : '兩種可能：① 您還沒把這個官方帳號加為好友（或封鎖了）；② 後台登入用的 LINE Login／LIFF 不在這個官方帳號的 Provider 底下，所以系統記到的是別的 Provider 的使用者 ID，推播會全部發不到。若是 ②，請在同一個 Provider 建立 LINE Login 與 LIFF 後重新執行 deploy/set-line.sh。');
+        me.ok ? '' : `系統記到的使用者 ID 不屬於這個官方帳號。請依序確認：① 已把這個官方帳號加為好友、沒有封鎖；② 伺服器目前使用的 LINE Login Channel ID 是 ${env.LINE_LOGIN_CHANNEL_ID || '（未設定）'}、LIFF ID 是 ${env.LIFF_ID || '（未設定）'}，要和 LINE Developers 裡與這個官方帳號同一個 Provider 的 LINE Login channel 一致，不一致請重新執行 deploy/set-line.sh；③ 如果都正確，請把這個網頁完全關掉再重新開啟（系統會要求重新登入並自動修正），然後再檢查一次。`);
       const wh = await call('https://api.line.me/v2/bot/channel/webhook/endpoint');
       if (wh.ok) add('Webhook', !!wh.j.active && /\/webhook$/.test(wh.j.endpoint || ''), `${wh.j.endpoint || '（未設定）'}｜${wh.j.active ? '已啟用' : '未啟用'}`, wh.j.active ? '' : '請到 LINE Developers 的 Messaging API 設定開啟 Use webhook');
       const ids = [...new Set(all('SELECT user_id FROM bindings').map(r => r.user_id))], sample = ids.slice(0, 20); let good = 0;
@@ -1596,7 +1617,9 @@ export function createApp(opts = {}) {
   async function api(b) {
     b = b || {};
     try {
-      if (b.action === 'login') { const u = await verifyIdToken(b.idToken); return { ok: true, data: { token: sign({ u: u.userId, n: u.name, exp: Date.now() + 30 * 86400e3 }) } }; }
+      if (b.action === 'login') { const u = await verifyIdToken(b.idToken), prev = b.prev ? unsignAny(b.prev) : null;
+        const moved = prev && prev.chan !== chanNow() ? migrateUser(prev.userId, u.userId, u.name) : false; // 舊憑證是別的 channel 發的：把資料轉到新 ID
+        return { ok: true, data: { token: sign({ u: u.userId, n: u.name, exp: Date.now() + 30 * 86400e3 }), moved } }; }
       if (b.action === 'devLogin' && env.DEV_LOGIN === '1') return { ok: true, data: { token: sign({ u: str(b.userId, 40), n: str(b.name, 40), exp: Date.now() + 86400e3 }) } };
       const user = unsign(b.token);
       if (!user) throw new Error('AUTH');

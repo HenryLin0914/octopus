@@ -33,7 +33,7 @@ async function raw(body) {
 async function login() {
   if (DEV_USER) { TOKEN = (await raw({ action: 'devLogin', userId: DEV_USER, name: DEV_USER })).token; return; }
   if (!liff.isLoggedIn()) { liff.login({ redirectUri: location.href }); await new Promise(() => {}); }
-  try { TOKEN = (await raw({ action: 'login', idToken: liff.getIDToken() })).token; store.set('octo_token', TOKEN); }
+  try { TOKEN = (await raw({ action: 'login', idToken: liff.getIDToken(), prev: store.get('octo_prev') || store.get('octo_token') || undefined })).token; store.set('octo_token', TOKEN); store.set('octo_prev', null); }
   catch (e) {
     if (e.message !== 'AUTH') throw e;
     if (liff.isInClient()) throw new Error('登入已過期，請關閉後重新開啟');
@@ -51,6 +51,7 @@ async function api(action, data, quiet) {
     try { return await raw({ action, token: TOKEN, ...(data || {}) }); }
     catch (e) {
       if (e.message !== 'AUTH') throw e;
+      if (TOKEN) store.set('octo_prev', TOKEN); // 留著舊憑證：換官方帳號後，伺服器用它把舊 ID 的資料轉到新 ID
       TOKEN = null; store.set('octo_token', null);
       await login();
       return await raw({ action, token: TOKEN, ...(data || {}) });

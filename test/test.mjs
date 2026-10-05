@@ -522,6 +522,18 @@ let bad = ''; try { pushes.forEach(p => p.body && p.body.messages && p.body.mess
   ok(r.ok && r.data.removed > 0 && after.groups.find(g => g.key === 'money').count === 0 && after.groups.find(g => g.key === 'attend').count === before.groups.find(g => g.key === 'attend').count && after.keep.students === before.keep.students && (await call('boss', 'a.students')).data.length === stu && after.keep.courses === before.keep.courses, '只清帳務：學生、課程、出席紀錄都還在');
   ok((await call('boss', 'a.resetData', { groups: ['attend', 'signup', 'rent'], confirm: '清除' })).ok && (await call('boss', 'a.resetInfo')).data.groups.every(g => g.count === 0), '可再清除出席、報名、租借');
 }
+{ // 切換官方帳號（不同 Provider）：舊登入憑證失效，重新登入時把舊 ID 的資料轉到新 ID
+  const oldTok = tokens.mom, oldId = (await call('mom', 'init')).data.userId, kidsBefore = (await call('mom', 'init')).data.students.length, bossOld = tokens.boss;
+  env.LINE_LOGIN_CHANNEL_ID = 'new-channel';
+  ok((await app.api({ action: 'init', token: oldTok })).error === 'AUTH' && (await app.api({ action: 'a.meta', token: bossOld })).error === 'AUTH', '換了 Login channel 後，舊的登入憑證失效');
+  r = await app.api({ action: 'login', idToken: 'mom-after-switch', prev: oldTok }); const momNew = (await app.api({ action: 'init', token: r.data.token })).data;
+  ok(r.data.moved === true && momNew.userId !== oldId && momNew.students.length === kidsBefore && kidsBefore > 0, '家長重新登入後，學生綁定自動轉到新的使用者 ID');
+  r = await app.api({ action: 'login', idToken: 'boss-after-switch', prev: bossOld });
+  ok(r.data.moved === true && (await app.api({ action: 'a.meta', token: r.data.token })).data.role === 'owner', '管理員重新登入後仍是管理員');
+  const again = await app.api({ action: 'login', idToken: 'stranger', prev: bossOld });
+  ok(again.data.moved === false && /沒有後台權限/.test((await app.api({ action: 'a.meta', token: again.data.token })).error), '舊憑證只能轉移一次，別人拿去用沒有效果');
+  ok((await app.api({ action: 'login', idToken: 'x1', prev: 'garbage.token' })).ok, '亂給的舊憑證不影響登入');
+}
 { // 前端頁面的 JavaScript 語法檢查（避免把語法錯誤的頁面推上線）
   const fs2 = await import('node:fs');
   for (const f of ['public/admin.html', 'public/index.html']) { let bad = ''; for (const m of fs2.readFileSync(new URL('../' + f, import.meta.url), 'utf8').matchAll(/<script>([\s\S]*?)<\/script>/g)) { try { new Function(m[1]); } catch (e) { bad = e.message; } } ok(!bad, f + ' 語法正確' + (bad ? '：' + bad : '')); }
