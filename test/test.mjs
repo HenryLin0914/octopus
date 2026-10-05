@@ -440,4 +440,12 @@ ok((await app.webhook(body, 'wrong')) === false, 'Webhook 簽章錯誤被拒');
 const pw = pushes.length; ok((await app.webhook(body, sig)) === true && pushes.length === pw + 1 && /剩餘 9 堂/.test(pushes[pw].body.messages[0].altText), 'Webhook 回覆堂數卡片');
 const walk = o => { if (o && typeof o === 'object') { if (o.type === 'text' && (typeof o.text !== 'string' || !o.text.length)) throw new Error('empty'); Object.values(o).forEach(walk); } };
 let bad = ''; try { pushes.forEach(p => p.body && p.body.messages && p.body.messages.forEach(walk)); } catch (e) { bad = e.message; } ok(!bad, '所有 Flex 文字非空');
+{ // 上線前清除測試資料
+  const before = (await call('boss', 'a.resetInfo')).data, stu = (await call('boss', 'a.students')).data.length;
+  ok(before.groups.find(g => g.key === 'money').count > 0 && /僅限管理員/.test((await call('teacher', 'a.resetData', { groups: ['money'], confirm: '清除' })).error) && !(await call('boss', 'a.resetData', { groups: ['money'], confirm: 'x' })).ok, '清除資料需管理員且要輸入確認字');
+  r = await call('boss', 'a.resetData', { groups: ['money'], confirm: '清除' });
+  const after = (await call('boss', 'a.resetInfo')).data;
+  ok(r.ok && r.data.removed > 0 && after.groups.find(g => g.key === 'money').count === 0 && after.groups.find(g => g.key === 'attend').count === before.groups.find(g => g.key === 'attend').count && after.keep.students === before.keep.students && (await call('boss', 'a.students')).data.length === stu && after.keep.courses === before.keep.courses, '只清帳務：學生、課程、出席紀錄都還在');
+  ok((await call('boss', 'a.resetData', { groups: ['attend', 'signup', 'rent'], confirm: '清除' })).ok && (await call('boss', 'a.resetInfo')).data.groups.every(g => g.count === 0), '可再清除出席、報名、租借');
+}
 console.log(fail ? '\n' + fail + ' FAILED' : '\nALL PASS'); process.exit(fail ? 1 : 0);

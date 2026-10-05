@@ -73,8 +73,8 @@ const PLANS = [['P01', '單堂', 1, 500, 30], ['P02', '10堂卡', 10, 4500, 90],
 const COLORS = ['#D6336C', '#1971C2', '#2B8A3E', '#E67700', '#7048E8', '#0C8599', '#C2255C', '#5C940D'];
 
 const OWNER_ONLY = new Set(['a.studentSave', 'a.enroll', 'a.unbind', 'a.topup', 'a.cardSave', 'a.courseSave', 'a.sessionSave', 'a.sessionDelete', 'a.genSessions',
-  'a.videoSave', 'a.videoDelete', 'a.planSave', 'a.settingSave', 'a.adminSave', 'a.export', 'a.student', 'a.videos', 'a.plans', 'a.settings', 'a.admins', 'a.cards', 'a.ledger', 'a.topupSave', 'a.videoInfo', 'a.dayOff', 'a.familySave', 'a.courseDelete', 'a.courseStudents', 'a.signupSave', 'a.rent', 'a.roomSave', 'a.roomDelete', 'a.rentBlockSave', 'a.rentBlockDelete', 'a.rentTagSave', 'a.rentTagDelete', 'a.bookingSave', 'a.rentSlots', 'a.roomCal', 'a.roomHours', 'a.ruleSave', 'a.ruleDelete', 'a.upload', 'a.menu', 'a.menuPageSave', 'a.menuTheme', 'a.menuPageDelete', 'a.menuPageMove', 'a.replySave', 'a.replyDelete', 'a.menuPublish', 'a.menuUnpublish']);
-const ASYNC = new Set(['a.menuPublish', 'a.menuUnpublish', 'a.videoInfo']);
+  'a.videoSave', 'a.videoDelete', 'a.planSave', 'a.settingSave', 'a.adminSave', 'a.export', 'a.student', 'a.videos', 'a.plans', 'a.settings', 'a.admins', 'a.cards', 'a.ledger', 'a.topupSave', 'a.videoInfo', 'a.dayOff', 'a.familySave', 'a.courseDelete', 'a.courseStudents', 'a.signupSave', 'a.rent', 'a.roomSave', 'a.roomDelete', 'a.rentBlockSave', 'a.rentBlockDelete', 'a.rentTagSave', 'a.rentTagDelete', 'a.bookingSave', 'a.rentSlots', 'a.roomCal', 'a.roomHours', 'a.ruleSave', 'a.ruleDelete', 'a.upload', 'a.menu', 'a.menuPageSave', 'a.menuTheme', 'a.resetInfo', 'a.resetData', 'a.menuPageDelete', 'a.menuPageMove', 'a.replySave', 'a.replyDelete', 'a.menuPublish', 'a.menuUnpublish']);
+const ASYNC = new Set(['a.resetData', 'a.menuPublish', 'a.menuUnpublish', 'a.videoInfo']);
 /** 從各種 YouTube 網址取出影片 ID（watch、youtu.be、shorts、live、embed） */
 export const ytId = url => { const m = String(url || '').match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^#]*&)?v=|shorts\/|live\/|embed\/|v\/))([\w-]{11})(?![\w-])/); return m ? m[1] : ''; };
 
@@ -427,6 +427,11 @@ export function createApp(opts = {}) {
   const menuRect = (total, hasImage = true) => total > 1 ? (hasImage ? { x: MENU_GEO.side, y: 0, w: MENU_GEO.W - MENU_GEO.side * 2, h: MENU_GEO.H - MENU_GEO.navH } : { x: 0, y: 0, w: MENU_GEO.W, h: MENU_GEO.H - MENU_GEO.navH }) : { x: 0, y: 0, w: MENU_GEO.W, h: MENU_GEO.H };
   /** 系統繪製選單時，每個功能預設的圖示與小字 */
   const MENU_LOOK = { checkin: ['qr', '掃教室 QR Code'], card: ['ticket', '剩餘堂數・儲值'], schedule: ['calendar', '課表・報名'], leave: ['file', '線上請假・紀錄'], attendance: ['check', '出席・請假・缺席'], video: ['play', '上課與成果影片'], rent: ['building', '查時段・線上預約'], bind: ['link', '輸入綁定碼'], home: ['home', ''] };
+  const RESET_GROUPS = [
+    { key: 'money', name: '帳務與上課卡', note: '儲值紀錄、上課卡與剩餘堂數（學生的堂數會歸零）', tables: ['topups', 'cards', 'card_students'] },
+    { key: 'attend', name: '出席、請假、補課紀錄', note: '報到與點名紀錄、請假單、補課安排', tables: ['attendance', 'leaves', 'makeups'] },
+    { key: 'signup', name: '線上報名申請', note: '家長送出的報名申請（已加入課程的名單不受影響）', tables: ['signups'] },
+    { key: 'rent', name: '教室租借預約', note: '所有預約紀錄（教室、開放規則、標籤不受影響）', tables: ['bookings'] }];
   const MENU_THEMES = ['pink', 'warm', 'green', 'blue', 'dark'];
   const fnCell = f => ({ label: MENU_FNS.find(x => x[0] === f)[1], type: 'fn', value: f, icon: MENU_LOOK[f][0], sub: MENU_LOOK[f][1], hl: f === 'checkin' });
   function menuAreas(pg, n, total, alias) {
@@ -1239,6 +1244,29 @@ export function createApp(opts = {}) {
     'a.menu'() {
       const pub = k => (get('SELECT value FROM meta WHERE key=?', k) || {}).value || '';
       return { pages: menuPages(), replies: replyList(), geo: MENU_GEO, fns: MENU_FNS, look: MENU_LOOK, theme: pub('menu_theme') || 'pink', bot: { name: pub('bot_name'), id: pub('bot_basic_id') }, publishedAt: pub('menu_published_at'), ready: !!(env.LINE_CHANNEL_ACCESS_TOKEN && env.LIFF_ID) };
+    },
+    /* ---------- 上線前清除測試資料（學生、課程、設定等基礎資料不動） ---------- */
+    'a.resetInfo'() {
+      const n = t => get('SELECT COUNT(*) n FROM ' + t).n;
+      return { groups: RESET_GROUPS.map(g => ({ key: g.key, name: g.name, note: g.note, count: g.tables.reduce((a, t) => a + n(t), 0) })),
+        keep: { students: n('students'), bindings: n('bindings'), courses: n('courses'), sessions: n('sessions') } };
+    },
+    async 'a.resetData'(b, user) {
+      if (b.confirm !== '清除') throw new Error('請輸入「清除」兩個字確認');
+      const groups = RESET_GROUPS.filter(g => (b.groups || []).includes(g.key));
+      if (!groups.length) throw new Error('請至少勾選一項');
+      let backup = '';
+      if (dataDir !== ':memory:') { const dir = path.join(dataDir, 'backups'); fs.mkdirSync(dir, { recursive: true }); backup = 'before-reset-' + now().replace(/[^0-9]/g, '').slice(0, 14) + '.db';
+        db.exec("VACUUM INTO '" + path.join(dir, backup).replace(/'/g, "''") + "'"); }
+      const keys = groups.map(g => g.key); let removed = 0;
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        for (const g of groups) for (const t of g.tables) { removed += get('SELECT COUNT(*) n FROM ' + t).n; db.exec('DELETE FROM ' + t); }
+        if (keys.includes('money') && !keys.includes('attend')) db.exec("UPDATE attendance SET deduct=0, card_id=''"); // 上課卡清掉後，保留下來的出席紀錄不再指向不存在的卡
+        run("INSERT INTO meta VALUES('last_reset',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", now() + '｜' + (user.admin.name || user.name || '') + '｜' + groups.map(g => g.name).join('、'));
+        db.exec('COMMIT');
+      } catch (e) { db.exec('ROLLBACK'); throw e; }
+      return { removed, backup, groups: groups.map(g => g.name) };
     },
     'a.menuTheme'(b) {
       if (!MENU_THEMES.includes(b.theme)) throw new Error('沒有這個配色');

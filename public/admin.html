@@ -540,6 +540,7 @@ const PAGES = {
       <div class="card"><h2>LINE 圖文選單與自動回覆</h2><p class="s" style="margin-top:0">聊天室下方的選單：可以有多頁（上一頁／下一頁）、自訂每一格按下去要開連結、開系統功能，或回覆文字、圖片、檔案。</p><a class="btn p" href="#menu" style="display:inline-block;text-decoration:none">管理圖文選單</a></div>
       <div class="card"><h2>匯出資料（CSV，可用 Excel 開啟）</h2><div class="acts">${[['students', '學生'], ['attendance', '出席紀錄'], ['topups', '儲值紀錄'], ['cards', '上課卡'], ['sessions', '課表'], ['leaves', '請假']].map(x => `<button class="btn sm" data-export="${x[0]}">${x[1]}</button>`).join('')}</div>
         <p class="s" style="margin-bottom:0">資料庫每天自動備份，保留最近 14 天。</p></div>
+      ${A.meta.role === 'owner' ? `<div class="card"><h2>上線前清除測試資料</h2><p class="s">測試完要正式啟用時，把測試期間的儲值、上課卡、出席等紀錄清空。學生、家長綁定、課程與課表、方案、教室、影片、選單、設定都不會動。清除前會自動備份一份。</p><div class="acts"><button class="btn" style="color:var(--bad)" data-reset="1">清除測試資料…</button></div></div>` : ''}
     </div></div>`;
   }
 };
@@ -773,6 +774,22 @@ function topup(id) {
   }, { saveText: '確認儲值' });
   $('[name=planId]', m).onchange = e => { const p = A.meta.plans.find(x => x.id === e.target.value); $('[name=lessons]', m).value = p.lessons; $('[name=price]', m).placeholder = '定價 ' + p.price; };
   $('[name=price]', m).placeholder = '定價 ' + (p0.price ?? '');
+}
+
+/* ---------- 上線前清除測試資料 ---------- */
+async function resetData() {
+  const d = await api('a.resetInfo');
+  const m = dialog('清除測試資料', `<p class="s" style="margin-top:10px">勾選要清空的項目。<b style="color:var(--ink)">不會動到</b>：${d.keep.students} 位學生、${d.keep.bindings} 筆家長綁定、${d.keep.courses} 門課程與課表、方案、教室、影片、選單、設定。</p>
+    ${d.groups.map(g => `<label class="row" style="cursor:pointer;align-items:flex-start"><input type="checkbox" data-rg="${g.key}" ${g.key === 'money' || g.key === 'attend' ? 'checked' : ''} style="width:auto;margin-top:4px"><div class="g"><div class="t">${esc(g.name)} <span class="tag ${g.count ? 'warn' : ''}">${g.count} 筆</span></div><div class="s">${esc(g.note)}</div></div></label>`).join('')}
+    <div class="note" style="margin-top:12px">清除後無法從後台復原。系統會先自動備份整個資料庫，萬一清錯，可以請工程人員用備份檔還原。<br>只清帳務、保留出席紀錄時，出席紀錄上的「扣堂」會一併歸零。</div>
+    <label class="f">請輸入「清除」兩個字確認<input id="rs-ok" placeholder="清除" autocomplete="off"></label>`,
+    { foot: '<span class="sp"></span><button class="btn" data-x>取消</button><button class="btn p" style="background:var(--bad);border-color:var(--bad)" data-rsgo>清除勾選的資料</button>' });
+  m.addEventListener('click', async e => { const b = e.target.closest('[data-rsgo]'); if (!b) return;
+    try { const groups = $$('[data-rg]', m).filter(x => x.checked).map(x => x.dataset.rg); if (!groups.length) throw new Error('請至少勾選一項');
+      b.disabled = true; const r = await api('a.resetData', { groups, confirm: $('#rs-ok', m).value.trim() });
+      m.remove(); dialog('已清除', `<p style="margin-top:10px">已清除 <b>${r.removed}</b> 筆：${esc(r.groups.join('、'))}。</p>${r.backup ? `<p class="s">清除前的備份檔：${esc(r.backup)}（在主機資料目錄的 backups 資料夾）</p>` : ''}`, { foot: '<span class="sp"></span><button class="btn p" data-x>好</button>' });
+      A.students = []; show();
+    } catch (err) { b.disabled = false; toast(err.message, true); } });
 }
 
 /* ---------- 圖文選單 ---------- */
@@ -1176,6 +1193,7 @@ document.addEventListener('click', async e => {
       let ok = false; try { await navigator.clipboard.writeText(text); ok = true; } catch { const t = document.createElement('textarea'); t.value = text; t.style.cssText = 'position:fixed;opacity:0'; document.body.appendChild(t); t.select(); try { ok = document.execCommand('copy'); } catch { /* 不支援 */ } t.remove(); }
       return toast(ok ? '已複製，貼到 LINE 傳給對方即可' : '無法自動複製，請長按上方網址手動複製', !ok); }
     if (ds.mn) return menuAct(ds.mn, ds.id, el);
+    if (ds.reset) return resetData();
     if (ds.export) { const r = await api('a.export', { table: ds.export }); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([r.csv], { type: 'text/csv' })); a.download = r.name; a.click(); return; }
     if ('plan' in ds) { const p = ds.plan ? (await api('a.plans')).find(x => x.id === ds.plan) : null;
       return formDialog(p ? '編輯方案' : '新增方案', [{ k: 'name', label: '方案名稱' }, { k: 'lessons', label: '堂數', type: 'number', half: 1 }, { k: 'price', label: '價格', type: 'number', half: 1 }, { k: 'validDays', label: '有效天數（0＝無期限）', type: 'number', half: 1 }, { k: 'active', label: '狀態', type: 'select', opts: [['1', '啟用'], ['0', '停用']], half: 1 }],
