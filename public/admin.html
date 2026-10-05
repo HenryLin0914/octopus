@@ -359,7 +359,7 @@ const PAGES = {
     const st = d.stats, sg = owner() && d.signups ? await api('a.signups') : [], T = d.date;
     const nowM = (() => { const n = new Date(Date.now() + 8 * 3600e3); return n.getUTCHours() * 60 + n.getUTCMinutes(); })(), mins = t => +t.slice(0, 2) * 60 + +t.slice(3);
     const live = d.sessions.filter(x => x.status !== '停課'), cur = live.find(x => mins(x.start) <= nowM && nowM < mins(x.end)), next = live.find(x => mins(x.start) > nowM);
-    const todayLeaves = d.leaves.filter(l => l.date === T), here = live.reduce((n, x) => n + x.present, 0), roll = live.reduce((n, x) => n + x.enrolled, 0);
+    const todayLeaves = d.leaves.filter(l => l.date === T), here = live.reduce((n, x) => n + x.present, 0), roll = live.reduce((n, x) => n + Math.max(x.enrolled, x.present + x.leave + (x.absent || 0)), 0); // 應到＝名單人數；臨時來上課的人也算進去，避免出現「1／0」
     // 待處理：有數字才亮起來，點了直接到該處理的地方
     const todo = [
       d.unmarked.length && ['bad', d.unmarked.length, '堂課還沒點名', 'unmarked'],
@@ -369,15 +369,14 @@ const PAGES = {
       d.lowCount && ['warn', d.lowCount, '位學生堂數不足', 'low'],
       d.expiring.length && ['', d.expiring.length, '張卡 14 天內到期', 'expiring'],
       st.unbound && ['', st.unbound, '位學生還沒綁定家長', 'unbound']].filter(Boolean);
-    const diff = st.monthIncome - d.lastMonthIncome;
     return `<div class="head"><h1>${esc(A.meta.name || '')}，您好</h1><span class="s">${dLabel(d.date)}</span></div>
     <div class="card todo"><h2>待處理${todo.length ? `<span class="tag ${todo.some(t => t[0] === 'bad') ? 'bad' : 'warn'}">${todo.length} 項</span>` : ''}</h2>
       ${todo.length ? `<div class="tdl">${todo.map(t => `<button class="${t[0]}" data-jump="${t[3]}"><b>${t[1]}</b><span>${t[2]}</span><i>›</i></button>`).join('')}</div>` : '<div class="s" style="padding:4px 0 2px">目前沒有需要處理的事項 👍</div>'}</div>
     <div class="grid stats" style="margin:14px 0">
       <div class="card stat"><b>${live.length}<small> 堂</small></b><span>今天的課${cur ? `｜<em class="on">進行中 ${esc(cur.course)}</em>` : next ? `｜下一堂 ${esc(next.start)} ${esc(next.course)}` : live.length ? '｜今天的課都上完了' : ''}</span></div>
-      <div class="card stat"><b>${here}<small>／${roll} 人</small></b><span>今天已報到${todayLeaves.length ? `｜請假 ${todayLeaves.length} 人` : ''}</span></div>
+      <div class="card stat"><b>${here}<small>${roll > here ? `／${roll}` : ''} 人</small></b><span>今天已報到${roll > here ? `（應到 ${roll} 人）` : ''}${todayLeaves.length ? `｜請假 ${todayLeaves.length} 人` : ''}</span></div>
       <a class="card stat" href="#schedule" style="text-decoration:none;color:inherit"><b>${st.weekSessions}<small> 堂</small></b><span>未來 7 天的課｜在學 ${st.students} 人 ›</span></a>
-      ${owner() ? `<a class="card stat" href="#money" style="text-decoration:none;color:inherit"><b>${money(st.monthIncome)}</b><span>本月儲值收入｜${d.lastMonthIncome ? `較上月 <em class="${diff >= 0 ? 'up' : 'dn'}">${diff >= 0 ? '+' : '−'}${money(Math.abs(diff))}</em>` : '上月無紀錄'} ›</span></a>` : `<div class="card stat"><b>${d.monthAttend}<small> 人次</small></b><span>本月出席</span></div>`}
+      <a class="card stat" href="#attend" style="text-decoration:none;color:inherit"><b>${d.monthAttend}<small> 人次</small></b><span>本月出席 ›</span></a>
     </div>
     ${sg.length ? `<div class="card" id="ov-signups" style="margin-bottom:14px;border-color:#f3dca6;background:#fffaf0"><h2 style="color:#8a4b00">報名申請（${sg.length}）</h2>${sg.map(g => `<div class="row"><div class="g"><div class="t">${esc(g.student)} → ${esc(g.course)}</div><div class="s">${esc(g.by || '家長')} 於 ${esc(g.time.slice(5, 16))} 申請｜剩 ${g.remain} 堂｜目前 ${g.count}${g.capacity ? '／' + g.capacity : ''} 人</div></div><div class="acts"><button class="btn sm ok" data-sg="${esc(g.id)}" data-ok="1">同意</button><button class="btn sm" data-sg="${esc(g.id)}">婉拒</button></div></div>`).join('')}<p class="s" style="margin-bottom:0">同意後學生會加入該課程的固定名單，並用 LINE 通知家長結果。</p></div>` : ''}
     <div class="grid cols">
