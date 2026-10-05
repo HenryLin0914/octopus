@@ -225,6 +225,11 @@ ok((await call('boss', 'a.unbind', { userId: (await call('dad', 'init')).data.us
   await call('boss', 'a.topup', { studentId: k1.id, planId: 'P02', price: 4500, shareIds: [k2.id] });
   const i2 = (await call('fam', 'init')).data.students;
   ok(i2.find(x => x.id === k1.id).sharedWith.join() === '二寶' && i2.find(x => x.id === k1.id).remain === 10 && i2.find(x => x.id === k3.id).remain === 0, '家長首頁資料帶出共用對象');
+  L = (await call('boss', 'a.students')).data;
+  ok(L.find(x => x.id === k3.id).famUnshared === 10 && !L.find(x => x.id === k1.id).famUnshared && (await call('boss', 'a.student', { id: k3.id })).data.famGap === 1, '列表提示家人的卡還沒共用');
+  r = await call('boss', 'a.familyShare', { studentId: k3.id });
+  L = (await call('boss', 'a.students')).data;
+  ok(r.data.cards === 1 && L.find(x => x.id === k3.id).remain === 10 && !L.find(x => x.id === k3.id).famUnshared, '一鍵全家共用上課卡');
   r = await call('boss', 'a.familySave', { studentId: k3.id, memberIds: [] });
   L = (await call('boss', 'a.students')).data;
   ok(!L.find(x => x.id === k3.id).family.length && L.find(x => x.id === k1.id).family.join() === k2.id && L.find(x => x.id === k1.id).shared, '可把學生移出家庭');

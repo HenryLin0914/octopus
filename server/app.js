@@ -72,7 +72,7 @@ const SETTINGS = {
 const PLANS = [['P01', '單堂', 1, 500, 30], ['P02', '10堂卡', 10, 4500, 90], ['P03', '20堂卡', 20, 8000, 180]];
 const COLORS = ['#D6336C', '#1971C2', '#2B8A3E', '#E67700', '#7048E8', '#0C8599', '#C2255C', '#5C940D'];
 
-const OWNER_ONLY = new Set(['a.studentSave', 'a.enroll', 'a.unbind', 'a.topup', 'a.cardSave', 'a.courseSave', 'a.sessionSave', 'a.sessionDelete', 'a.genSessions',
+const OWNER_ONLY = new Set(['a.studentSave', 'a.enroll', 'a.unbind', 'a.topup', 'a.cardSave', 'a.familyShare', 'a.courseSave', 'a.sessionSave', 'a.sessionDelete', 'a.genSessions',
   'a.videoSave', 'a.videoDelete', 'a.planSave', 'a.settingSave', 'a.adminSave', 'a.export', 'a.student', 'a.videos', 'a.plans', 'a.settings', 'a.admins', 'a.cards', 'a.ledger', 'a.topupSave', 'a.videoInfo', 'a.dayOff', 'a.familySave', 'a.courseDelete', 'a.courseStudents', 'a.signupSave', 'a.rent', 'a.roomSave', 'a.roomDelete', 'a.rentBlockSave', 'a.rentBlockDelete', 'a.rentTagSave', 'a.rentTagDelete', 'a.bookingSave', 'a.rentSlots', 'a.roomCal', 'a.roomHours', 'a.ruleSave', 'a.ruleDelete', 'a.upload', 'a.menu', 'a.menuPageSave', 'a.menuTheme', 'a.resetInfo', 'a.resetData', 'a.audit', 'a.pushCheck', 'a.teacherSave', 'a.teacherDelete', 'a.attCard', 'a.menuPageDelete', 'a.menuPageMove', 'a.replySave', 'a.replyDelete', 'a.menuPublish', 'a.menuUnpublish']);
 const ASYNC = new Set(['a.pushCheck', 'a.resetData', 'a.menuPublish', 'a.menuUnpublish', 'a.videoInfo']);
 /** 從各種 YouTube 網址取出影片 ID（watch、youtu.be、shorts、live、embed） */
@@ -439,6 +439,11 @@ export function createApp(opts = {}) {
 
   /* ---------- 家庭（家人）：共用上課卡、家長一次綁定 ---------- */
   const siblingsOf = sid => { const s = student(sid); return s && s.family ? all("SELECT * FROM students WHERE family=? AND id<>? AND status<>'停用' ORDER BY id", s.family, sid) : []; };
+  /** 家人手上還能用、但這位學生沒有共用到的上課卡 */
+  const famUnshared = sid => { const ids = siblingsOf(sid).map(x => x.id); if (!ids.length) return [];
+    return all(`SELECT DISTINCT c.* FROM cards c JOIN card_students cs ON cs.card_id=c.id WHERE cs.student_id IN (${ids.map(() => '?').join(',')}) AND c.status='啟用' AND c.remain>0 AND (c.expire='' OR c.expire>=?) AND NOT EXISTS(SELECT 1 FROM card_students m WHERE m.card_id=c.id AND m.student_id=?)`, ...ids, today(), sid); };
+  /** 全家人之中，還沒有讓每個人都共用到的卡數 */
+  const famGap = sid => new Set([sid, ...siblingsOf(sid).map(x => x.id)].flatMap(id => famUnshared(id).map(c => c.id))).size;
   /** 把幾位學生併成同一個家庭（沿用已有的家庭編號） */
   function linkFamily(ids) {
     ids = [...new Set(ids)].filter(student);
@@ -567,6 +572,7 @@ export function createApp(opts = {}) {
     'a.studentSave': ['學生', b => { const o = b.id ? student(b.id) : null; return r => o ? `修改學生：${o.name}${o.name !== str(b.name, 40) && b.name ? ' → ' + str(b.name, 40) : ''}${b.status && b.status !== o.status ? `｜狀態 ${o.status} → ${b.status}` : ''}${b.regenCode ? '｜重新產生綁定碼' : ''}` : `新增學生：${str(b.name, 40)}（${(r && r.id) || ''}）`; }],
     'a.studentImport': ['學生', () => r => `批次匯入學生：${(r && (r.added ?? r.count ?? (r.list || []).length)) || ''} 位`],
     'a.enroll': ['學生', b => `設定學生的課程：${A_sn(b.studentId)}｜${(b.courseIds || []).map(A_cn).join('、') || '（全部移出）'}`],
+    'a.familyShare': ['帳務', b => `上課卡設為全家共用：${A_sn(b.studentId)}`],
     'a.familySave': ['學生', b => `設定家人：${A_sn(b.studentId)}｜${A_names(b.memberIds) || '（移出家庭）'}`],
     'a.unbind': ['學生', b => { const k = get('SELECT line_name n FROM bindings WHERE user_id=? AND student_id=?', b.userId, b.studentId) || {}; return `解除家長綁定：${A_sn(b.studentId)}｜${k.n || '家長'}`; }],
     bind: ['學生', b => r => `家長綁定學生：${[r.name, ...(r.also || []).map(x => x.name || x)].filter(Boolean).join('、')}${b.relation ? '（' + str(b.relation, 10) + '）' : ''}${r.already ? '（原本就綁定了）' : ''}`],
@@ -1052,6 +1058,7 @@ export function createApp(opts = {}) {
       return all('SELECT * FROM students ORDER BY status, id').map(s => ({ id: s.id, name: s.name, birthday: s.birthday, phone: s.phone, code: s.bind_code, status: s.status, note: s.note, remain: totalRemain(s.id), least: tightest(s.id).remain,
         bound: get('SELECT COUNT(*) n FROM bindings WHERE student_id=?', s.id).n, courses: all('SELECT course_id FROM enrollments WHERE student_id=?', s.id).map(r => r.course_id),
         family: siblingsOf(s.id).map(r => r.id), parents: all('SELECT line_name n, relation r FROM bindings WHERE student_id=?', s.id).map(r => (r.n || '家長') + (r.r ? '（' + r.r + '）' : '')),
+        famUnshared: famUnshared(s.id).reduce((n, c) => n + c.remain, 0),
         shared: !!get("SELECT 1 x FROM card_students a JOIN card_students o ON o.card_id=a.card_id AND o.student_id<>a.student_id JOIN cards c ON c.id=a.card_id WHERE a.student_id=? AND c.status='啟用' AND c.remain>0", s.id) }));
     },
     /** 出席總表：某月（可再依課程、學生篩選）的明細、統計與每位學生出席率 */
@@ -1080,6 +1087,7 @@ export function createApp(opts = {}) {
         courses: all('SELECT course_id FROM enrollments WHERE student_id=?', s.id).map(r => r.course_id),
         parents: all('SELECT user_id userId,line_name name,relation,created_at at FROM bindings WHERE student_id=?', s.id).map(p => ({ ...p, kids: all('SELECT st.name FROM bindings b JOIN students st ON st.id=b.student_id WHERE b.user_id=? AND b.student_id<>?', p.userId, s.id).map(r => r.name) })),
         cards: all('SELECT c.* FROM cards c JOIN card_students cs ON cs.card_id=c.id WHERE cs.student_id=? ORDER BY c.bought DESC, c.id DESC', s.id).map(c => ({ ...c, scope: scopeText(c.courses), students: all('SELECT s.id,s.name FROM card_students cs JOIN students s ON s.id=cs.student_id WHERE cs.card_id=?', c.id), usage: cardUsage(c.id) })),
+        famGap: famGap(s.id),
         family: siblingsOf(s.id).map(x => ({ id: x.id, name: x.name, remain: totalRemain(x.id), bound: get('SELECT COUNT(*) n FROM bindings WHERE student_id=?', x.id).n })),
         topups: all('SELECT * FROM topups WHERE student_id=? ORDER BY time DESC LIMIT 20', s.id),
         attendance: all("SELECT a.status,a.deduct,a.method,a.time,s.date,s.start,COALESCE(c.name,s.course_id) course FROM attendance a JOIN sessions s ON s.id=a.session_id LEFT JOIN courses c ON c.id=s.course_id WHERE a.student_id=? AND a.status<>'取消' ORDER BY s.date DESC, s.start DESC LIMIT 30", s.id) };
@@ -1111,6 +1119,16 @@ export function createApp(opts = {}) {
       run('DELETE FROM enrollments WHERE student_id=?', b.studentId);
       ids.forEach(id => run('INSERT INTO enrollments VALUES(?,?,?)', b.studentId, id, today()));
       return { courses: ids };
+    },
+    /** 一鍵把全家人手上還能用的上課卡，設成每位家人都共用 */
+    'a.familyShare'(b) {
+      const me = student(b.studentId);
+      if (!me) throw new Error('找不到學生');
+      const ids = [me.id, ...siblingsOf(me.id).map(x => x.id)];
+      if (ids.length < 2) throw new Error('還沒有設定家人');
+      const cards = new Set(ids.flatMap(id => famUnshared(id).map(c => c.id)));
+      cards.forEach(cid => ids.forEach(id => run('INSERT OR IGNORE INTO card_students VALUES(?,?)', cid, id)));
+      return { cards: cards.size };
     },
     /** 設定家人：memberIds 為同一家庭的其他學生（空陣列＝移出家庭） */
     'a.familySave'(b) {
