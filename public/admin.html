@@ -495,6 +495,7 @@ const PAGES = {
     const d = await api('a.menu'); A.menu = d;
     const act = c => c.type === 'fn' ? '開啟系統功能：' + ((d.fns.find(f => f[0] === c.value) || [])[1] || c.value) : c.type === 'url' ? '開啟連結：' + c.value : c.type === 'text' ? '傳送文字「' + c.value + '」' : c.type === 'reply' ? '機器人回覆：' + ((d.replies.find(r => r.id === c.value) || {}).name || '（已刪除）') : '不設定';
     return `<div class="head"><h1>圖文選單</h1><span class="sp"></span><a class="btn" href="#settings" style="text-decoration:none;color:inherit">‹ 回設定</a><button class="btn p" data-mn="publish">發布到 LINE</button></div>
+      <div class="card" style="margin-bottom:12px"><div class="s">目前連接的官方帳號</div><div class="t" style="font-size:17px;margin-top:2px">${d.bot.name || d.bot.id ? esc(d.bot.name || '') + ' <span class="s">' + esc(d.bot.id || '') + '</span>' : '（讀不到，請確認伺服器的 LINE 金鑰）'}</div><div class="s" style="margin-top:4px">選單會發布到這個帳號。要換帳號，需在主機執行 set-line.sh 換成該帳號的金鑰。</div></div>
       <div class="note">${d.publishedAt ? '目前 LINE 上顯示的是 <b>' + esc(d.publishedAt.slice(5, 16)) + '</b> 發布的版本。這裡改完要按「發布到 LINE」才會更新。' : '還沒有發布。這裡設定好之後按「發布到 LINE」，聊天室下方的選單才會換成這一套。'}${d.ready ? '' : '<br>⚠ 伺服器還沒設定 LINE 金鑰，無法發布。'}</div>
       <div class="card" style="margin-bottom:12px"><h2>選單風格</h2><div class="s">沒有上傳圖片的頁面由系統繪製，所有頁面同一種風格。選一個配色：</div>
         <div class="acts" style="margin-top:8px">${Object.entries(RM_THEMES).map(([k, t]) => `<button class="btn sm ${d.theme === k ? 'p' : ''}" data-mn="theme" data-id="${k}"><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${t[4]};border:2px solid ${t[1]};vertical-align:-1px;margin-right:5px"></span>${t[0]}</button>`).join('')}</div></div>
@@ -926,7 +927,7 @@ async function menuAct(act, id, el) {
     if (!d.pages.length) return toast('請先新增至少一頁', true);
     if (!d.ready) return toast('伺服器還沒設定 LINE 金鑰，無法發布', true);
     const noImg = d.pages.filter(p => !p.image).map(p => p.name);
-    if (!confirm(`確定把這 ${d.pages.length} 頁選單發布到 LINE？\n所有好友的聊天室選單會立刻換成這一套。` + '')) return;
+    if (!confirm(`確定把這 ${d.pages.length} 頁選單發布到「${d.bot.name || d.bot.id || 'LINE'}」？\n所有好友的聊天室選單會立刻換成這一套。` + '')) return;
     el.disabled = true;
     try { const images = {};
       for (let n = 0; n < d.pages.length; n++) { toast(`準備第 ${n + 1}／${d.pages.length} 頁…`); images[d.pages[n].id] = (await uploadData(toJpeg(await composePage(d.pages[n], n, d.pages.length), 950000))).path; }

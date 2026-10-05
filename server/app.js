@@ -289,7 +289,8 @@ export function createApp(opts = {}) {
   async function loadBotInfo() {
     if (!env.LINE_CHANNEL_ACCESS_TOKEN) return;
     try { const r = await lineFetch('https://api.line.me/v2/bot/info', { headers: authHdr() }); const d = r.ok ? await r.json() : {};
-      if (d.basicId) run("INSERT INTO meta VALUES('bot_basic_id',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", d.basicId); } catch (e) { console.error('bot info', e.message); }
+      if (d.basicId) run("INSERT INTO meta VALUES('bot_basic_id',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", d.basicId);
+      if (d.displayName) run("INSERT INTO meta VALUES('bot_name',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", d.displayName); } catch (e) { console.error('bot info', e.message); }
   }
 
   function notifyLeave(info, sid, reason, byName) {
@@ -1236,7 +1237,7 @@ export function createApp(opts = {}) {
     },
     'a.menu'() {
       const pub = k => (get('SELECT value FROM meta WHERE key=?', k) || {}).value || '';
-      return { pages: menuPages(), replies: replyList(), geo: MENU_GEO, fns: MENU_FNS, look: MENU_LOOK, theme: pub('menu_theme') || 'pink', publishedAt: pub('menu_published_at'), ready: !!(env.LINE_CHANNEL_ACCESS_TOKEN && env.LIFF_ID) };
+      return { pages: menuPages(), replies: replyList(), geo: MENU_GEO, fns: MENU_FNS, look: MENU_LOOK, theme: pub('menu_theme') || 'pink', bot: { name: pub('bot_name'), id: pub('bot_basic_id') }, publishedAt: pub('menu_published_at'), ready: !!(env.LINE_CHANNEL_ACCESS_TOKEN && env.LIFF_ID) };
     },
     'a.menuTheme'(b) {
       if (!MENU_THEMES.includes(b.theme)) throw new Error('沒有這個配色');
