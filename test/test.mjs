@@ -490,6 +490,25 @@ let bad = ''; try { pushes.forEach(p => p.body && p.body.messages && p.body.mess
   await call('boss', 'a.roomSave', { id: rm.id, name: rm.name, capacity: rm.capacity, price: rm.price, unit: rm.unit, intro: rm.intro, status: rm.status });
   await call('boss', 'a.courseDelete', { id: cid });
 }
+{ // 操作紀錄
+  const sid = (await call('boss', 'a.studentSave', { name: '紀錄生' })).data.id, pl = (await call('boss', 'a.plans')).data[0];
+  await call('boss', 'a.topup', { studentId: sid, planId: pl.id, lessons: 3, price: 900, pay: '轉帳' });
+  const day = (await call('boss', 'a.meta')).data.today, ses = (await call('boss', 'a.week', { start: day, days: 7 })).data.sessions.find(x => x.status === '正常').sessionId;
+  await call('boss', 'a.mark', { sessionId: ses, studentId: sid, status: '出席' });
+  const kid = (await call('boss', 'a.student', { id: sid })).data.cards[0];
+  await call('boss', 'a.cardSave', { id: kid.id, remain: 9, expire: '' });
+  const tp = (await call('boss', 'a.ledger', {})).data.rows.find(x => x.card_id === kid.id);
+  await call('boss', 'a.topupSave', { id: tp.id, void: true });
+  await call('boss', 'a.mark', { sessionId: 'nope', studentId: sid, status: '出席' }); // 失敗的操作不留紀錄
+  const au = (await call('boss', 'a.audit', { kw: '紀錄生' })).data, txt = au.rows.map(x => x.summary).join('\n');
+  ok(/新增學生：紀錄生/.test(txt) && /儲值：紀錄生｜.*3 堂｜實收 900 元（轉帳）｜儲值後剩 3 堂/.test(txt) && /紀錄生 → 出席，扣 1 堂/.test(txt), '操作紀錄記下新增學生、儲值金額與扣堂');
+  ok(/調整上課卡：紀錄生｜.*堂數 2 → 9/.test(txt) && /作廢儲值：紀錄生｜.*原金額 900 元/.test(txt) && au.rows.every(x => x.name && x.role === '管理員' && x.time) && au.rows.length === 5, '記下調整前後的堂數與作廢內容，失敗的操作不記錄');
+  ok(/僅限管理員/.test((await call('teacher', 'a.audit', {})).error) && (await call('boss', 'a.audit', { cat: '帳務', kw: '紀錄生' })).data.rows.length === 3 && (await call('boss', 'a.audit', { from: '2000-01-01', to: '2000-01-02' })).data.rows.length === 0 && !(await call('boss', 'a.audit', {})).data.rows.some(x => /a\.(meta|week|audit|roster)/.test(x.summary)), '只有管理員能查，可依分類與日期篩選，查詢動作不記錄');
+  const before = (await call('boss', 'a.audit', { cat: '出席' })).data.rows.length;
+  await call('mom', 'leave', { studentId: (await call('mom', 'init')).data.students[0].id, sessionId: 'nope' });
+  ok((await call('boss', 'a.audit', { cat: '出席' })).data.rows.length === before && (await call('boss', 'a.audit', {})).data.rows.some(x => x.role === '家長／客人'), '家長的操作也有紀錄');
+  await call('boss', 'a.studentSave', { id: sid, name: '紀錄生', status: '停用' });
+}
 { // 上線前清除測試資料
   const before = (await call('boss', 'a.resetInfo')).data, stu = (await call('boss', 'a.students')).data.length;
   ok(before.groups.find(g => g.key === 'money').count > 0 && /僅限管理員/.test((await call('teacher', 'a.resetData', { groups: ['money'], confirm: '清除' })).error) && !(await call('boss', 'a.resetData', { groups: ['money'], confirm: 'x' })).ok, '清除資料需管理員且要輸入確認字');

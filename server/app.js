@@ -73,7 +73,7 @@ const PLANS = [['P01', '單堂', 1, 500, 30], ['P02', '10堂卡', 10, 4500, 90],
 const COLORS = ['#D6336C', '#1971C2', '#2B8A3E', '#E67700', '#7048E8', '#0C8599', '#C2255C', '#5C940D'];
 
 const OWNER_ONLY = new Set(['a.studentSave', 'a.enroll', 'a.unbind', 'a.topup', 'a.cardSave', 'a.courseSave', 'a.sessionSave', 'a.sessionDelete', 'a.genSessions',
-  'a.videoSave', 'a.videoDelete', 'a.planSave', 'a.settingSave', 'a.adminSave', 'a.export', 'a.student', 'a.videos', 'a.plans', 'a.settings', 'a.admins', 'a.cards', 'a.ledger', 'a.topupSave', 'a.videoInfo', 'a.dayOff', 'a.familySave', 'a.courseDelete', 'a.courseStudents', 'a.signupSave', 'a.rent', 'a.roomSave', 'a.roomDelete', 'a.rentBlockSave', 'a.rentBlockDelete', 'a.rentTagSave', 'a.rentTagDelete', 'a.bookingSave', 'a.rentSlots', 'a.roomCal', 'a.roomHours', 'a.ruleSave', 'a.ruleDelete', 'a.upload', 'a.menu', 'a.menuPageSave', 'a.menuTheme', 'a.resetInfo', 'a.resetData', 'a.teacherSave', 'a.teacherDelete', 'a.attCard', 'a.menuPageDelete', 'a.menuPageMove', 'a.replySave', 'a.replyDelete', 'a.menuPublish', 'a.menuUnpublish']);
+  'a.videoSave', 'a.videoDelete', 'a.planSave', 'a.settingSave', 'a.adminSave', 'a.export', 'a.student', 'a.videos', 'a.plans', 'a.settings', 'a.admins', 'a.cards', 'a.ledger', 'a.topupSave', 'a.videoInfo', 'a.dayOff', 'a.familySave', 'a.courseDelete', 'a.courseStudents', 'a.signupSave', 'a.rent', 'a.roomSave', 'a.roomDelete', 'a.rentBlockSave', 'a.rentBlockDelete', 'a.rentTagSave', 'a.rentTagDelete', 'a.bookingSave', 'a.rentSlots', 'a.roomCal', 'a.roomHours', 'a.ruleSave', 'a.ruleDelete', 'a.upload', 'a.menu', 'a.menuPageSave', 'a.menuTheme', 'a.resetInfo', 'a.resetData', 'a.audit', 'a.teacherSave', 'a.teacherDelete', 'a.attCard', 'a.menuPageDelete', 'a.menuPageMove', 'a.replySave', 'a.replyDelete', 'a.menuPublish', 'a.menuUnpublish']);
 const ASYNC = new Set(['a.resetData', 'a.menuPublish', 'a.menuUnpublish', 'a.videoInfo']);
 /** 從各種 YouTube 網址取出影片 ID（watch、youtu.be、shorts、live、embed） */
 export const ytId = url => { const m = String(url || '').match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^#]*&)?v=|shorts\/|live\/|embed\/|v\/))([\w-]{11})(?![\w-])/); return m ? m[1] : ''; };
@@ -108,6 +108,8 @@ export function createApp(opts = {}) {
   const all = (sql, ...a) => db.prepare(sql).all(...a);
   const get = (sql, ...a) => db.prepare(sql).get(...a);
   const run = (sql, ...a) => db.prepare(sql).run(...a);
+  /* 操作紀錄：誰在什麼時候做了什麼（只增不改，後台不能刪除） */
+  db.exec("CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY AUTOINCREMENT, time TEXT, user_id TEXT, name TEXT, role TEXT, action TEXT, cat TEXT, summary TEXT, detail TEXT DEFAULT ''); CREATE INDEX IF NOT EXISTS ix_audit_time ON audit(time);");
   /* 老師名單：課程與課表上的老師都從這份名單選，統一管理 */
   db.exec("CREATE TABLE IF NOT EXISTS teachers(id TEXT PRIMARY KEY, name TEXT UNIQUE, color TEXT, status TEXT DEFAULT '啟用', sort INTEGER DEFAULT 0)");
   { const tc = db.prepare('PRAGMA table_info(teachers)').all().map(c => c.name); // 老師的個人資料：照片、專長、介紹、作品
@@ -504,6 +506,82 @@ export function createApp(opts = {}) {
       if (hit) run('UPDATE rm_pages SET cells=? WHERE id=?', JSON.stringify(cells), p.id); }
     run("INSERT OR IGNORE INTO meta VALUES('menu_label_book','1')");
   }
+
+  /* ---------- 操作紀錄的文字 ----------
+     每個會改動資料的動作：[分類, 說明]。說明在動作「執行前」先算好（這樣被刪掉的資料還查得到名字），
+     回傳函式的話，會在執行成功後帶入結果再產生文字。沒列在這裡的動作（單純查詢）不記錄。 */
+  const A_sn = id => (get('SELECT name FROM students WHERE id=?', id) || {}).name || id || '';
+  const A_cn = id => (get('SELECT name FROM courses WHERE id=?', id) || {}).name || id || '';
+  const A_sl = id => { const x = id && sessRow(id); return x ? x.date.slice(5).replace('-', '/') + ' ' + x.start + ' ' + A_cn(x.course_id) : (id || ''); };
+  const A_card = id => { const c = id && get('SELECT * FROM cards WHERE id=?', id); return c ? cardLabel(c) : ''; };
+  const A_names = ids => (ids || []).map(A_sn).join('、');
+  const A_rm = id => (get('SELECT name FROM rooms WHERE id=?', id) || {}).name || '';
+  const A_bk = id => { const k = id && get('SELECT * FROM bookings WHERE id=?', id); return k ? `${A_rm(k.room_id)} ${k.date.slice(5).replace('-', '/')} ${k.start}–${k.end}（${k.name}）` : ''; };
+  const AUDIT = {
+    // 出席與扣堂
+    'a.mark': ['出席', b => r => `${A_sl(b.sessionId)}｜${A_sn(b.studentId)} → ${b.status === '取消' ? '取消點名' : b.status}${r.deduct ? `，扣 ${r.deduct} 堂（${A_card(r.cardId)}）` : ''}${r.note ? '，' + r.note : ''}${r.dup ? '（重複，未變更）' : ''}`],
+    'a.markAll': ['出席', b => { let names = ''; try { names = API['a.roster']({ sessionId: b.sessionId }).list.filter(x => !x.status).map(x => x.name).join('、'); } catch { /* 找不到場次時由動作本身報錯 */ } return r => `${A_sl(b.sessionId)}｜全部出席，${r.marked} 人${names ? '：' + names : ''}`; }],
+    'a.markMany': ['出席', b => r => `${A_sl(b.sessionId)}｜加入報到：${A_names(b.studentIds)}${r.noCard ? `（${r.noCard} 人沒有可扣的卡）` : ''}${r.added ? `，${r.added} 人加入固定名單` : ''}`],
+    'a.attCard': ['出席', b => { const old = (activeRecord(b.sessionId, b.studentId) || {}).card_id; return () => `${A_sl(b.sessionId)}｜${A_sn(b.studentId)} 改扣卡：${A_card(old) || '（無）'} → ${A_card(b.cardId)}`; }],
+    'a.close': ['出席', b => { const x = sessRow(b.sessionId), names = x ? all("SELECT s.id,s.name FROM enrollments e JOIN students s ON s.id=e.student_id WHERE e.course_id=? AND s.status='在學'", x.course_id).filter(k => !activeRecord(b.sessionId, k.id)).map(k => k.name).join('、') : ''; return r => `${A_sl(b.sessionId)}｜結算，${r.absent} 人記為缺席${names ? '：' + names : ''}${r.absent && cfgOn('缺席扣堂') ? '（依設定扣堂）' : ''}`; }],
+    checkin: ['出席', b => r => `${A_sl(b.sessionId)}｜${A_sn(b.studentId)} 線上報到${r.dup ? '（已報到過）' : r.deduct ? `，扣 ${r.deduct} 堂（${A_card(r.cardId)}）` : '，未扣堂'}`],
+    leave: ['出席', b => `${A_sl(b.sessionId)}｜${A_sn(b.studentId)} 線上請假${b.reason ? '：' + str(b.reason, 60) : ''}`],
+    'a.makeupSave': ['出席', b => `安排補課：${A_sn(b.studentId)} → ${A_sl(b.sessionId)}${b.fromSessionId ? '（原 ' + A_sl(b.fromSessionId) + '）' : ''}`],
+    'a.makeupDelete': ['出席', b => `取消補課：${A_sn(b.studentId)}｜${A_sl(b.sessionId)}`],
+    // 帳務
+    'a.topup': ['帳務', b => { const p = get('SELECT * FROM plans WHERE id=?', b.planId) || {}; return r => `儲值：${A_sn(b.studentId)}｜${p.name || ''} ${Number(b.lessons) > 0 ? Math.floor(Number(b.lessons)) : p.lessons} 堂｜實收 ${b.price !== undefined && b.price !== '' ? Math.floor(Number(b.price)) || 0 : p.price} 元（${str(b.pay, 20) || '現金'}）${(b.shareIds || []).length ? '｜共用：' + A_names(b.shareIds) : ''}｜儲值後剩 ${r.remain} 堂`; }],
+    'a.topupSave': ['帳務', b => { const t = get('SELECT * FROM topups WHERE id=?', b.id) || {}; const who = `${A_sn(t.student_id)}｜${t.plan_name || ''} ${t.lessons || ''} 堂｜${(t.time || '').slice(0, 16)}`;
+      return b.void ? `作廢儲值：${who}｜原金額 ${t.amount} 元，上課卡已停用` : `更正儲值：${who}｜金額 ${t.amount} → ${Math.floor(Number(b.amount))} 元，付款 ${t.pay} → ${str(b.pay, 20) || t.pay}`; }],
+    'a.cardSave': ['帳務', b => { const c = get('SELECT * FROM cards WHERE id=?', b.id) || {}, who = all('SELECT s.name FROM card_students cs JOIN students s ON s.id=cs.student_id WHERE cs.card_id=?', b.id).map(r => r.name).join('、');
+      return () => { const n = get('SELECT * FROM cards WHERE id=?', b.id) || {}, ch = [c.remain !== n.remain && `堂數 ${c.remain} → ${n.remain}`, (c.expire || '') !== (n.expire || '') && `到期 ${c.expire || '無期限'} → ${n.expire || '無期限'}`, c.status !== n.status && `狀態 ${c.status} → ${n.status}`, (c.courses || '') !== (n.courses || '') && `適用 ${scopeText(c.courses)} → ${scopeText(n.courses)}`,
+        Array.isArray(b.studentIds) && b.studentIds.length && `使用人 ${who} → ${A_names(b.studentIds)}`].filter(Boolean); return `調整上課卡：${who}｜${c.plan_name || ''}｜${ch.join('；') || '沒有變更'}`; }; }],
+    'a.planSave': ['帳務', b => `${b.id ? '修改' : '新增'}方案：${str(b.name, 40)}｜${b.lessons} 堂 ${b.price} 元`],
+    // 學生
+    'a.studentSave': ['學生', b => { const o = b.id ? student(b.id) : null; return r => o ? `修改學生：${o.name}${o.name !== str(b.name, 40) && b.name ? ' → ' + str(b.name, 40) : ''}${b.status && b.status !== o.status ? `｜狀態 ${o.status} → ${b.status}` : ''}${b.regenCode ? '｜重新產生綁定碼' : ''}` : `新增學生：${str(b.name, 40)}（${(r && r.id) || ''}）`; }],
+    'a.studentImport': ['學生', () => r => `批次匯入學生：${(r && (r.added ?? r.count ?? (r.list || []).length)) || ''} 位`],
+    'a.enroll': ['學生', b => `設定學生的課程：${A_sn(b.studentId)}｜${(b.courseIds || []).map(A_cn).join('、') || '（全部移出）'}`],
+    'a.familySave': ['學生', b => `設定兄弟姊妹：${A_sn(b.studentId)}｜${A_names(b.memberIds) || '（移出家庭）'}`],
+    'a.unbind': ['學生', b => { const k = get('SELECT line_name n FROM bindings WHERE user_id=? AND student_id=?', b.userId, b.studentId) || {}; return `解除家長綁定：${A_sn(b.studentId)}｜${k.n || '家長'}`; }],
+    bind: ['學生', b => r => `家長綁定學生：${[r.name, ...(r.also || []).map(x => x.name || x)].filter(Boolean).join('、')}${b.relation ? '（' + str(b.relation, 10) + '）' : ''}${r.already ? '（原本就綁定了）' : ''}`],
+    signup: ['學生', b => r => `線上報名：${A_sn(b.studentId)} → ${A_cn(b.courseId)}（${(r && r.status) || ''}）`],
+    'a.signupSave': ['學生', b => { const g = get('SELECT * FROM signups WHERE id=?', b.id) || {}; return `${b.approve ? '同意' : '婉拒'}報名：${A_sn(g.student_id)} → ${A_cn(g.course_id)}`; }],
+    // 課程與課表
+    'a.courseSave': ['課表', b => { const o = b.id ? get('SELECT * FROM courses WHERE id=?', b.id) : null; return `${o ? '修改' : '新增'}課程：${str(b.name, 60) || (o || {}).name}｜${nt(b.start)}–${nt(b.end)}｜${str(b.teacher, 40) || '未指定老師'}${o && b.status && b.status !== o.status ? `｜狀態 ${o.status} → ${b.status}` : ''}`; }],
+    'a.courseDelete': ['課表', b => `刪除課程：${A_cn(b.id)}`],
+    'a.courseStudents': ['課表', b => { if (!Array.isArray(b.studentIds)) return null; const old = all('SELECT student_id id FROM enrollments WHERE course_id=?', b.courseId).map(r => r.id), add = b.studentIds.filter(x => !old.includes(x)), del = old.filter(x => !b.studentIds.includes(x)); return `修改課程名單：${A_cn(b.courseId)}${add.length ? '｜加入 ' + A_names(add) : ''}${del.length ? '｜移出 ' + A_names(del) : ''}${!add.length && !del.length ? '｜沒有變更' : ''}`; }],
+    'a.sessionSave': ['課表', b => { const o = b.id ? sessRow(b.id) : null, lbl = o ? A_sl(b.id) : `${nd(b.date).slice(5).replace('-', '/')} ${nt(b.start)} ${b.newCourse ? str(b.newCourse.name, 60) : A_cn(b.courseId)}`;
+      return r => ({ 加課: '加課', 停課: '停課', 復課: '恢復上課', 調課: '調課／代課', 備註: '修改備註' }[r.kind] || '修改場次') + `：${lbl}` + (r.kind === '調課' && o ? `｜${o.date.slice(5).replace('-', '/')} ${o.start}–${o.end} → ${nd(b.date).slice(5).replace('-', '/')} ${nt(b.start)}–${nt(b.end)}${str(b.teacher, 40) ? '｜老師 ' + str(b.teacher, 40) : ''}${str(b.room, 40) ? '｜教室 ' + str(b.room, 40) : ''}` : '') + (r.kind === '停課' && b.note ? '｜原因：' + str(b.note, 60) : '') + (r.postponed ? '｜順延至 ' + r.postponed : '') + (r.notified ? `｜已通知 ${r.notified} 位家長` : ''); }],
+    'a.sessionNote': ['課表', b => `老師備註：${A_sl(b.id)}｜${str(b.note, 80) || '（清除）'}`],
+    'a.sessionDelete': ['課表', b => `刪除這堂課：${A_sl(b.id)}`],
+    'a.dayOff': ['課表', b => r => `整天停課：${nd(b.date)}｜${(r && (r.stopped ?? r.count)) ?? ''} 堂${b.postpone ? '（順延）' : ''}${b.reason ? '｜' + str(b.reason, 60) : ''}`],
+    'a.teacherSave': ['課表', b => { const o = b.id ? get('SELECT * FROM teachers WHERE id=?', b.id) : null; return `${o ? '修改' : '新增'}老師：${o && o.name !== str(b.name, 40) ? o.name + ' → ' : ''}${str(b.name, 40)}${o && b.status && b.status !== o.status ? `｜狀態 ${o.status} → ${b.status}` : ''}`; }],
+    'a.teacherDelete': ['課表', b => `刪除老師：${(get('SELECT name FROM teachers WHERE id=?', b.id) || {}).name || ''}`],
+    // 影片
+    'a.videoSave': ['影片', b => `${b.id ? '修改' : '新增'}影片：${str(b.title, 80)}${b.status ? '｜' + b.status : ''}`],
+    'a.videoDelete': ['影片', b => `刪除影片：${(get('SELECT title FROM videos WHERE id=?', b.id) || {}).title || ''}`],
+    // 租借
+    rentBook: ['租借', b => r => `線上預約教室：${A_rm(b.roomId)} ${nd(b.date).slice(5).replace('-', '/')} ${nt(b.start)}–${nt(b.end)}（${str(b.name, 40)}）｜${(r && r.status) || ''}`],
+    rentCancel: ['租借', b => `預約人取消租借：${A_bk(b.id)}`],
+    'a.bookingSave': ['租借', b => { const o = b.id ? get('SELECT * FROM bookings WHERE id=?', b.id) : null; return o ? `修改租借預約：${A_bk(b.id)}${b.status && b.status !== o.status ? `｜狀態 ${o.status} → ${b.status}` : ''}` : `手動預約教室：${A_rm(b.roomId)} ${nd(b.date).slice(5).replace('-', '/')} ${nt(b.start)}–${nt(b.end)}（${str(b.name, 40)}）`; }],
+    'a.roomSave': ['租借', b => `${b.id ? '修改' : '新增'}教室：${str(b.name, 40)}`], 'a.roomDelete': ['租借', b => `刪除教室：${A_rm(b.id)}`],
+    'a.ruleSave': ['租借', b => `${b.id ? '修改' : '新增'}開放規則：${A_rm(b.roomId)}`], 'a.ruleDelete': ['租借', () => '刪除開放規則'],
+    'a.roomHours': ['租借', b => `調整單日開放時段：${A_rm(b.roomId)} ${nd(b.date) || ''}`],
+    'a.rentBlockSave': ['租借', b => `保留時段：${nd(b.date) || ''} ${nt(b.start) || ''}–${nt(b.end) || ''}`], 'a.rentBlockDelete': ['租借', () => '刪除保留時段'],
+    'a.rentTagSave': ['租借', b => `${b.id ? '修改' : '新增'}標籤：${str(b.name, 20)}`], 'a.rentTagDelete': ['租借', () => '刪除標籤'],
+    // 設定
+    'a.settingSave': ['設定', b => { const o = get('SELECT value FROM settings WHERE key=?', b.key) || {}; return `修改設定：${b.key}｜${o.value ?? ''} → ${b.value}`; }],
+    'a.adminSave': ['設定', b => { const o = get('SELECT * FROM admins WHERE user_id=?', b.userId); return `${o ? '修改' : '新增'}後台人員：${str(b.name, 40) || (o || {}).name || ''}｜${b.role === 'owner' ? '管理員' : '老師'}｜${b.active === false || b.active === 0 ? '停用' : '啟用'}`; }],
+    'a.claim': ['設定', () => '用安裝碼取得管理員'], 'a.apply': ['設定', () => '申請開通後台'],
+    'a.export': ['設定', b => `匯出資料：${b.table}`],
+    'a.resetData': ['設定', () => r => `清除測試資料：${(r.groups || []).join('、')}｜共 ${r.removed} 筆｜備份 ${r.backup || '（無）'}`],
+    'a.menuTheme': ['選單', b => `選單配色：${b.theme}`], 'a.menuPageSave': ['選單', b => `${b.id ? '修改' : '新增'}選單頁：${str(b.name, 20)}`], 'a.menuPageDelete': ['選單', () => '刪除選單頁'], 'a.menuPageMove': ['選單', () => '調整選單頁順序'],
+    'a.replySave': ['選單', b => `${b.id ? '修改' : '新增'}回覆內容：${str(b.name, 30)}`], 'a.replyDelete': ['選單', () => '刪除回覆內容'],
+    'a.menuPublish': ['選單', () => r => `發布圖文選單到 LINE：${(r && r.pages) || ''} 頁`], 'a.menuUnpublish': ['選單', () => '停用系統圖文選單']
+  };
+  const auditPre = (b) => { const d = AUDIT[b.action]; if (!d) return null; try { return { cat: d[0], text: d[1](b) }; } catch (e) { return { cat: d[0], text: b.action }; } };
+  const auditPost = (pre, b, user, data) => { if (!pre || pre.text === null) return; let t = pre.text; try { if (typeof t === 'function') t = t(data || {}); } catch (e) { t = b.action; }
+    if (!t) return; const adm = user.admin || adminOf(user.userId);
+    run('INSERT INTO audit(time,user_id,name,role,action,cat,summary) VALUES(?,?,?,?,?,?,?)', now(), user.userId, (adm && adm.name) || user.name || '', b.action.startsWith('a.') ? (adm && adm.role === 'owner' ? '管理員' : '老師') : '家長／客人', b.action, pre.cat, String(t).slice(0, 500)); };
 
   /* ============================== API ============================== */
   const API = {
@@ -1327,6 +1405,17 @@ export function createApp(opts = {}) {
       } catch (e) { db.exec('ROLLBACK'); throw e; }
       return { removed, backup, groups: groups.map(g => g.name) };
     },
+    /** 操作紀錄查詢（只有管理員）：可依日期、分類、操作人、關鍵字篩選 */
+    'a.audit'(b) {
+      const from = nd(b.from) || addDays(today(), -6), to = nd(b.to) || today(), kw = str(b.kw, 40), cat = str(b.cat, 10), who = str(b.who, 60);
+      const cond = ['time>=?', 'time<?'], args = [from, addDays(to, 1)];
+      if (cat) { cond.push('cat=?'); args.push(cat); }
+      if (who) { cond.push('user_id=?'); args.push(who); }
+      if (kw) { cond.push('(summary LIKE ? OR name LIKE ?)'); args.push('%' + kw + '%', '%' + kw + '%'); }
+      const rows = all('SELECT id,time,user_id userId,name,role,cat,summary FROM audit WHERE ' + cond.join(' AND ') + ' ORDER BY id DESC LIMIT 501', ...args);
+      return { from, to, rows: rows.slice(0, 500), more: rows.length > 500, cats: ['出席', '帳務', '學生', '課表', '影片', '租借', '選單', '設定'],
+        people: all('SELECT user_id userId, MAX(name) name, MAX(role) role, COUNT(*) n FROM audit WHERE time>=? GROUP BY user_id ORDER BY n DESC LIMIT 60', addDays(today(), -90)) };
+    },
     'a.teacherSave'(b) {
       const name = str(b.name, 40);
       if (!name) throw new Error('請輸入老師的名字');
@@ -1486,10 +1575,10 @@ export function createApp(opts = {}) {
         if (!user.admin) throw new Error('沒有後台權限');
         if (user.admin.role !== 'owner' && (OWNER_ONLY.has(b.action) || b.action === 'a.studentImport')) throw new Error('此功能僅限管理員');
       }
-      if (ASYNC.has(b.action)) return { ok: true, data: await fn(b, user) };
+      if (ASYNC.has(b.action)) { const pre = auditPre(b), out = await fn(b, user); try { auditPost(pre, b, user, out); } catch { /* 紀錄失敗不影響操作 */ } return { ok: true, data: out }; }
       let data;
       db.exec('BEGIN IMMEDIATE');
-      try { data = gate ? adminGate(b, user) : fn(b, user); db.exec('COMMIT'); }
+      try { const pre = auditPre(b); data = gate ? adminGate(b, user) : fn(b, user); auditPost(pre, b, user, data); db.exec('COMMIT'); }
       catch (e) { db.exec('ROLLBACK'); outbox = []; throw e; }
       flush();
       return { ok: true, data };

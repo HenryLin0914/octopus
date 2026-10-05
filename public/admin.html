@@ -142,6 +142,11 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 .tdl button b{font-size:22px;line-height:1;font-variant-numeric:tabular-nums;flex:none}.tdl button span{flex:1;min-width:0;font-size:14px}.tdl button i{font-style:normal;color:var(--sub);flex:none}
 .tdl button.warn{background:#fff7e6;border-color:#f3dca6}.tdl button.warn b{color:#b35c00}.tdl button.bad{background:#fdecec;border-color:#f1b7b7}.tdl button.bad b{color:var(--bad)}
 .stat b small{font-size:14px;font-weight:600;color:var(--sub)}.stat em{font-style:normal;font-weight:700}.stat em.on,.stat em.up{color:var(--ok)}.stat em.dn{color:var(--bad)}.stat{min-width:0}.stat span{display:block;white-space:normal!important;overflow:visible!important;overflow-wrap:anywhere;flex:1 1 100%;min-width:0}
+.aubar{display:flex;gap:10px;flex-wrap:wrap}.aubar .f{flex:1 1 140px;margin-top:0;min-width:0}
+.auday{font-size:13px;font-weight:700;color:var(--sub);padding:12px 0 4px;border-bottom:1px solid var(--line)}.auday:first-child{padding-top:0}
+.aurow{display:grid;grid-template-columns:46px 130px auto 1fr;gap:10px;align-items:baseline;padding:9px 0;border-bottom:1px solid var(--line);font-size:14px}
+.aurow .tm{font-variant-numeric:tabular-nums;color:var(--sub)}.aurow .who{min-width:0}.aurow .who b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.aurow .who small{color:var(--sub);font-size:12px}.aurow .sm{overflow-wrap:anywhere;min-width:0}
+@media (max-width:860px){.aurow{grid-template-columns:46px 1fr auto;gap:4px 8px}.aurow .sm{grid-column:1/-1}.aurow .who b{display:inline}.aurow .who small{margin-left:6px}}
 .tleg{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 12px}.tleg .lb{font-size:13px;color:var(--sub);margin-right:2px}
 .tleg button{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:#fff;border-radius:999px;padding:5px 11px;font:inherit;font-size:13px;font-weight:600;color:var(--ink)}
 .tleg button i{width:10px;height:10px;border-radius:50%;flex:none}.tleg button em{font-style:normal;font-weight:400;color:var(--sub)}
@@ -557,6 +562,25 @@ const PAGES = {
       <p class="s">外部的人加入官方帳號後，點圖文選單「教室租借」或傳「租借」就能預約。點預約可修改時間、貼標籤、寫備註。</p>`;
   },
 
+  async audit() {
+    const F = A.au || (A.au = { from: '', to: '', cat: '', who: '', kw: '' });
+    const d = await api('a.audit', F); F.from = d.from; F.to = d.to; A.auRows = d.rows;
+    const CC = { 出席: 'ok', 帳務: 'warn', 學生: 'info', 課表: '', 影片: '', 租借: '', 選單: '', 設定: 'bad' };
+    const quick = [['今天', 0], ['近 7 天', 6], ['近 30 天', 29], ['近 90 天', 89]];
+    let lastDay = '';
+    return `<div class="head"><h1>操作紀錄</h1><span class="sp"></span><a class="btn" href="#settings" style="text-decoration:none;color:inherit">‹ 回設定</a><button class="btn" data-aucsv>匯出 CSV</button></div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="aubar"><label class="f">從<input type="date" id="au-from" value="${d.from}"></label><label class="f">到<input type="date" id="au-to" value="${d.to}"></label>
+          <label class="f">操作人<select id="au-who"><option value="">全部</option>${d.people.map(p => `<option value="${esc(p.userId)}" ${F.who === p.userId ? 'selected' : ''}>${esc(p.name || '（未命名）')}（${esc(p.role)}）</option>`).join('')}</select></label>
+          <label class="f" style="flex:2 1 200px">關鍵字<input id="au-kw" value="${esc(F.kw)}" placeholder="學生姓名、課程、金額…（按 Enter 搜尋）"></label></div>
+        <div class="acts" style="margin-top:10px">${quick.map(q => `<button class="btn sm ${d.to === A.meta.today && d.from === dAdd(A.meta.today, -q[1]) ? 'p' : ''}" data-auq="${q[1]}">${q[0]}</button>`).join('')}<span style="width:8px"></span>
+          <button class="btn sm ${F.cat ? '' : 'p'}" data-aucat="">全部類別</button>${d.cats.map(c => `<button class="btn sm ${F.cat === c ? 'p' : ''}" data-aucat="${c}">${c}</button>`).join('')}</div></div>
+      <div class="card">${d.rows.length ? d.rows.map(r => { const day = r.time.slice(0, 10), hd = day !== lastDay ? `<div class="auday">${dLabel(day)}</div>` : ''; lastDay = day;
+        return `${hd}<div class="aurow"><span class="tm">${esc(r.time.slice(11, 16))}</span><span class="who"><b>${esc(r.name || '（未命名）')}</b><small>${esc(r.role)}</small></span><span class="tag ${CC[r.cat] || ''}">${esc(r.cat)}</span><span class="sm">${esc(r.summary)}</span></div>`; }).join('') : '<div class="empty">這段期間沒有符合的紀錄</div>'}
+        ${d.more ? '<p class="s">只顯示最新的 500 筆，請縮小日期範圍或加上關鍵字。</p>' : ''}</div>
+      <p class="s">會改動資料的操作都會自動記錄：點名與扣堂、儲值與更正作廢、調整上課卡、學生與課程的新增修改刪除、停課調課、租借、設定變更，以及家長在 LINE 上的報到、請假、綁定、報名。紀錄不能修改或刪除，「清除測試資料」也不會清掉。</p>`;
+  },
+
   async menu() {
     const d = await api('a.menu'); A.menu = d;
     const act = c => c.type === 'fn' ? '開啟系統功能：' + ((d.fns.find(f => f[0] === c.value) || [])[1] || c.value) : c.type === 'url' ? '開啟連結：' + c.value : c.type === 'text' ? '傳送文字「' + c.value + '」' : c.type === 'reply' ? '機器人回覆：' + ((d.replies.find(r => r.id === c.value) || {}).name || '（已刪除）') : '不設定';
@@ -603,6 +627,7 @@ const PAGES = {
           <input id="invurl" readonly value="${esc(location.origin + '/admin.html')}" onclick="this.select()" style="font-size:13px;margin-bottom:8px">
           <div class="acts"><button class="btn sm p" data-copy="msg">複製邀請訊息</button><button class="btn sm" data-copy="url">只複製網址</button></div></div>
         <p class="s" style="margin-bottom:0">老師只能看課表、點名與出席；儲值、帳務、影片與設定只有管理員能用。</p></div>
+      ${A.meta.role === 'owner' ? `<div class="card"><h2>操作紀錄</h2><p class="s" style="margin-top:0">查看每個人在平台上做過什麼：點名扣堂、儲值、調整上課卡、刪除資料、設定變更等。扣錯堂或誤刪資料時可以回頭查。</p><a class="btn p" href="#audit" style="text-decoration:none;display:inline-block">查看操作紀錄</a></div>` : ''}
       <div class="card"><h2>LINE 圖文選單與自動回覆</h2><p class="s" style="margin-top:0">聊天室下方的選單：可以有多頁（上一頁／下一頁）、自訂每一格按下去要開連結、開系統功能，或回覆文字、圖片、檔案。</p><a class="btn p" href="#menu" style="display:inline-block;text-decoration:none">管理圖文選單</a></div>
       <div class="card"><h2>匯出資料（CSV，可用 Excel 開啟）</h2><div class="acts">${[['students', '學生'], ['attendance', '出席紀錄'], ['topups', '儲值紀錄'], ['cards', '上課卡'], ['sessions', '課表'], ['leaves', '請假']].map(x => `<button class="btn sm" data-export="${x[0]}">${x[1]}</button>`).join('')}</div>
         <p class="s" style="margin-bottom:0">資料庫每天自動備份，保留最近 14 天。</p></div>
@@ -860,7 +885,7 @@ async function openStudent(id) {
   const d = await api('a.student', { id }), s = d.info;
   const html = () => `<div class="row"><div class="g"><div class="s">${esc(s.id)}${s.birthday ? '｜' + esc(s.birthday) : ''}${s.phone ? '｜' + esc(s.phone) : ''} ${tag(s.status)}</div>
       <div style="margin-top:4px">綁定碼 <b style="font-size:20px;letter-spacing:3px">${esc(s.code)}</b></div></div><div style="text-align:right"><b style="font-size:30px;line-height:1">${d.remain}</b><div class="s">剩餘堂數</div></div></div>
-    <div class="acts" style="margin:12px 0"><button class="btn p" data-a="topup">儲值</button><button class="btn" data-a="edit">編輯資料與排課</button><button class="btn" data-a="family">兄弟姊妹</button></div>
+    <div class="acts" style="margin:12px 0"><button class="btn p" data-a="topup">儲值</button><button class="btn" data-a="edit">編輯資料與排課</button><button class="btn" data-a="family">兄弟姊妹</button><button class="btn ghost" data-a="log">操作紀錄</button></div>
     ${d.family.length ? `<div class="fbox"><div class="s">👪 同一家庭｜家長輸入任一位的綁定碼，會一起綁定</div>${d.family.map(f => `<div class="row"><div class="g"><span class="t">${esc(f.name)}</span> <span class="s">${esc(f.id)}｜${f.bound ? '已綁 ' + f.bound : '未綁定'}</span></div><span class="tag ${f.remain <= 0 ? 'bad' : 'ok'}">剩 ${f.remain}</span><button class="btn sm" data-sib="${esc(f.id)}">查看</button></div>`).join('')}</div>` : ''}
     <h4 style="margin:16px 0 4px">上課卡</h4>${d.cards.length ? d.cards.map(c => `<div class="row"><div class="g"><div class="t">${esc(c.plan_name)} ${tag(c.status)}</div><div class="s">購買 ${esc(c.bought)}${c.expire ? '｜到期 ' + esc(c.expire) : ''}</div><div class="s">適用：${esc(c.scope)}</div>${c.students.length > 1 ? `<div class="s"><span class="tag info">共用</span> ${esc(c.students.map(x => x.name).join('、'))}${c.usage.length ? '｜已用：' + c.usage.map(u => esc(u.name) + ' ' + u.n).join('、') : ''}</div>` : ''}</div><b>${c.remain}／${c.total}</b><button class="btn sm" data-card="${esc(c.id)}">調整</button></div>`).join('') : '<div class="s">尚無上課卡</div>'}
     <h4 style="margin:16px 0 4px">已綁定的家長</h4>${d.parents.length ? d.parents.map(p => `<div class="row"><div class="g"><div class="t">${esc(p.name || '（未命名）')} <span class="s">${esc(p.relation || '')}</span></div><div class="s">${esc((p.at || '').slice(0, 10))}${p.kids.length ? '｜也綁定了 ' + esc(p.kids.join('、')) : ''}</div></div><button class="btn sm ghost" style="color:var(--bad)" data-unbind="${esc(p.userId)}">解除</button></div>`).join('') : '<div class="s">尚未有家長綁定</div>'}
@@ -870,6 +895,7 @@ async function openStudent(id) {
     const b = e.target.closest('button'); if (!b) return;
     try {
       if (b.dataset.a === 'topup') { m.remove(); topup(id); }
+      if (b.dataset.a === 'log') { A.au = { from: dAdd(A.meta.today, -89), to: A.meta.today, cat: '', who: '', kw: s.name }; m.remove(); location.hash = '#audit'; }
       if (b.dataset.sib) { m.remove(); openStudent(b.dataset.sib); }
       if (b.dataset.a === 'family') { m.remove();
         formDialog('兄弟姊妹｜' + s.name, [{ k: 'memberIds', label: '和 ' + s.name + ' 同一家庭的學生', type: 'checks', opts: A.students.filter(x => x.id !== id && x.status !== '停用').map(x => [x.id, x.name]) }, { k: 'sync', label: '家長綁定', type: 'select', opts: [['1', '已綁定其中一位的家長，其他人也一起綁定'], ['', '不動家長綁定']] }],
@@ -1249,8 +1275,8 @@ function editVideo(id) {
 async function show(page) {
   if (page) A.page = page;
   if (A.page === 'leaves') { A.page = 'attend'; A.att.tab = 'leave'; }
-  if (!PAGES[A.page] || (((NAV.find(n => n[0] === A.page) || [])[2] || A.page === 'menu') && !owner())) A.page = 'home';
-  $$('#side a').forEach(a => a.classList.toggle('on', a.dataset.p === (A.page === 'menu' ? 'settings' : A.page)));
+  if (!PAGES[A.page] || (((NAV.find(n => n[0] === A.page) || [])[2] || A.page === 'menu' || A.page === 'audit') && !owner())) A.page = 'home';
+  $$('#side a').forEach(a => a.classList.toggle('on', a.dataset.p === (A.page === 'menu' || A.page === 'audit' ? 'settings' : A.page)));
   try { $('#app').innerHTML = await PAGES[A.page](); if (A.page === 'menu') drawMenuPreviews(); } catch (e) { $('#app').innerHTML = `<div class="card empty">⚠️ ${esc(e.message)}</div>`; }
 }
 window.addEventListener('hashchange', () => { $$('.mask').forEach(m => m.remove()); show(location.hash.slice(1) || 'home'); });
@@ -1266,6 +1292,7 @@ document.addEventListener('change', async e => {
   if (t.id === 'acourse') { A.att.course = t.value; show(); }
   if (t.id === 'astu') { A.att.student = t.value; show(); }
   if (t.id === 'cf') { A.cf = t.value; show(); }
+  if (t.id === 'au-from' || t.id === 'au-to' || t.id === 'au-who' || t.id === 'au-kw') { A.au.from = $('#au-from').value; A.au.to = $('#au-to').value; A.au.who = $('#au-who').value; A.au.kw = $('#au-kw').value.trim(); show(); }
   if (t.id === 'vf') { A.vf = t.value; show(); }
   if (t.dataset.set) { try { const r = await api('a.settingSave', { key: t.dataset.set, value: t.type === 'checkbox' ? (t.checked ? '是' : '否') : t.value }, true); toast('已儲存'); if (t.dataset.set === '教室名稱') A.meta.studio = r.value; } catch (err) { toast(err.message, true); show(); } }
 });
@@ -1320,6 +1347,11 @@ document.addEventListener('click', async e => {
       return toast(ok ? '已複製，貼到 LINE 傳給對方即可' : '無法自動複製，請長按上方網址手動複製', !ok); }
     if (ds.slot && owner() && !e.target.closest('.ev,.rv')) { const r = el.getBoundingClientRect(), m0 = Math.max(0, ((e.clientY - r.top) / +ds.hh + +ds.h0) * 60), hm = v => String(Math.floor(v / 60)).padStart(2, '0') + ':' + String(v % 60).padStart(2, '0');
       if (!A.students.length) A.students = await api('a.students'); return editSession(null, { date: ds.slot, start: hm(Math.floor(m0 / 30) * 30), end: hm(Math.min(1439, Math.floor(m0 / 30) * 30 + 60)) }); }
+    if ('auq' in ds) { A.au.to = A.meta.today; A.au.from = dAdd(A.meta.today, -ds.auq); return show(); }
+    if ('aucat' in ds) { A.au.cat = ds.aucat; return show(); }
+    if ('aucsv' in ds) { const q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"', csv = '\ufeff' + [['時間', '操作人', '身分', '類別', '內容'], ...(A.auRows || []).map(r => [r.time, r.name, r.role, r.cat, r.summary])].map(r => r.map(q).join(',')).join('\r\n');
+      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = `操作紀錄_${A.au.from}_${A.au.to}.csv`; a.click(); return; }
+    if (ds.aulog) { A.au = { from: dAdd(A.meta.today, -89), to: A.meta.today, cat: '', who: '', kw: ds.aulog }; $$('.mask').forEach(m => m.remove()); location.hash = '#audit'; if (A.page === 'audit') show(); return; }
     if (ds.jump) { const k = ds.jump;
       if (k === 'low' || k === 'unbound' || k === 'lowall') { if (k === 'low' && $('#ov-low')) return $('#ov-low').scrollIntoView({ behavior: 'smooth', block: 'center' }); A.filter = { kw: '', f: k === 'unbound' ? 'unbound' : 'low', course: '' }; location.hash = '#students'; return; }
       if (k === 'rent' || k === 'settings') { location.hash = '#' + k; return; }
