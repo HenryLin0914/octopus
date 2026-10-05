@@ -1250,6 +1250,7 @@ export function createApp(opts = {}) {
       const okUrl = u => /^https:\/\/\S+$/.test(u || '');
       const text = str(b.text, 2000), images = (b.images || []).map(u => str(u, 500)).filter(okUrl).slice(0, 3);
       const buttons = (b.buttons || []).map(x => ({ label: str(x.label, 20), url: str(x.url, 500) })).filter(x => x.label && (okUrl(x.url) || /^tel:[0-9+\-]+$/.test(x.url))).slice(0, 4);
+      if ((b.images || []).filter(Boolean).length > images.length || (b.buttons || []).filter(x => x && x.label && x.url).length > buttons.length) throw new Error('圖片和按鈕的連結必須是 https:// 開頭（LINE 的規定）');
       if (!text && !images.length && !buttons.length) throw new Error('請至少填一段文字、一張圖片或一個按鈕');
       const keywords = [...new Set(String(b.keywords || '').split(/[,，、\n]+/).map(k => k.trim()).filter(Boolean))].slice(0, 10).join(',');
       const id = b.id || uid('Y');
