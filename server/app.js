@@ -420,12 +420,12 @@ export function createApp(opts = {}) {
   /* ---------- 圖文選單 ---------- */
   // 多頁時：內容縮在上方中間（保持原圖比例），下方留一條換頁列
   const MENU_GEO = { W: 2500, H: 1686, navH: 202, side: 150 };
-  const MENU_FNS = [['checkin', '線上報到'], ['card', '上課卡'], ['schedule', '課表'], ['leave', '請假'], ['attendance', '出席紀錄'], ['video', '影片'], ['rent', '教室租借'], ['bind', '綁定學生'], ['home', '系統首頁']];
+  const MENU_FNS = [['checkin', '線上報到'], ['card', '上課卡'], ['schedule', '預約上課'], ['leave', '請假'], ['attendance', '出席紀錄'], ['video', '影片'], ['rent', '教室租借'], ['bind', '綁定學生'], ['home', '系統首頁']];
   const menuPages = () => all('SELECT * FROM rm_pages ORDER BY sort,id').map(p => ({ id: p.id, name: p.name, cols: p.cols, rows: p.rows, image: p.image, cells: parseRanges(p.cells) }));
   const replyList = () => all('SELECT * FROM replies ORDER BY sort,id').map(r => ({ id: r.id, name: r.name, keywords: r.keywords, text: r.text, images: parseRanges(r.images), buttons: parseRanges(r.buttons) }));
   const menuRect = (total, hasImage = true) => total > 1 ? (hasImage ? { x: MENU_GEO.side, y: 0, w: MENU_GEO.W - MENU_GEO.side * 2, h: MENU_GEO.H - MENU_GEO.navH } : { x: 0, y: 0, w: MENU_GEO.W, h: MENU_GEO.H - MENU_GEO.navH }) : { x: 0, y: 0, w: MENU_GEO.W, h: MENU_GEO.H };
   /** 系統繪製選單時，每個功能預設的圖示與小字 */
-  const MENU_LOOK = { checkin: ['qr', '掃教室 QR Code'], card: ['ticket', '剩餘堂數・儲值'], schedule: ['calendar', '課程・報名'], leave: ['file', '線上請假・紀錄'], attendance: ['check', '出席・請假・缺席'], video: ['play', '上課與成果影片'], rent: ['building', '查時段・線上預約'], bind: ['link', '輸入綁定碼'], home: ['home', ''] };
+  const MENU_LOOK = { checkin: ['qr', '掃教室 QR Code'], card: ['ticket', '剩餘堂數・儲值'], schedule: ['calendar', '課表・報名'], leave: ['file', '線上請假・紀錄'], attendance: ['check', '出席・請假・缺席'], video: ['play', '上課與成果影片'], rent: ['building', '查時段・線上預約'], bind: ['link', '輸入綁定碼'], home: ['home', ''] };
   const MENU_THEMES = ['pink', 'warm', 'green', 'blue', 'dark'];
   const fnCell = f => ({ label: MENU_FNS.find(x => x[0] === f)[1], type: 'fn', value: f, icon: MENU_LOOK[f][0], sub: MENU_LOOK[f][1], hl: f === 'checkin' });
   function menuAreas(pg, n, total, alias) {
@@ -465,6 +465,12 @@ export function createApp(opts = {}) {
         const g = guess.find(x => x[0].test(c.label)); return g ? { ...c, icon: g[1], sub: g[2] } : c.label === '身體密碼' ? { ...c, icon: '', sub: 'Bodycode Sharing Space', hl: true } : { ...c, icon: '', sub: '' }; });
       run("UPDATE rm_pages SET image='',cells=? WHERE id=?", JSON.stringify(cells), p.id); }
     run("INSERT OR IGNORE INTO meta VALUES('menu_style2','1')");
+  }
+  if (!get("SELECT 1 x FROM meta WHERE key='menu_label_book'")) { // 選單上的「課表」改名為「預約上課」
+    for (const p of all('SELECT * FROM rm_pages')) { let hit = false;
+      const cells = parseRanges(p.cells).map(c => c.type === 'fn' && c.value === 'schedule' && c.label === '課表' ? (hit = true, { ...c, label: '預約上課', sub: c.sub === '課程・報名' ? '課表・報名' : c.sub }) : c);
+      if (hit) run('UPDATE rm_pages SET cells=? WHERE id=?', JSON.stringify(cells), p.id); }
+    run("INSERT OR IGNORE INTO meta VALUES('menu_label_book','1')");
   }
 
   /* ============================== API ============================== */
