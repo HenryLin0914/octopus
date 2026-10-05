@@ -681,7 +681,8 @@ export function createApp(opts = {}) {
     'a.overview'(b) {
       const d = nd(b.date) || today(), low = cfgNum('低堂數門檻', 2);
       const stus = all("SELECT * FROM students WHERE status='在學'");
-      const lowList = stus.map(s => { const t = tightest(s.id); return { id: s.id, name: s.name, remain: t.remain, course: t.course }; }).filter(s => s.remain <= low).sort((a, c) => a.remain - c.remain).slice(0, 12);
+      const lowAll = stus.map(s => { const t = tightest(s.id); return { id: s.id, name: s.name, remain: t.remain, course: t.course }; }).filter(s => s.remain <= low).sort((a, c) => a.remain - c.remain), lowList = lowAll.slice(0, 12);
+      const t0 = today(), m0 = t0.slice(0, 7) + '-01', pm = addDays(m0, -1).slice(0, 7) + '-01', wk = API['a.week']({ start: t0, days: 7 });
       const soon = addDays(today(), 14);
       return {
         date: d, sessions: API['a.week']({ start: d, days: 1 }).sessions,
@@ -689,9 +690,14 @@ export function createApp(opts = {}) {
           unbound: get("SELECT COUNT(*) n FROM students s WHERE s.status='在學' AND NOT EXISTS(SELECT 1 FROM bindings b WHERE b.student_id=s.id)").n,
           monthIncome: get('SELECT COALESCE(SUM(amount),0) n FROM topups WHERE time>=?', today().slice(0, 7) + '-01').n },
         signups: get("SELECT COUNT(*) n FROM signups WHERE status='待審核'").n, rentPending: get("SELECT COUNT(*) n FROM bookings WHERE status='待確認'").n,
-        low: lowList,
+        low: lowList, lowCount: lowAll.length,
+        tomorrow: wk.sessions.filter(x => x.date === addDays(t0, 1)), weekDone: get("SELECT COUNT(*) n FROM sessions WHERE date>=? AND date<=? AND status='已結算'", addDays(t0, -6), t0).n,
+        unmarked: API['a.week']({ start: addDays(t0, -14), days: 15 }).sessions.filter(x => x.unmarked).map(x => ({ sessionId: x.sessionId, date: x.date, start: x.start, course: x.course, teacher: x.teacher })),
+        rentals: wk.rentals || [], pendingAdmins: get('SELECT COUNT(*) n FROM admins WHERE active=0').n,
+        lastMonthIncome: get('SELECT COALESCE(SUM(amount),0) n FROM topups WHERE time>=? AND time<?', pm, m0).n,
+        monthAttend: get("SELECT COUNT(*) n FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE a.status='出席' AND s.date>=?", m0).n,
         expiring: all("SELECT c.id,c.plan_name plan,c.remain,c.expire,(SELECT GROUP_CONCAT(s.name,'、') FROM card_students cs JOIN students s ON s.id=cs.student_id WHERE cs.card_id=c.id) names FROM cards c WHERE c.status='啟用' AND c.remain>0 AND c.expire<>'' AND c.expire>=? AND c.expire<=? ORDER BY c.expire LIMIT 12", today(), soon),
-        leaves: all('SELECT st.name student,l.reason,s.date,s.start,COALESCE(c.name,s.course_id) course FROM leaves l JOIN sessions s ON s.id=l.session_id JOIN students st ON st.id=l.student_id LEFT JOIN courses c ON c.id=s.course_id WHERE s.date>=? ORDER BY s.date,s.start LIMIT 12', today())
+        leaves: all('SELECT st.name student,l.reason,s.date,s.start,COALESCE(c.name,s.course_id) course FROM leaves l JOIN sessions s ON s.id=l.session_id JOIN students st ON st.id=l.student_id LEFT JOIN courses c ON c.id=s.course_id WHERE s.date>=? AND l.status<>? ORDER BY s.date,s.start LIMIT 12', today(), '取消')
       };
     },
     'a.week'(b) {

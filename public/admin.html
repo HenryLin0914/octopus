@@ -136,6 +136,12 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 .ev.off{background:repeating-linear-gradient(45deg,#efecee,#efecee 6px,#e3dfe2 6px,#e3dfe2 12px);border-color:#cfc8cc;border-left-color:#a79da4;color:var(--sub)}.ev.off .en{text-decoration:line-through}
 .ev.done{opacity:.7}
 .ev:hover{background:color-mix(in srgb,var(--c) 22%,#fff)}
+.todo h2 .tag{margin-left:8px}
+.tdl{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px}
+.tdl button{display:flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--soft);border-radius:10px;padding:10px 12px;font:inherit;color:var(--ink);text-align:left;min-width:0}
+.tdl button b{font-size:22px;line-height:1;font-variant-numeric:tabular-nums;flex:none}.tdl button span{flex:1;min-width:0;font-size:14px}.tdl button i{font-style:normal;color:var(--sub);flex:none}
+.tdl button.warn{background:#fff7e6;border-color:#f3dca6}.tdl button.warn b{color:#b35c00}.tdl button.bad{background:#fdecec;border-color:#f1b7b7}.tdl button.bad b{color:var(--bad)}
+.stat b small{font-size:14px;font-weight:600;color:var(--sub)}.stat em{font-style:normal;font-weight:700}.stat em.on,.stat em.up{color:var(--ok)}.stat em.dn{color:var(--bad)}.stat{min-width:0}.stat span{display:block;white-space:normal;overflow-wrap:anywhere}
 .tleg{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 12px}.tleg .lb{font-size:13px;color:var(--sub);margin-right:2px}
 .tleg button{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:#fff;border-radius:999px;padding:5px 11px;font:inherit;font-size:13px;font-weight:600;color:var(--ink)}
 .tleg button i{width:10px;height:10px;border-radius:50%;flex:none}.tleg button em{font-style:normal;font-weight:400;color:var(--sub)}
@@ -342,23 +348,46 @@ function formDialog(title, fields, values, save, { extra = '', saveText = '儲�
 const PAGES = {
   async home() {
     const d = await api('a.overview');
-    const st = d.stats, sg = owner() && d.signups ? await api('a.signups') : [];
+    const st = d.stats, sg = owner() && d.signups ? await api('a.signups') : [], T = d.date;
+    const nowM = (() => { const n = new Date(Date.now() + 8 * 3600e3); return n.getUTCHours() * 60 + n.getUTCMinutes(); })(), mins = t => +t.slice(0, 2) * 60 + +t.slice(3);
+    const live = d.sessions.filter(x => x.status !== '停課'), cur = live.find(x => mins(x.start) <= nowM && nowM < mins(x.end)), next = live.find(x => mins(x.start) > nowM);
+    const todayLeaves = d.leaves.filter(l => l.date === T), here = live.reduce((n, x) => n + x.present, 0), roll = live.reduce((n, x) => n + x.enrolled, 0);
+    // 待處理：有數字才亮起來，點了直接到該處理的地方
+    const todo = [
+      d.unmarked.length && ['bad', d.unmarked.length, '堂課還沒點名', 'unmarked'],
+      owner() && sg.length && ['warn', sg.length, '筆報名申請', 'signups'],
+      owner() && d.rentPending && ['warn', d.rentPending, '筆租借待確認', 'rent'],
+      owner() && d.pendingAdmins && ['warn', d.pendingAdmins, '位申請開通後台', 'settings'],
+      d.lowCount && ['warn', d.lowCount, '位學生堂數不足', 'low'],
+      d.expiring.length && ['', d.expiring.length, '張卡 14 天內到期', 'expiring'],
+      st.unbound && ['', st.unbound, '位學生還沒綁定家長', 'unbound']].filter(Boolean);
+    const diff = st.monthIncome - d.lastMonthIncome;
     return `<div class="head"><h1>${esc(A.meta.name || '')}，您好</h1><span class="s">${dLabel(d.date)}</span></div>
-    <div class="grid stats" style="margin-bottom:14px">
-      <div class="card stat"><b>${st.students}</b><span>在學學生</span></div>
-      <div class="card stat"><b>${st.weekSessions}</b><span>未來 7 天堂數</span></div>
-      <div class="card stat"><b>${st.unbound}</b><span>尚未綁定家長</span></div>
-      ${owner() ? `<a class="card stat" href="#money" style="text-decoration:none;color:inherit"><b>${money(st.monthIncome)}</b><span>本月儲值收入 ›</span></a>` : ''}
+    <div class="card todo"><h2>待處理${todo.length ? `<span class="tag ${todo.some(t => t[0] === 'bad') ? 'bad' : 'warn'}">${todo.length} 項</span>` : ''}</h2>
+      ${todo.length ? `<div class="tdl">${todo.map(t => `<button class="${t[0]}" data-jump="${t[3]}"><b>${t[1]}</b><span>${t[2]}</span><i>›</i></button>`).join('')}</div>` : '<div class="s" style="padding:4px 0 2px">目前沒有需要處理的事項 👍</div>'}</div>
+    <div class="grid stats" style="margin:14px 0">
+      <div class="card stat"><b>${live.length}<small> 堂</small></b><span>今天的課${cur ? `｜<em class="on">進行中 ${esc(cur.course)}</em>` : next ? `｜下一堂 ${esc(next.start)} ${esc(next.course)}` : live.length ? '｜今天的課都上完了' : ''}</span></div>
+      <div class="card stat"><b>${here}<small>／${roll} 人</small></b><span>今天已報到${todayLeaves.length ? `｜請假 ${todayLeaves.length} 人` : ''}</span></div>
+      <a class="card stat" href="#schedule" style="text-decoration:none;color:inherit"><b>${st.weekSessions}<small> 堂</small></b><span>未來 7 天的課｜在學 ${st.students} 人 ›</span></a>
+      ${owner() ? `<a class="card stat" href="#money" style="text-decoration:none;color:inherit"><b>${money(st.monthIncome)}</b><span>本月儲值收入｜${d.lastMonthIncome ? `較上月 <em class="${diff >= 0 ? 'up' : 'dn'}">${diff >= 0 ? '+' : '−'}${money(Math.abs(diff))}</em>` : '上月無紀錄'} ›</span></a>` : `<div class="card stat"><b>${d.monthAttend}<small> 人次</small></b><span>本月出席</span></div>`}
     </div>
-    ${owner() && d.rentPending ? `<a class="note" href="#rent" style="display:block;text-decoration:none;margin:0 0 12px">🏠 有 <b>${d.rentPending}</b> 筆教室租借申請等您確認 ›</a>` : ''}
-    ${sg.length ? `<div class="card" style="margin-bottom:14px;border-color:#f3dca6;background:#fffaf0"><h2 style="color:#8a4b00">報名申請（${sg.length}）</h2>${sg.map(g => `<div class="row"><div class="g"><div class="t">${esc(g.student)} → ${esc(g.course)}</div><div class="s">${esc(g.by || '家長')} 於 ${esc(g.time.slice(5, 16))} 申請｜剩 ${g.remain} 堂｜目前 ${g.count}${g.capacity ? '／' + g.capacity : ''} 人</div></div><div class="acts"><button class="btn sm ok" data-sg="${esc(g.id)}" data-ok="1">同意</button><button class="btn sm" data-sg="${esc(g.id)}">婉拒</button></div></div>`).join('')}<p class="s" style="margin-bottom:0">同意後學生會加入該課程的固定名單，並用 LINE 通知家長結果。</p></div>` : ''}
+    ${sg.length ? `<div class="card" id="ov-signups" style="margin-bottom:14px;border-color:#f3dca6;background:#fffaf0"><h2 style="color:#8a4b00">報名申請（${sg.length}）</h2>${sg.map(g => `<div class="row"><div class="g"><div class="t">${esc(g.student)} → ${esc(g.course)}</div><div class="s">${esc(g.by || '家長')} 於 ${esc(g.time.slice(5, 16))} 申請｜剩 ${g.remain} 堂｜目前 ${g.count}${g.capacity ? '／' + g.capacity : ''} 人</div></div><div class="acts"><button class="btn sm ok" data-sg="${esc(g.id)}" data-ok="1">同意</button><button class="btn sm" data-sg="${esc(g.id)}">婉拒</button></div></div>`).join('')}<p class="s" style="margin-bottom:0">同意後學生會加入該課程的固定名單，並用 LINE 通知家長結果。</p></div>` : ''}
     <div class="grid cols">
-      <div class="card"><h2>今日課程<span class="sp"></span><a class="btn sm ghost" href="#schedule">看整週 ›</a></h2>
-        ${d.sessions.length ? d.sessions.map(sessRow).join('') : '<div class="empty">今天沒有課程</div>'}</div>
       <div class="grid">
-        <div class="card"><h2>堂數不足</h2>${d.low.length ? d.low.map(s => `<div class="row"><div class="g"><div class="t">${esc(s.name)}</div>${s.course ? `<div class="s">${esc(s.course)}</div>` : ''}</div><span class="tag ${s.remain <= 0 ? 'bad' : 'warn'}">剩 ${s.remain} 堂</span>${owner() ? `<button class="btn sm" data-topup="${esc(s.id)}">儲值</button>` : ''}</div>`).join('') : '<div class="empty">目前沒有</div>'}</div>
-        <div class="card"><h2>14 天內到期的上課卡</h2>${d.expiring.length ? d.expiring.map(c => `<div class="row"><div class="g"><div class="t">${esc(c.names || '')}</div><div class="s">${esc(c.plan)}｜剩 ${c.remain} 堂</div></div><span class="tag warn">${esc(c.expire.slice(5))} 到期</span></div>`).join('') : '<div class="empty">目前沒有</div>'}</div>
-        <div class="card"><h2>近期請假</h2>${d.leaves.length ? d.leaves.map(l => `<div class="row"><div class="g"><div class="t">${esc(l.student)}</div><div class="s">${dLabel(l.date)} ${esc(l.start)} ${esc(l.course)}${l.reason ? '｜' + esc(l.reason) : ''}</div></div></div>`).join('') : '<div class="empty">目前沒有</div>'}</div>
+        <div class="card"><h2>今天的課<span class="s" style="font-weight:400;margin-left:8px">${dLabel(T)}</span><span class="sp"></span><a class="btn sm ghost" href="#schedule">看整週 ›</a></h2>
+          ${d.sessions.length ? d.sessions.map(x => sessRow(x)).join('') : '<div class="empty">今天沒有課程</div>'}
+          ${d.rentals.filter(b => b.date === T).map(b => `<a class="rrow" href="#rent">🏠 <b>${esc(b.start)}–${esc(b.end)}</b> ${esc(b.room)} 租借｜${esc(b.name)} <span class="tag ${b.status === '已確認' ? 'ok' : 'warn'}">${esc(b.status)}</span></a>`).join('')}
+          ${todayLeaves.length ? `<div class="s" style="margin-top:8px">今天請假：${todayLeaves.map(l => `${esc(l.student)}（${esc(l.start)} ${esc(l.course)}）`).join('、')}</div>` : ''}</div>
+        ${d.unmarked.length ? `<div class="card" id="ov-unmarked" style="border-color:#f1b7b7"><h2 style="color:var(--bad)">還沒點名的課（${d.unmarked.length}）</h2>${d.unmarked.slice(0, 8).map(u => `<button class="sess" data-sess="${esc(u.sessionId)}"><span class="strip" style="background:var(--bad)"></span><span class="tm" style="width:auto">${dLabel(u.date)}</span><span class="g" style="flex:1;min-width:0"><span class="t" style="display:block">${esc(u.course)}</span><span class="s">${esc(u.start)}${u.teacher ? '｜' + esc(u.teacher) : ''}</span></span><span class="tag warn">補點名 ›</span></button>`).join('')}${d.unmarked.length > 8 ? `<p class="s" style="margin:4px 0 0">還有 ${d.unmarked.length - 8} 堂，請到課表查看。</p>` : ''}<p class="s" style="margin:6px 0 0">這些課已經上完，但名單上還沒有任何出缺席紀錄。點進去補點名，或按「結算」。</p></div>` : ''}
+        <div class="card"><h2>明天的課<span class="s" style="font-weight:400;margin-left:8px">${dLabel(dAdd(T, 1))}</span></h2>
+          ${d.tomorrow.length ? d.tomorrow.map(x => sessRow(x)).join('') : '<div class="empty">明天沒有課程</div>'}
+          ${d.rentals.filter(b => b.date === dAdd(T, 1)).map(b => `<a class="rrow" href="#rent">🏠 <b>${esc(b.start)}–${esc(b.end)}</b> ${esc(b.room)} 租借｜${esc(b.name)} <span class="tag ${b.status === '已確認' ? 'ok' : 'warn'}">${esc(b.status)}</span></a>`).join('')}</div>
+      </div>
+      <div class="grid">
+        <div class="card" id="ov-low"><h2>堂數不足${d.lowCount ? `<span class="tag warn">${d.lowCount}</span>` : ''}<span class="sp"></span>${d.lowCount > d.low.length ? '<button class="btn sm ghost" data-jump="lowall">看全部 ›</button>' : ''}</h2>${d.low.length ? d.low.map(s => `<div class="row"><div class="g"><div class="t">${esc(s.name)}</div>${s.course ? `<div class="s">${esc(s.course)}</div>` : ''}</div><span class="tag ${s.remain <= 0 ? 'bad' : 'warn'}">剩 ${s.remain} 堂</span>${owner() ? `<button class="btn sm" data-topup="${esc(s.id)}">儲值</button>` : ''}</div>`).join('') : '<div class="empty">目前沒有</div>'}</div>
+        <div class="card" id="ov-expiring"><h2>14 天內到期的上課卡${d.expiring.length ? `<span class="tag">${d.expiring.length}</span>` : ''}</h2>${d.expiring.length ? d.expiring.map(c => `<div class="row"><div class="g"><div class="t">${esc(c.names || '')}</div><div class="s">${esc(c.plan)}｜剩 ${c.remain} 堂</div></div><span class="tag warn">${esc(c.expire.slice(5).replace('-', '/'))} 到期</span></div>`).join('') : '<div class="empty">目前沒有</div>'}</div>
+        <div class="card"><h2>近期請假${d.leaves.length ? `<span class="tag">${d.leaves.length}</span>` : ''}<span class="sp"></span><a class="btn sm ghost" href="#attend">請假管理 ›</a></h2>${d.leaves.length ? d.leaves.map(l => `<div class="row"><div class="g"><div class="t">${esc(l.student)}${l.date === T ? ' <span class="tag warn">今天</span>' : ''}</div><div class="s">${dLabel(l.date)} ${esc(l.start)} ${esc(l.course)}${l.reason ? '｜' + esc(l.reason) : ''}</div></div></div>`).join('') : '<div class="empty">目前沒有</div>'}</div>
+        ${owner() && d.rentals.length ? `<div class="card"><h2>未來 7 天的教室租借<span class="tag">${d.rentals.length}</span><span class="sp"></span><a class="btn sm ghost" href="#rent">租借管理 ›</a></h2>${d.rentals.map(b => `<div class="row"><div class="g"><div class="t">${dLabel(b.date)} ${esc(b.start)}–${esc(b.end)}</div><div class="s">${esc(b.room)}｜${esc(b.name)}</div></div><span class="tag ${b.status === '已確認' ? 'ok' : 'warn'}">${esc(b.status)}</span></div>`).join('')}</div>` : ''}
       </div>
     </div>`;
   },
@@ -1291,6 +1320,10 @@ document.addEventListener('click', async e => {
       return toast(ok ? '已複製，貼到 LINE 傳給對方即可' : '無法自動複製，請長按上方網址手動複製', !ok); }
     if (ds.slot && owner() && !e.target.closest('.ev,.rv')) { const r = el.getBoundingClientRect(), m0 = Math.max(0, ((e.clientY - r.top) / +ds.hh + +ds.h0) * 60), hm = v => String(Math.floor(v / 60)).padStart(2, '0') + ':' + String(v % 60).padStart(2, '0');
       if (!A.students.length) A.students = await api('a.students'); return editSession(null, { date: ds.slot, start: hm(Math.floor(m0 / 30) * 30), end: hm(Math.min(1439, Math.floor(m0 / 30) * 30 + 60)) }); }
+    if (ds.jump) { const k = ds.jump;
+      if (k === 'low' || k === 'unbound' || k === 'lowall') { if (k === 'low' && $('#ov-low')) return $('#ov-low').scrollIntoView({ behavior: 'smooth', block: 'center' }); A.filter = { kw: '', f: k === 'unbound' ? 'unbound' : 'low', course: '' }; location.hash = '#students'; return; }
+      if (k === 'rent' || k === 'settings') { location.hash = '#' + k; return; }
+      const t = $('#ov-' + k); if (t) { t.scrollIntoView({ behavior: 'smooth', block: 'center' }); t.animate([{ boxShadow: '0 0 0 3px var(--brand)' }, { boxShadow: '0 0 0 0 transparent' }], { duration: 1200 }); } return; }
     if ('tf' in ds) { A.tf = ds.tf; return show(); }
     if (ds.colorby) { A.colorBy = ds.colorby; try { localStorage.setItem('octo_colorby', ds.colorby); } catch { /* 不能存也沒關係 */ } return show(); }
     if (ds.mn) return menuAct(ds.mn, ds.id, el);
