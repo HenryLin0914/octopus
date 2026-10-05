@@ -407,8 +407,8 @@ ok((await call('boss', 'a.unbind', { userId: (await call('dad', 'init')).data.us
   await call('boss', 'a.upload', { data: jpg.slice(0, 2000), part: { id: 'u1', i: 0, n: 2 } });
   r = await call('boss', 'a.upload', { data: jpg.slice(2000), part: { id: 'u1', i: 1, n: 2 } });
   ok(r.data.ext === 'jpg' && r.data.size === 3004, '分段上傳後組合'); const f1 = r.data.path, f2 = (await call('boss', 'a.upload', { data: jpg })).data.path;
-  r = await call('boss', 'a.replySave', { name: '租借方式及須知', keywords: '租借方式及須知，怎麼租', text: '每小時 400 元，請提前預約。', images: ['https://x.test/files/a.jpg'], buttons: [{ label: '下載場地須知', url: 'https://x.test/files/rule.pdf' }, { label: '壞的', url: 'javascript:1' }] });
-  const rid = r.data.id; mn = (await call('boss', 'a.menu')).data;
+  r = await call('boss', 'a.replySave', { name: '租借方式及須知', keywords: '租借方式及須知，怎麼租', text: '每小時 400 元，請提前預約。', images: ['https://x.test/files/a.jpg'], buttons: [{ label: '下載場地須知', url: 'https://x.test/files/rule.pdf' }] });
+  const rid = r.data.id; ok(!(await call('boss', 'a.replySave', { name: 'x', text: 't', buttons: [{ label: '壞的', url: 'javascript:1' }] })).ok, '非 https 連結會被拒絕'); mn = (await call('boss', 'a.menu')).data;
   ok(mn.replies[0].buttons.length === 1 && mn.replies[0].keywords === '租借方式及須知,怎麼租', '建立回覆內容（不合法的連結被濾掉）');
   const p1 = mn.pages[0];
   ok(/https/.test((await call('boss', 'a.menuPageSave', { ...p1, cells: [{ type: 'url', value: 'ftp://x' }] })).error), '連結格式檢查');
