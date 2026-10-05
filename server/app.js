@@ -432,13 +432,14 @@ export function createApp(opts = {}) {
   /** 上課卡共用時，每位學生各用了幾堂 */
   const cardUsage = cardId => all("SELECT st.name, SUM(a.deduct) n FROM attendance a JOIN students st ON st.id=a.student_id WHERE a.card_id=? AND a.status<>'取消' AND a.deduct>0 GROUP BY a.student_id ORDER BY st.id", cardId);
   const studentBrief = s => {
-    const next = all("SELECT s.* FROM sessions s WHERE s.date>=? AND s.status='正常' AND (s.course_id IN (SELECT course_id FROM enrollments WHERE student_id=?) OR s.id IN (SELECT session_id FROM makeups WHERE student_id=?)) ORDER BY s.date,s.start LIMIT 6", today(), s.id, s.id)
-      .find(x => toDate(x.date, x.end) > new Date() && !['請假'].includes((activeRecord(x.id, s.id) || {}).status));
+    const coming = all("SELECT s.* FROM sessions s WHERE s.date>=? AND s.status='正常' AND (s.course_id IN (SELECT course_id FROM enrollments WHERE student_id=?) OR s.id IN (SELECT session_id FROM makeups WHERE student_id=?)) ORDER BY s.date,s.start LIMIT 8", today(), s.id, s.id)
+      .filter(x => toDate(x.date, x.end) > new Date() && !['請假'].includes((activeRecord(x.id, s.id) || {}).status)), next = coming[0];
     const ni = next ? sessionInfo(next) : null;
     const vc = validCards(s.id);
     return { id: s.id, name: s.name, remain: totalRemain(s.id), scoped: vc.some(c => c.courses), cardList: vc.map(c => ({ plan: c.plan_name, remain: c.remain, scope: scopeText(c.courses) })),
       sharedWith: all("SELECT DISTINCT st.name FROM card_students a JOIN card_students o ON o.card_id=a.card_id AND o.student_id<>a.student_id JOIN cards c ON c.id=a.card_id JOIN students st ON st.id=o.student_id WHERE a.student_id=? AND c.status='啟用' AND c.remain>0", s.id).map(r => r.name),
-      next: ni ? { date: ni.date, start: ni.start, course: ni.course } : null };
+      next: ni ? { sessionId: ni.sessionId, date: ni.date, start: ni.start, end: ni.end, course: ni.course, teacher: ni.teacher, teacherAvatar: ni.teacherAvatar, room: ni.room, color: ni.color, note: ni.note } : null,
+      later: coming.slice(1, 4).map(x => { const i = sessionInfo(x); return { date: i.date, start: i.start, end: i.end, course: i.course, teacher: i.teacher, teacherAvatar: i.teacherAvatar, color: i.color }; }) };
   };
 
   /* ---------- 上傳的檔案 ---------- */
