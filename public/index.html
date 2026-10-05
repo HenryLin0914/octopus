@@ -53,7 +53,8 @@ h2{font-size:15px;color:var(--sub);margin:18px 4px 8px;font-weight:600}
 #sheet .sh{background:#fff;width:100%;max-width:560px;border-radius:18px 18px 0 0;padding:20px 18px calc(18px + env(safe-area-inset-bottom));max-height:85vh;overflow:auto;position:relative}
 #sheet h3{margin:0 34px 4px 0;font-size:19px}#sheet .s{font-size:14px;color:var(--sub)}
 #sheet .intro{margin:14px 0 6px;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7}
-.tlink{border:0;background:none;padding:0;font:inherit;color:var(--brand);font-weight:600}
+.tlink{border:0;background:none;padding:0;font:inherit;color:var(--brand);font-weight:600;display:inline-flex;align-items:center;gap:5px;vertical-align:middle}.tnm{display:inline-flex;align-items:center;gap:5px;vertical-align:middle}
+.tav{width:22px;height:22px;border-radius:50%;object-fit:cover;flex:none;background:#eee}
 .tgal{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:12px 0 4px}.tgal img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;display:block}
 #sheet-x{position:absolute;right:12px;top:12px;border:0;background:none;font-size:26px;line-height:1;color:var(--sub);padding:4px 8px}
 .dstrip{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch}
@@ -176,7 +177,7 @@ const PAGES = {
     const card = u => { const c = d.info[u.courseId] || {};
       return `<div class="sc ${u.status === '停課' ? 'off' : ''} ${u.mine ? '' : 'other'}"><span class="strip" style="background:${u.status === '停課' ? '#b9b0b6' : esc(u.color)}"></span><div class="g">
         <div class="t">${esc(u.course)} ${u.makeup ? '<span class="tag ok">補課</span>' : ''} ${u.status === '停課' ? tagOf('停課') : (u.my ? `<span class="tag ${u.my === '出席' ? 'ok' : u.my === '請假' ? 'warn' : 'bad'}">${u.my === '請假' ? '已請假' : u.my === '出席' ? '已出席' : esc(u.my)}</span>` : '')} ${u.mine ? '' : state(c) || '<span class="tag">未參加</span>'}</div>
-        <div class="s">${dLabel(u.date)} ${esc(u.start)}–${esc(u.end)}</div><div class="s">${[u.teacher ? ((d.teachers || {})[u.teacher] ? `<button class="tlink" data-tch="${esc(u.teacher)}">${esc(u.teacher)} ›</button>` : esc(u.teacher)) : '', esc(u.room)].filter(Boolean).join('｜')}</div>
+        <div class="s">${dLabel(u.date)} ${esc(u.start)}–${esc(u.end)}</div><div class="s">${[tName(u.teacher, u.teacherAvatar), esc(u.room)].filter(Boolean).join('｜')}</div>
         ${u.note ? `<div class="nt"><b>${u.status === '停課' ? '停課原因' : '老師備註'}</b>${esc(u.note)}</div>` : ''}</div>
         ${u.canLeave ? `<button class="btn sm ghost" data-lvs="${esc(u.sessionId)}">我要請假</button>` : ''}${!u.mine && c.canSignup ? `<button class="btn sm" data-su="${esc(u.courseId)}">報名</button>` : ''}
         <div class="tags">${tags(u.courseId, u.course + ' ' + dLabel(u.date) + ' ' + u.start)}</div></div>`; };
@@ -186,7 +187,7 @@ const PAGES = {
         <div class="t">${esc(c.name)} ${c.enrolled ? '<span class="tag ok">已參加</span>' : state(c)}</div>
         <dl><dt>時間</dt><dd>${c.oneoff ? esc((c.from || '').slice(5).replace('-', '/')) + '（單次）' : '每週' + esc(c.day)} ${esc(c.start)}–${esc(c.end)}</dd>
           ${!c.oneoff && c.to ? `<dt>期間</dt><dd>${esc((c.from || '').slice(5).replace('-', '/'))} – ${esc(c.to.slice(5).replace('-', '/'))}</dd>` : ''}
-          ${c.teacher ? `<dt>老師</dt><dd>${esc(c.teacher)}</dd>` : ''}${c.room ? `<dt>教室</dt><dd>${esc(c.room)}</dd>` : ''}
+          ${c.teacher ? `<dt>老師</dt><dd>${tName(c.teacher, c.teacherAvatar)}</dd>` : ''}${c.room ? `<dt>教室</dt><dd>${esc(c.room)}</dd>` : ''}
           ${c.capacity ? `<dt>名額</dt><dd>${c.count}／${c.capacity}${c.full ? '（已額滿）' : '，還有 ' + (c.capacity - c.count) + ' 個名額'}</dd>` : ''}
           ${c.next ? `<dt>下一堂</dt><dd>${dLabel(c.next.slice(0, 10))} ${esc(c.next.slice(11))}</dd>` : ''}</dl>
         <div class="tags" style="padding:0">${tags(c.id, c.name)}</div></div>
@@ -246,7 +247,7 @@ const PAGES = {
     }
     const info = await api('checkinInfo', { sessionId: sid });
     return `<div class="card"><div class="t" style="font-size:18px;font-weight:700">${esc(info.course)}</div>
-        <div class="s" style="color:var(--sub)">${dLabel(info.date)} ${esc(info.start)}–${esc(info.end)}｜${esc(info.teacher)}｜${esc(info.room)}</div></div>
+        <div class="s" style="color:var(--sub)">${dLabel(info.date)} ${esc(info.start)}–${esc(info.end)}｜${tName(info.teacher, info.teacherAvatar)}｜${esc(info.room)}</div></div>
       <h2>選擇要報到的學生</h2>
       <div class="card">${S.students.map(s=>`
         <div class="row"><div><div class="t">${esc(s.name)}</div><div class="s">剩餘 ${esc(s.remain)} 堂</div></div>
@@ -335,6 +336,9 @@ function keepForm(){ ['name', 'phone', 'people', 'purpose'].forEach(k => { const
 async function keep(p){ const y = window.scrollY; await go(p); window.scrollTo(0, y); }
 /** 橫向日期列重畫後，把選到的日期捲回畫面中間（不然會跳回最前面） */
 function centerDate(){ const on = $('.dstrip .on'); if(on){ const st = on.parentNode; st.scrollLeft = on.offsetLeft - st.offsetLeft - (st.clientWidth - on.offsetWidth) / 2; } }
+/** 老師名字：有照片就帶小頭像；有填介紹的可以點開看 */
+function tName(name, av){ if(!name) return ''; const img = av ? `<img class="tav" src="${esc(av)}" alt="" loading="lazy">` : '';
+  return (S.teachers || {})[name] ? `<button class="tlink" data-tch="${esc(name)}">${img}${esc(name)} ›</button>` : `<span class="tnm">${img}${esc(name)}</span>`; }
 function sheet(html){ closeSheet(); const m = document.createElement('div'); m.id = 'sheet'; m.innerHTML = `<div class="sh"><button id="sheet-x" aria-label="關閉">×</button>${html}</div>`; m.addEventListener('click', e => { if(e.target === m) closeSheet(); }); document.body.appendChild(m); }
 function closeSheet(){ const m = $('#sheet'); if(m) m.remove(); }
 /** 諮詢：回到官方帳號聊天室，並先幫家長帶好要問的內容 */
@@ -363,7 +367,7 @@ document.addEventListener('click', async e => {
     if('cv' in el.dataset){ closeSheet(); S.vc = el.dataset.cv; return go('video'); }
     if(el.dataset.ask) return askChat(el.dataset.ask);
     if(el.dataset.tch){ const t = (S.teachers || {})[el.dataset.tch]; if(!t) return; const cs = Object.values(S.info || {}).filter(c => c.teacher === t.name);
-      return sheet(`<div style="display:flex;gap:14px;align-items:center;margin-right:30px">${t.photo ? `<img src="${esc(t.photo)}" style="width:76px;height:76px;border-radius:50%;object-fit:cover;flex:none">` : ''}<div><h3 style="margin:0">${esc(t.name)}</h3>${t.title ? `<div class="s">${esc(t.title)}</div>` : ''}</div></div>
+      return sheet(`<div style="display:flex;gap:14px;align-items:center;margin-right:30px">${t.photo ? `<img src="${esc(t.avatar || t.photo)}" style="width:76px;height:76px;border-radius:50%;object-fit:cover;flex:none">` : ''}<div><h3 style="margin:0">${esc(t.name)}</h3>${t.title ? `<div class="s">${esc(t.title)}</div>` : ''}</div></div>
         ${t.intro ? `<div class="intro">${esc(t.intro)}</div>` : ''}
         ${t.images.length ? `<div class="tgal">${t.images.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" loading="lazy"></a>`).join('')}</div>` : ''}
         ${t.works.length ? `<div class="s" style="margin:12px 0 6px">作品</div>${t.works.map(w => `<a class="btn ghost" style="display:block;text-align:center;text-decoration:none;margin-bottom:8px" href="${esc(w.url)}" target="_blank" rel="noopener">▶ ${esc(w.label)}</a>`).join('')}` : ''}
@@ -371,7 +375,7 @@ document.addEventListener('click', async e => {
         <button class="btn" style="margin-top:12px" data-ask="${esc(t.name)}">💬 諮詢</button>`); }
     if(el.dataset.ci){ const c = (S.info || {})[el.dataset.ci]; if(!c) return;
       return sheet(`<h3>${esc(c.name)}</h3>
-        <div class="s">${c.oneoff ? esc((c.from || '').slice(5).replace('-', '/')) : '每週' + esc(c.day)} ${esc(c.start)}–${esc(c.end)}${c.teacher ? '｜' + ((S.teachers || {})[c.teacher] ? `<button class="tlink" data-tch="${esc(c.teacher)}">${esc(c.teacher)} ›</button>` : esc(c.teacher)) : ''}${c.room ? '｜' + esc(c.room) : ''}</div>
+        <div class="s">${c.oneoff ? esc((c.from || '').slice(5).replace('-', '/')) : '每週' + esc(c.day)} ${esc(c.start)}–${esc(c.end)}${c.teacher ? '｜' + tName(c.teacher, c.teacherAvatar) : ''}${c.room ? '｜' + esc(c.room) : ''}</div>
         ${!c.oneoff && c.to ? `<div class="s">課程期間 ${esc((c.from || '').slice(5).replace('-', '/'))} – ${esc(c.to.slice(5).replace('-', '/'))}</div>` : ''}
         <div class="intro">${c.intro ? esc(c.intro) : '<span style="color:var(--sub)">老師還沒有寫課程介紹，想了解可以按下方「諮詢」直接問我們。</span>'}</div>
         ${c.canSignup ? `<button class="btn" data-su="${esc(c.id)}">報名這門課</button>` : ''}

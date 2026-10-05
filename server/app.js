@@ -113,9 +113,9 @@ export function createApp(opts = {}) {
   /* 老師名單：課程與課表上的老師都從這份名單選，統一管理 */
   db.exec("CREATE TABLE IF NOT EXISTS teachers(id TEXT PRIMARY KEY, name TEXT UNIQUE, color TEXT, status TEXT DEFAULT '啟用', sort INTEGER DEFAULT 0)");
   { const tc = db.prepare('PRAGMA table_info(teachers)').all().map(c => c.name); // 老師的個人資料：照片、專長、介紹、作品
-    for (const [k, def] of [['photo', "''"], ['title', "''"], ['intro', "''"], ['works', "'[]'"], ['images', "'[]'"]]) if (!tc.includes(k)) db.exec('ALTER TABLE teachers ADD COLUMN ' + k + ' TEXT DEFAULT ' + def); }
+    for (const [k, def] of [['avatar', "''"], ['photo', "''"], ['title', "''"], ['intro', "''"], ['works', "'[]'"], ['images', "'[]'"]]) if (!tc.includes(k)) db.exec('ALTER TABLE teachers ADD COLUMN ' + k + ' TEXT DEFAULT ' + def); }
   const jarr = v => { try { const a = JSON.parse(v || '[]'); return Array.isArray(a) ? a : []; } catch { return []; } };
-  const teacherOut = t => ({ id: t.id, name: t.name, color: t.color, status: t.status, photo: t.photo || '', title: t.title || '', intro: t.intro || '', works: jarr(t.works), images: jarr(t.images) });
+  const teacherOut = t => ({ id: t.id, name: t.name, color: t.color, status: t.status, photo: t.photo || '', avatar: t.avatar || t.photo || '', title: t.title || '', intro: t.intro || '', works: jarr(t.works), images: jarr(t.images) });
   const TEACHER_COLORS = ['#1971C2', '#E67700', '#2B8A3E', '#7048E8', '#C2255C', '#0C8599', '#5C940D', '#9C36B5', '#D9480F', '#495057'];
   const ensureTeacher = name => { name = String(name || '').trim().slice(0, 40); if (!name || get('SELECT 1 x FROM teachers WHERE name=?', name)) return;
     const n = get('SELECT COUNT(*) n FROM teachers').n; run('INSERT INTO teachers(id,name,color,sort) VALUES(?,?,?,?)', 'H' + Date.now().toString(36) + crypto.randomBytes(2).toString('hex'), name, TEACHER_COLORS[n % TEACHER_COLORS.length], n); };
@@ -229,7 +229,8 @@ export function createApp(opts = {}) {
   const sessRow = id => get('SELECT * FROM sessions WHERE id=?', id);
   function sessionInfo(s) {
     const c = get('SELECT * FROM courses WHERE id=?', s.course_id) || {};
-    return { sessionId: s.id, courseId: s.course_id, course: c.name || s.course_id, color: c.color || C.BRAND, teacher: s.teacher || c.teacher || '', room: s.room || c.room || '',
+    const tn = s.teacher || c.teacher || '', tr = tn ? get('SELECT avatar,photo FROM teachers WHERE name=?', tn) : null;
+    return { sessionId: s.id, courseId: s.course_id, course: c.name || s.course_id, color: c.color || C.BRAND, teacher: tn, teacherAvatar: tr ? tr.avatar || tr.photo || '' : '', room: s.room || c.room || '',
       date: s.date, start: s.start, end: s.end, status: s.status || '正常', note: s.note || '', manual: !!s.manual, deduct: c.deduct || 1, capacity: c.capacity || 0, term: !!c.date_to, rawTeacher: s.teacher || '', rawRoom: s.room || '' };
   }
   const activeRecord = (sessionId, sid) => get("SELECT * FROM attendance WHERE session_id=? AND student_id=? AND status<>'取消' ORDER BY time DESC", sessionId, sid) || null;
@@ -638,13 +639,14 @@ export function createApp(opts = {}) {
       const info = {}, addInfo = id => { if (info[id]) return info[id]; const c = get('SELECT * FROM courses WHERE id=?', id); if (!c) return null;
         const count = get("SELECT COUNT(*) n FROM enrollments e JOIN students st ON st.id=e.student_id WHERE e.course_id=? AND st.status='在學'", id).n;
         const next = get("SELECT date,start FROM sessions WHERE course_id=? AND status='正常' AND date>=? ORDER BY date,start", id, t);
-        return (info[id] = { id, name: c.name, intro: c.intro || '', teacher: c.teacher, room: c.room, day: courseDays(c).map(d => wd[d]).join('、'), start: c.start, end: c.end, from: c.date_from || '', to: c.date_to || '', oneoff: c.weekdays === '', color: c.color, videos: vids[id] || 0,
+        const tr = c.teacher ? get('SELECT avatar,photo FROM teachers WHERE name=?', c.teacher) : null;
+        return (info[id] = { id, name: c.name, intro: c.intro || '', teacher: c.teacher, teacherAvatar: tr ? tr.avatar || tr.photo || '' : '', room: c.room, day: courseDays(c).map(d => wd[d]).join('、'), start: c.start, end: c.end, from: c.date_from || '', to: c.date_to || '', oneoff: c.weekdays === '', color: c.color, videos: vids[id] || 0,
           enrolled: mine.includes(id), pending: pending.includes(id), capacity: c.capacity || 0, count, full: c.capacity > 0 && count >= c.capacity, next: next ? next.date + ' ' + next.start : '',
           canSignup: open && c.status === '啟用' && !mine.includes(id) && !pending.includes(id) && !(c.capacity > 0 && count >= c.capacity) && !!next && !(c.date_to && c.date_to < t) }); };
       // 教室全部課程：固定課程（未結束）＋還沒上的單次課程
       const courses = all("SELECT * FROM courses WHERE status='啟用' ORDER BY weekdays='' , start").filter(c => !(c.date_to && c.date_to < t)).map(c => addInfo(c.id)).filter(Boolean);
       const out = { upcoming, courses, enrolledOnly: mine.length > 0, today: t, info, signupOpen: open, review: cfgOn('報名需審核'),
-        teachers: Object.fromEntries(all("SELECT * FROM teachers WHERE status='啟用'").map(teacherOut).filter(x => x.photo || x.title || x.intro || x.works.length || x.images.length).map(x => [x.name, { name: x.name, photo: x.photo, title: x.title, intro: x.intro, works: x.works, images: x.images }])) };
+        teachers: Object.fromEntries(all("SELECT * FROM teachers WHERE status='啟用'").map(teacherOut).filter(x => x.photo || x.title || x.intro || x.works.length || x.images.length).map(x => [x.name, { name: x.name, avatar: x.avatar, photo: x.photo, title: x.title, intro: x.intro, works: x.works, images: x.images }])) };
       upcoming.forEach(u => addInfo(u.courseId));
       if (b.month !== undefined) { // 月曆：整個月（含過去）的課
         out.month = /^\d{4}-\d{2}$/.test(b.month || '') ? b.month : t.slice(0, 7);
@@ -1423,7 +1425,7 @@ export function createApp(opts = {}) {
       const okImg = u => /^\/files\/[\w-]+\.(jpg|png)$/.test(u || ''), okUrl = u => /^https:\/\/\S+$/.test(u || '') || /^\/files\/[\w-]+\.(jpg|png|pdf)$/.test(u || '');
       if ((b.works || []).some(w => w && (w.label || w.url) && !(str(w.label, 30) && okUrl(str(w.url, 500))))) throw new Error('每個作品都要有名稱和 https:// 開頭的連結');
       const saveProfile = id => { // 只更新有帶進來的欄位
-        if (b.photo !== undefined) run('UPDATE teachers SET photo=? WHERE id=?', okImg(b.photo) ? b.photo : '', id);
+        if (b.photo !== undefined) run('UPDATE teachers SET photo=?, avatar=? WHERE id=?', okImg(b.photo) ? b.photo : '', okImg(b.photo) && okImg(b.avatar) ? b.avatar : '', id);
         if (b.title !== undefined) run('UPDATE teachers SET title=? WHERE id=?', str(b.title, 60), id);
         if (b.intro !== undefined) run('UPDATE teachers SET intro=? WHERE id=?', str(b.intro, 2000), id);
         if (b.works !== undefined) run('UPDATE teachers SET works=? WHERE id=?', JSON.stringify((b.works || []).filter(w => w && w.label && w.url).map(w => ({ label: str(w.label, 30), url: str(w.url, 500) })).slice(0, 8)), id);
