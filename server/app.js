@@ -73,7 +73,7 @@ const PLANS = [['P01', '單堂', 1, 500, 30], ['P02', '10堂卡', 10, 4500, 90],
 const COLORS = ['#D6336C', '#1971C2', '#2B8A3E', '#E67700', '#7048E8', '#0C8599', '#C2255C', '#5C940D'];
 
 const OWNER_ONLY = new Set(['a.studentSave', 'a.enroll', 'a.unbind', 'a.topup', 'a.cardSave', 'a.courseSave', 'a.sessionSave', 'a.sessionDelete', 'a.genSessions',
-  'a.videoSave', 'a.videoDelete', 'a.planSave', 'a.settingSave', 'a.adminSave', 'a.export', 'a.student', 'a.videos', 'a.plans', 'a.settings', 'a.admins', 'a.cards', 'a.ledger', 'a.topupSave', 'a.videoInfo', 'a.dayOff', 'a.familySave', 'a.courseDelete', 'a.courseStudents', 'a.signupSave', 'a.rent', 'a.roomSave', 'a.roomDelete', 'a.rentBlockSave', 'a.rentBlockDelete', 'a.rentTagSave', 'a.rentTagDelete', 'a.bookingSave', 'a.rentSlots', 'a.roomCal', 'a.roomHours', 'a.ruleSave', 'a.ruleDelete', 'a.upload', 'a.menu', 'a.menuPageSave', 'a.menuTheme', 'a.resetInfo', 'a.resetData', 'a.menuPageDelete', 'a.menuPageMove', 'a.replySave', 'a.replyDelete', 'a.menuPublish', 'a.menuUnpublish']);
+  'a.videoSave', 'a.videoDelete', 'a.planSave', 'a.settingSave', 'a.adminSave', 'a.export', 'a.student', 'a.videos', 'a.plans', 'a.settings', 'a.admins', 'a.cards', 'a.ledger', 'a.topupSave', 'a.videoInfo', 'a.dayOff', 'a.familySave', 'a.courseDelete', 'a.courseStudents', 'a.signupSave', 'a.rent', 'a.roomSave', 'a.roomDelete', 'a.rentBlockSave', 'a.rentBlockDelete', 'a.rentTagSave', 'a.rentTagDelete', 'a.bookingSave', 'a.rentSlots', 'a.roomCal', 'a.roomHours', 'a.ruleSave', 'a.ruleDelete', 'a.upload', 'a.menu', 'a.menuPageSave', 'a.menuTheme', 'a.resetInfo', 'a.resetData', 'a.attCard', 'a.menuPageDelete', 'a.menuPageMove', 'a.replySave', 'a.replyDelete', 'a.menuPublish', 'a.menuUnpublish']);
 const ASYNC = new Set(['a.resetData', 'a.menuPublish', 'a.menuUnpublish', 'a.videoInfo']);
 /** 從各種 YouTube 網址取出影片 ID（watch、youtu.be、shorts、live、embed） */
 export const ytId = url => { const m = String(url || '').match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^#]*&)?v=|shorts\/|live\/|embed\/|v\/))([\w-]{11})(?![\w-])/); return m ? m[1] : ''; };
@@ -91,6 +91,8 @@ export function createApp(opts = {}) {
     if (!cols.includes('date_to')) db.exec("ALTER TABLE courses ADD COLUMN date_to TEXT DEFAULT ''");
     if (!db.prepare('PRAGMA table_info(students)').all().some(c => c.name === 'family')) db.exec("ALTER TABLE students ADD COLUMN family TEXT DEFAULT ''");
     if (!cols.includes('intro')) db.exec("ALTER TABLE courses ADD COLUMN intro TEXT DEFAULT ''");
+    // 方案與上課卡的適用課程：'' ＝全部課程通用；否則是逗號分隔的課程 ID
+    for (const t of ['plans', 'cards']) if (!db.prepare('PRAGMA table_info(' + t + ')').all().some(c => c.name === 'courses')) db.exec('ALTER TABLE ' + t + " ADD COLUMN courses TEXT DEFAULT ''");
     db.exec("CREATE TABLE IF NOT EXISTS signups(id TEXT PRIMARY KEY, student_id TEXT, course_id TEXT, status TEXT, time TEXT, by_user TEXT, by_name TEXT, done_at TEXT DEFAULT '', done_by TEXT DEFAULT '')");
     db.exec(`CREATE TABLE IF NOT EXISTS rooms(id TEXT PRIMARY KEY, name TEXT NOT NULL, capacity INTEGER DEFAULT 0, price INTEGER DEFAULT 0, unit INTEGER DEFAULT 60, intro TEXT DEFAULT '', open TEXT DEFAULT '{}', status TEXT DEFAULT '開放', sort INTEGER DEFAULT 0);
       CREATE TABLE IF NOT EXISTS bookings(id TEXT PRIMARY KEY, room_id TEXT, date TEXT, start TEXT, end TEXT, user_id TEXT DEFAULT '', line_name TEXT DEFAULT '', name TEXT DEFAULT '', phone TEXT DEFAULT '', purpose TEXT DEFAULT '', people INTEGER DEFAULT 0, status TEXT, amount INTEGER DEFAULT 0, tags TEXT DEFAULT '', note TEXT DEFAULT '', created_at TEXT, by_admin TEXT DEFAULT '', decided_at TEXT DEFAULT '', decided_by TEXT DEFAULT '');
@@ -197,9 +199,20 @@ export function createApp(opts = {}) {
   const assertOwns = (user, sid) => { if (!get("SELECT 1 x FROM bindings b JOIN students s ON s.id=b.student_id WHERE b.user_id=? AND b.student_id=? AND s.status<>'停用'", user.userId, sid)) throw new Error('您尚未綁定這位學生'); };
   const parentsOf = sid => all('SELECT user_id FROM bindings WHERE student_id=?', sid).map(r => r.user_id);
   const student = id => get('SELECT * FROM students WHERE id=?', id);
-  const validCards = sid => all("SELECT c.* FROM cards c JOIN card_students cs ON cs.card_id=c.id WHERE cs.student_id=? AND c.status='啟用' AND c.remain>0 AND (c.expire='' OR c.expire>=?) ORDER BY CASE WHEN c.expire='' THEN '9999' ELSE c.expire END, c.bought", sid, today());
-  const totalRemain = sid => validCards(sid).reduce((n, c) => n + c.remain, 0);
-  const pickCard = (sid, need) => validCards(sid).find(c => c.remain >= need) || null;
+  /** 卡片能不能用在這門課（卡片沒設定適用課程＝全部通用） */
+  const cardFits = (c, courseId) => !c.courses || !courseId || c.courses.split(',').includes(courseId);
+  /** 可用的上課卡，先到期的排前面；給 courseId 時只留適用這門課的 */
+  const validCards = (sid, courseId) => all("SELECT c.* FROM cards c JOIN card_students cs ON cs.card_id=c.id WHERE cs.student_id=? AND c.status='啟用' AND c.remain>0 AND (c.expire='' OR c.expire>=?) ORDER BY CASE WHEN c.expire='' THEN '9999' ELSE c.expire END, c.bought, c.id", sid, today()).filter(c => cardFits(c, courseId));
+  const totalRemain = (sid, courseId) => validCards(sid, courseId).reduce((n, c) => n + c.remain, 0);
+  const pickCard = (sid, need, courseId, preferId) => { const list = validCards(sid, courseId).filter(c => c.remain >= need); return (preferId && list.find(c => c.id === preferId)) || list[0] || null; };
+  /** 最吃緊的堂數：有限定課程的卡時，看學生每門固定課各自還能上幾堂，回傳最少的那門 */
+  const tightest = sid => { const vc = validCards(sid), total = vc.reduce((n, c) => n + c.remain, 0); let best = { remain: total, course: '' };
+    if (vc.some(c => c.courses)) all("SELECT c.id,c.name FROM enrollments e JOIN courses c ON c.id=e.course_id WHERE e.student_id=? AND c.status='啟用'", sid).forEach(c => { const r = vc.filter(k => cardFits(k, c.id)).reduce((n, k) => n + k.remain, 0); if (r < best.remain) best = { remain: r, course: c.name }; });
+    return best; };
+  const cleanCourses = v => [...new Set((Array.isArray(v) ? v : String(v || '').split(',')).map(x => String(x).trim()).filter(id => id && get('SELECT 1 x FROM courses WHERE id=?', id)))].join(',');
+  /** 適用課程的文字：'' → 全部課程 */
+  const scopeText = csv => !csv ? '全部課程' : csv.split(',').map(id => (get('SELECT name FROM courses WHERE id=?', id) || {}).name).filter(Boolean).join('、') || '（課程已刪除）';
+  const cardLabel = c => c.plan_name + (c.courses ? '（' + scopeText(c.courses) + '）' : '');
   const shouldDeduct = st => st === '出席' ? true : st === '請假' ? cfgOn('請假扣堂') : st === '缺席' ? cfgOn('缺席扣堂') : false;
   const sessRow = id => get('SELECT * FROM sessions WHERE id=?', id);
   function sessionInfo(s) {
@@ -211,36 +224,37 @@ export function createApp(opts = {}) {
   const qrToken = (sessionId, offset = 0) => crypto.createHmac('sha256', QR_SECRET).update(sessionId + '|' + (Math.floor(Date.now() / 1000 / cfgNum('QR更新秒數', 60)) + offset)).digest('hex').slice(0, 10);
 
   /* ---------- 出席與扣堂 ---------- */
-  function recordAttendance(sess, sid, status, method, operator, notify = true) {
+  function recordAttendance(sess, sid, status, method, operator, notify = true, preferCard = '') {
     const info = sessionInfo(sess);
     const old = activeRecord(sess.id, sid);
-    if (old && old.status === status) return { dup: true, status, deduct: 0, remain: totalRemain(sid) };
+    if (old && old.status === status) return { dup: true, status, deduct: 0, remain: totalRemain(sid, info.courseId) };
     if (old) {
       if (old.deduct > 0 && old.card_id) run("UPDATE cards SET remain=remain+?, status=CASE WHEN status='用完' THEN '啟用' ELSE status END WHERE id=?", old.deduct, old.card_id);
       run("UPDATE attendance SET status='取消', note=? WHERE id=?", (old.note ? old.note + '；' : '') + '原為' + old.status + '，' + now() + ' 由 ' + operator + ' 變更', old.id);
     }
-    if (status === '取消') return { status, deduct: 0, remain: totalRemain(sid) };
+    if (status === '取消') return { status, deduct: 0, remain: totalRemain(sid, info.courseId) };
     let deduct = 0, cardId = '', note = '';
     const need = shouldDeduct(status) ? info.deduct : 0;
     if (need > 0) {
-      const card = pickCard(sid, need);
+      const card = pickCard(sid, need, info.courseId, preferCard);
       if (card) { const left = card.remain - need; run('UPDATE cards SET remain=?, status=? WHERE id=?', left, left <= 0 ? '用完' : '啟用', card.id); deduct = need; cardId = card.id; }
-      else note = '無可用上課卡，未扣堂';
+      else note = totalRemain(sid) > 0 ? '沒有適用這門課的上課卡，未扣堂' : '無可用上課卡，未扣堂';
     }
     run('INSERT INTO attendance(id,session_id,student_id,status,method,time,deduct,card_id,operator,note) VALUES(?,?,?,?,?,?,?,?,?,?)', uid('A'), sess.id, sid, status, method, now(), deduct, cardId, operator, note);
-    const remain = totalRemain(sid);
-    if (notify) notifyAttendance(info, sid, status, deduct, remain);
-    return { status, deduct, remain, note };
+    const remain = totalRemain(sid, info.courseId);
+    if (notify) notifyAttendance(info, sid, status, deduct, remain, cardId);
+    return { status, deduct, remain, note, cardId };
   }
-  function notifyAttendance(info, sid, status, deduct, remain) {
-    const name = (student(sid) || {}).name || sid;
+  function notifyAttendance(info, sid, status, deduct, remain, cardId) {
+    const name = (student(sid) || {}).name || sid, card = cardId ? get('SELECT * FROM cards WHERE id=?', cardId) : null, scoped = totalRemain(sid) !== remain;
+    const label = scoped ? '這門課可用堂數' : '剩餘堂數';
     const low = deduct > 0 && cfgOn('低堂數推播') && remain <= cfgNum('低堂數門檻', 2);
     let msg = null;
     if (status === '出席' && cfgOn('報到推播')) msg = flexMsg('✅ ' + name + ' 已報到｜剩餘 ' + remain + ' 堂', [flexBubble({
-      color: C.BRAND, title: '報到成功', name, rows: [['課程', info.course], ['時間', info.date + ' ' + info.start], ['教室', info.room]],
-      big: { label: '剩餘堂數', value: remain, unit: '堂', color: low ? C.WARN : C.BRAND }, note: low ? '堂數即將用完，請記得儲值' : '', btn: ['查看出席紀錄', 'attendance'] })]);
+      color: C.BRAND, title: '報到成功', name, rows: [['課程', info.course], ['時間', info.date + ' ' + info.start], ['教室', info.room], ...(card ? [['扣堂', cardLabel(card) + ' 扣 ' + deduct + ' 堂']] : [])],
+      big: { label, value: remain, unit: '堂', color: low ? C.WARN : C.BRAND }, note: low ? '堂數即將用完，請記得儲值' : '', btn: ['查看出席紀錄', 'attendance'] })]);
     else if (low) msg = flexMsg('🔔 ' + name + ' 剩餘 ' + remain + ' 堂，請記得儲值', [flexBubble({
-      color: C.WARN, title: '堂數即將用完', name, rows: [['提醒', '請記得到櫃檯儲值']], big: { label: '剩餘堂數', value: remain, unit: '堂' }, btn: ['查看上課卡', 'card'] })]);
+      color: C.WARN, title: '堂數即將用完', name, rows: [...(scoped ? [['課程', info.course]] : []), ['提醒', '請記得到櫃檯儲值']], big: { label, value: remain, unit: '堂' }, btn: ['查看上課卡', 'card'] })]);
     if (msg) pushMsg(parentsOf(sid), msg);
   }
   const whenOf = s => s.date.slice(5).replace('-', '/') + '（' + '日一二三四五六'[weekday(s.date)] + '）' + s.start + '–' + s.end;
@@ -408,7 +422,8 @@ export function createApp(opts = {}) {
     const next = all("SELECT s.* FROM sessions s WHERE s.date>=? AND s.status='正常' AND (s.course_id IN (SELECT course_id FROM enrollments WHERE student_id=?) OR s.id IN (SELECT session_id FROM makeups WHERE student_id=?)) ORDER BY s.date,s.start LIMIT 6", today(), s.id, s.id)
       .find(x => toDate(x.date, x.end) > new Date() && !['請假'].includes((activeRecord(x.id, s.id) || {}).status));
     const ni = next ? sessionInfo(next) : null;
-    return { id: s.id, name: s.name, remain: totalRemain(s.id),
+    const vc = validCards(s.id);
+    return { id: s.id, name: s.name, remain: totalRemain(s.id), scoped: vc.some(c => c.courses), cardList: vc.map(c => ({ plan: c.plan_name, remain: c.remain, scope: scopeText(c.courses) })),
       sharedWith: all("SELECT DISTINCT st.name FROM card_students a JOIN card_students o ON o.card_id=a.card_id AND o.student_id<>a.student_id JOIN cards c ON c.id=a.card_id JOIN students st ON st.id=o.student_id WHERE a.student_id=? AND c.status='啟用' AND c.remain>0", s.id).map(r => r.name),
       next: ni ? { date: ni.date, start: ni.start, course: ni.course } : null };
   };
@@ -499,7 +514,7 @@ export function createApp(opts = {}) {
     card(b, user) {
       assertOwns(user, b.studentId);
       const cards = all('SELECT c.* FROM cards c JOIN card_students cs ON cs.card_id=c.id WHERE cs.student_id=? ORDER BY c.bought DESC, c.id DESC', b.studentId).map(c => ({
-        id: c.id, plan: c.plan_name, total: c.total, remain: c.remain, buy: c.bought, expire: c.expire, status: c.status,
+        id: c.id, plan: c.plan_name, total: c.total, remain: c.remain, buy: c.bought, expire: c.expire, status: c.status, scope: scopeText(c.courses), scoped: !!c.courses,
         shared: all('SELECT s.name FROM card_students cs JOIN students s ON s.id=cs.student_id WHERE cs.card_id=? AND cs.student_id<>?', c.id, b.studentId).map(r => r.name), usage: cardUsage(c.id) }));
       const topups = all('SELECT time,plan_name plan,lessons,amount FROM topups WHERE student_id=? ORDER BY time DESC LIMIT 10', b.studentId);
       return { remain: totalRemain(b.studentId), cards, topups };
@@ -641,8 +656,8 @@ export function createApp(opts = {}) {
       if (n > start + cfgNum('報到截止分鐘後', 30) * 60000) throw new Error('已超過線上報到時間，請洽櫃檯');
       if (cfgOn('僅限選課學生報到') && !get('SELECT 1 x FROM enrollments WHERE student_id=? AND course_id=?', b.studentId, sess.course_id)) throw new Error('這位學生未報名此課程，請洽櫃檯');
       const info = sessionInfo(sess), old = activeRecord(b.sessionId, b.studentId);
-      if (old && old.status === '出席') return { dup: true, remain: totalRemain(b.studentId), info };
-      if (!cfgOn('無堂數可線上報到') && !pickCard(b.studentId, info.deduct)) throw new Error('上課卡堂數不足，請先至櫃檯儲值');
+      if (old && old.status === '出席') return { dup: true, remain: totalRemain(b.studentId, info.courseId), info };
+      if (!cfgOn('無堂數可線上報到') && !pickCard(b.studentId, info.deduct, info.courseId)) throw new Error(totalRemain(b.studentId) > 0 ? '目前的上課卡不適用「' + info.course + '」，請洽櫃檯' : '上課卡堂數不足，請先至櫃檯儲值');
       return { ...recordAttendance(sess, b.studentId, '出席', 'LINE線上', user.name || '家長'), info };
     },
 
@@ -654,7 +669,7 @@ export function createApp(opts = {}) {
     'a.overview'(b) {
       const d = nd(b.date) || today(), low = cfgNum('低堂數門檻', 2);
       const stus = all("SELECT * FROM students WHERE status='在學'");
-      const lowList = stus.map(s => ({ id: s.id, name: s.name, remain: totalRemain(s.id) })).filter(s => s.remain <= low).sort((a, c) => a.remain - c.remain).slice(0, 12);
+      const lowList = stus.map(s => { const t = tightest(s.id); return { id: s.id, name: s.name, remain: t.remain, course: t.course }; }).filter(s => s.remain <= low).sort((a, c) => a.remain - c.remain).slice(0, 12);
       const soon = addDays(today(), 14);
       return {
         date: d, sessions: API['a.week']({ start: d, days: 1 }).sessions,
@@ -695,7 +710,9 @@ export function createApp(opts = {}) {
       mk.forEach(id => { if (!ids.includes(id)) ids.push(id); });
       all("SELECT DISTINCT student_id id FROM attendance WHERE session_id=? AND status<>'取消'", b.sessionId).forEach(r => { if (!ids.includes(r.id)) ids.push(r.id); });
       const list = ids.map(id => { const s = student(id), r = activeRecord(b.sessionId, id), m = get('SELECT s.date,s.start FROM makeups m JOIN sessions s ON s.id=m.session_id WHERE m.student_id=? AND m.from_session_id=?', id, b.sessionId);
-        return s && { id, name: s.name, status: r ? r.status : '', method: r ? r.method : '', note: r ? r.note : '', remain: totalRemain(id), makeup: mk.includes(id), fixed: fixedN > ids.indexOf(id), makeupAt: m ? m.date.slice(5).replace('-', '/') + ' ' + m.start : '' }; }).filter(Boolean);
+        const fit = validCards(id, sess.course_id), used = r && r.card_id ? get('SELECT * FROM cards WHERE id=?', r.card_id) : null;
+        return s && { id, name: s.name, status: r ? r.status : '', method: r ? r.method : '', note: r ? r.note : '', remain: fit.reduce((n, c) => n + c.remain, 0), other: totalRemain(id) - fit.reduce((n, c) => n + c.remain, 0),
+          deduct: r ? r.deduct : 0, cardId: r ? r.card_id : '', card: used ? cardLabel(used) : '', cards: fit.map(c => ({ id: c.id, label: cardLabel(c), remain: c.remain })), makeup: mk.includes(id), fixed: fixedN > ids.indexOf(id), makeupAt: m ? m.date.slice(5).replace('-', '/') + ' ' + m.start : '' }; }).filter(Boolean);
       return { info: sessionInfo(sess), list };
     },
     'a.mark'(b, user) {
@@ -703,7 +720,22 @@ export function createApp(opts = {}) {
       if (!sess) throw new Error('找不到場次');
       if (!student(b.studentId)) throw new Error('找不到學生');
       if (!['出席', '請假', '缺席', '取消'].includes(b.status)) throw new Error('狀態不正確');
-      return recordAttendance(sess, b.studentId, b.status, '後台', user.admin.name || user.name);
+      return recordAttendance(sess, b.studentId, b.status, '後台', user.admin.name || user.name, true, str(b.cardId, 40));
+    },
+    /** 這筆出席改扣另一張卡（退回原本那張、改扣指定的那張） */
+    'a.attCard'(b, user) {
+      const sess = sessRow(b.sessionId), r = sess && activeRecord(sess.id, b.studentId);
+      if (!r) throw new Error('找不到這筆出席紀錄');
+      const info = sessionInfo(sess), need = shouldDeduct(r.status) ? info.deduct : 0;
+      if (!need) throw new Error('這筆紀錄不需要扣堂');
+      if (r.card_id === b.cardId) return { ok: true };
+      const card = validCards(b.studentId, info.courseId).find(c => c.id === b.cardId);
+      if (!card) throw new Error('這張卡不適用這門課，或已經不能使用');
+      if (card.remain < need) throw new Error('這張卡的堂數不夠');
+      if (r.deduct > 0 && r.card_id) run("UPDATE cards SET remain=remain+?, status=CASE WHEN status='用完' THEN '啟用' ELSE status END WHERE id=?", r.deduct, r.card_id);
+      const left = card.remain - need; run('UPDATE cards SET remain=?, status=? WHERE id=?', left, left <= 0 ? '用完' : '啟用', card.id);
+      run('UPDATE attendance SET deduct=?, card_id=?, note=? WHERE id=?', need, card.id, '改扣 ' + cardLabel(card) + '（' + (user.admin.name || user.name) + '）', r.id);
+      return { ok: true, card: cardLabel(card) };
     },
     /** 全部出席：名單上還沒點名的學生（含補課）一次記為出席 */
     'a.markAll'(b, user) {
@@ -889,7 +921,7 @@ export function createApp(opts = {}) {
       return { url: liffUrl('checkin', '&sid=' + encodeURIComponent(b.sessionId) + '&t=' + qrToken(b.sessionId)), refresh: Math.max(10, Math.floor(cfgNum('QR更新秒數', 60) / 2)) };
     },
     'a.students'() {
-      return all('SELECT * FROM students ORDER BY status, id').map(s => ({ id: s.id, name: s.name, birthday: s.birthday, phone: s.phone, code: s.bind_code, status: s.status, note: s.note, remain: totalRemain(s.id),
+      return all('SELECT * FROM students ORDER BY status, id').map(s => ({ id: s.id, name: s.name, birthday: s.birthday, phone: s.phone, code: s.bind_code, status: s.status, note: s.note, remain: totalRemain(s.id), least: tightest(s.id).remain,
         bound: get('SELECT COUNT(*) n FROM bindings WHERE student_id=?', s.id).n, courses: all('SELECT course_id FROM enrollments WHERE student_id=?', s.id).map(r => r.course_id),
         family: siblingsOf(s.id).map(r => r.id), parents: all('SELECT line_name n, relation r FROM bindings WHERE student_id=?', s.id).map(r => (r.n || '家長') + (r.r ? '（' + r.r + '）' : '')),
         shared: !!get("SELECT 1 x FROM card_students a JOIN card_students o ON o.card_id=a.card_id AND o.student_id<>a.student_id JOIN cards c ON c.id=a.card_id WHERE a.student_id=? AND c.status='啟用' AND c.remain>0", s.id) }));
@@ -919,7 +951,7 @@ export function createApp(opts = {}) {
       return { info: { id: s.id, name: s.name, birthday: s.birthday, phone: s.phone, code: s.bind_code, status: s.status, note: s.note }, remain: totalRemain(s.id),
         courses: all('SELECT course_id FROM enrollments WHERE student_id=?', s.id).map(r => r.course_id),
         parents: all('SELECT user_id userId,line_name name,relation,created_at at FROM bindings WHERE student_id=?', s.id).map(p => ({ ...p, kids: all('SELECT st.name FROM bindings b JOIN students st ON st.id=b.student_id WHERE b.user_id=? AND b.student_id<>?', p.userId, s.id).map(r => r.name) })),
-        cards: all('SELECT c.* FROM cards c JOIN card_students cs ON cs.card_id=c.id WHERE cs.student_id=? ORDER BY c.bought DESC, c.id DESC', s.id).map(c => ({ ...c, students: all('SELECT s.id,s.name FROM card_students cs JOIN students s ON s.id=cs.student_id WHERE cs.card_id=?', c.id), usage: cardUsage(c.id) })),
+        cards: all('SELECT c.* FROM cards c JOIN card_students cs ON cs.card_id=c.id WHERE cs.student_id=? ORDER BY c.bought DESC, c.id DESC', s.id).map(c => ({ ...c, scope: scopeText(c.courses), students: all('SELECT s.id,s.name FROM card_students cs JOIN students s ON s.id=cs.student_id WHERE cs.card_id=?', c.id), usage: cardUsage(c.id) })),
         family: siblingsOf(s.id).map(x => ({ id: x.id, name: x.name, remain: totalRemain(x.id), bound: get('SELECT COUNT(*) n FROM bindings WHERE student_id=?', x.id).n })),
         topups: all('SELECT * FROM topups WHERE student_id=? ORDER BY time DESC LIMIT 20', s.id),
         attendance: all("SELECT a.status,a.deduct,a.method,a.time,s.date,s.start,COALESCE(c.name,s.course_id) course FROM attendance a JOIN sessions s ON s.id=a.session_id LEFT JOIN courses c ON c.id=s.course_id WHERE a.student_id=? AND a.status<>'取消' ORDER BY s.date DESC, s.start DESC LIMIT 30", s.id) };
@@ -978,7 +1010,8 @@ export function createApp(opts = {}) {
       const owners = [b.studentId];
       (b.shareIds || []).forEach(id => { if (owners.includes(id)) return; if (!student(id)) throw new Error('找不到共用學生：' + id); owners.push(id); });
       const t = today(), expire = nd(b.expire) || (plan.valid_days > 0 ? addDays(t, plan.valid_days) : ''), cardId = uid('K');
-      run('INSERT INTO cards(id,plan_name,total,remain,bought,expire,status) VALUES(?,?,?,?,?,?,?)', cardId, plan.name, lessons, lessons, t, expire, '啟用');
+      const courses = b.courses !== undefined ? cleanCourses(b.courses) : (plan.courses || '');
+      run('INSERT INTO cards(id,plan_name,total,remain,bought,expire,status,courses) VALUES(?,?,?,?,?,?,?,?)', cardId, plan.name, lessons, lessons, t, expire, '啟用', courses);
       owners.forEach(id => run('INSERT INTO card_students VALUES(?,?)', cardId, id));
       linkFamily(owners);
       run('INSERT INTO topups(id,time,student_id,plan_name,lessons,amount,pay,operator,card_id,note) VALUES(?,?,?,?,?,?,?,?,?,?)', uid('T'), now(), b.studentId, plan.name, lessons, price, str(b.pay, 20) || '現金', user.admin.name || user.name, cardId, str(b.note));
@@ -986,7 +1019,7 @@ export function createApp(opts = {}) {
       if (cfgOn('儲值推播')) {
         const who = owners.map(id => student(id).name).join('、');
         pushMsg(owners.flatMap(parentsOf), flexMsg('🎫 儲值成功｜' + who + ' 目前剩餘 ' + remain + ' 堂', [flexBubble({
-          color: C.OK, title: '儲值成功', name: who + (owners.length > 1 ? '（共用）' : ''), rows: [['方案', plan.name], ['堂數', lessons + ' 堂'], ['金額', price + ' 元'], ['到期日', expire]],
+          color: C.OK, title: '儲值成功', name: who + (owners.length > 1 ? '（共用）' : ''), rows: [['方案', plan.name], ['堂數', lessons + ' 堂'], ...(courses ? [['適用課程', scopeText(courses)]] : []), ['金額', price + ' 元'], ['到期日', expire]],
           big: { label: '目前剩餘', value: remain, unit: '堂' }, btn: ['查看上課卡', 'card'] })]));
       }
       return { remain, expire, shared: owners.length - 1 };
@@ -998,6 +1031,7 @@ export function createApp(opts = {}) {
       if (isNaN(remain)) throw new Error('堂數不正確');
       const status = ['啟用', '停用'].includes(b.status) ? b.status : (remain <= 0 ? '用完' : '啟用');
       run('UPDATE cards SET remain=?, expire=?, status=? WHERE id=?', remain, nd(b.expire), status, b.id);
+      if (b.courses !== undefined) run('UPDATE cards SET courses=? WHERE id=?', cleanCourses(b.courses), b.id);
       if (Array.isArray(b.studentIds) && b.studentIds.length) {
         const ids = b.studentIds.filter(student);
         if (!ids.length) throw new Error('至少要有一位學生');
@@ -1152,7 +1186,7 @@ export function createApp(opts = {}) {
       return { ok: true };
     },
     'a.cards'() {
-      return all("SELECT c.*, (SELECT GROUP_CONCAT(s.name,'、') FROM card_students cs JOIN students s ON s.id=cs.student_id WHERE cs.card_id=c.id) names FROM cards c ORDER BY (c.status='啟用') DESC, c.bought DESC, c.id DESC LIMIT 300");
+      return all("SELECT c.*, (SELECT GROUP_CONCAT(s.name,'、') FROM card_students cs JOIN students s ON s.id=cs.student_id WHERE cs.card_id=c.id) names FROM cards c ORDER BY (c.status='啟用') DESC, c.bought DESC, c.id DESC LIMIT 300").map(c => ({ ...c, scope: scopeText(c.courses) }));
     },
     'a.videos'() { return all('SELECT * FROM videos ORDER BY date DESC, id DESC').map(v => ({ ...v, yt: ytId(v.url) })); },
     /** 貼上連結時自動帶出 YouTube 標題（抓不到就回空字串） */
@@ -1183,13 +1217,15 @@ export function createApp(opts = {}) {
       return { ok: true, notified };
     },
     'a.videoDelete'(b) { run('DELETE FROM videos WHERE id=?', b.id); return { ok: true }; },
-    'a.plans'() { return all('SELECT * FROM plans ORDER BY sort,id'); },
+    'a.plans'() { return all('SELECT * FROM plans ORDER BY sort,id').map(p => ({ ...p, courses: p.courses || '', scope: scopeText(p.courses) })); },
     'a.planSave'(b) {
       const name = str(b.name, 40), lessons = Math.floor(Number(b.lessons));
       if (!name || !(lessons > 0)) throw new Error('請輸入方案名稱與堂數');
       const v = [name, lessons, Math.max(0, Math.floor(Number(b.price)) || 0), Math.max(0, Math.floor(Number(b.validDays)) || 0), b.active === false || b.active === 0 ? 0 : 1];
+      const pid = b.id || nextId('plans', 'P', 2);
       if (b.id) run('UPDATE plans SET name=?,lessons=?,price=?,valid_days=?,active=? WHERE id=?', ...v, b.id);
-      else run('INSERT INTO plans(name,lessons,price,valid_days,active,id,sort) VALUES(?,?,?,?,?,?,99)', ...v, nextId('plans', 'P', 2));
+      else run('INSERT INTO plans(name,lessons,price,valid_days,active,id,sort) VALUES(?,?,?,?,?,?,99)', ...v, pid);
+      if (b.courses !== undefined) run('UPDATE plans SET courses=? WHERE id=?', cleanCourses(b.courses), pid);
       return { ok: true };
     },
     'a.settings'() { return all('SELECT key,value,note,kind FROM settings ORDER BY sort'); },
@@ -1457,7 +1493,7 @@ export function createApp(opts = {}) {
         }
         if (/堂數|上課卡|剩|餘額/.test(t)) {
           await reply([flexMsg(kids.map(s => s.name + ' 剩餘 ' + totalRemain(s.id) + ' 堂').join('、'), kids.map(s => { const remain = totalRemain(s.id); return flexBubble({
-            color: C.BRAND, title: '上課卡', name: s.name, rows: validCards(s.id).map(c => [c.plan_name, c.remain + ' / ' + c.total + ' 堂' + (c.expire ? '｜到期 ' + c.expire : '')]),
+            color: C.BRAND, title: '上課卡', name: s.name, rows: validCards(s.id).map(c => [cardLabel(c), c.remain + ' / ' + c.total + ' 堂' + (c.expire ? '｜到期 ' + c.expire : '')]),
             big: { label: '剩餘堂數', value: remain, unit: '堂', color: remain <= cfgNum('低堂數門檻', 2) ? C.WARN : C.BRAND }, note: remain <= 0 ? '目前沒有可用的上課卡' : '', btn: ['查看上課卡', 'card'] }); }))]);
           continue;
         }

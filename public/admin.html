@@ -330,7 +330,7 @@ const PAGES = {
       <div class="card"><h2>今日課程<span class="sp"></span><a class="btn sm ghost" href="#schedule">看整週 ›</a></h2>
         ${d.sessions.length ? d.sessions.map(sessRow).join('') : '<div class="empty">今天沒有課程</div>'}</div>
       <div class="grid">
-        <div class="card"><h2>堂數不足</h2>${d.low.length ? d.low.map(s => `<div class="row"><div class="g t">${esc(s.name)}</div><span class="tag ${s.remain <= 0 ? 'bad' : 'warn'}">剩 ${s.remain} 堂</span>${owner() ? `<button class="btn sm" data-topup="${esc(s.id)}">儲值</button>` : ''}</div>`).join('') : '<div class="empty">目前沒有</div>'}</div>
+        <div class="card"><h2>堂數不足</h2>${d.low.length ? d.low.map(s => `<div class="row"><div class="g"><div class="t">${esc(s.name)}</div>${s.course ? `<div class="s">${esc(s.course)}</div>` : ''}</div><span class="tag ${s.remain <= 0 ? 'bad' : 'warn'}">剩 ${s.remain} 堂</span>${owner() ? `<button class="btn sm" data-topup="${esc(s.id)}">儲值</button>` : ''}</div>`).join('') : '<div class="empty">目前沒有</div>'}</div>
         <div class="card"><h2>14 天內到期的上課卡</h2>${d.expiring.length ? d.expiring.map(c => `<div class="row"><div class="g"><div class="t">${esc(c.names || '')}</div><div class="s">${esc(c.plan)}｜剩 ${c.remain} 堂</div></div><span class="tag warn">${esc(c.expire.slice(5))} 到期</span></div>`).join('') : '<div class="empty">目前沒有</div>'}</div>
         <div class="card"><h2>近期請假</h2>${d.leaves.length ? d.leaves.map(l => `<div class="row"><div class="g"><div class="t">${esc(l.student)}</div><div class="s">${dLabel(l.date)} ${esc(l.start)} ${esc(l.course)}${l.reason ? '｜' + esc(l.reason) : ''}</div></div></div>`).join('') : '<div class="empty">目前沒有</div>'}</div>
       </div>
@@ -390,7 +390,7 @@ const PAGES = {
     A.students = await api('a.students');
     const f = A.filter, low = 2;
     const list = A.students.filter(s => (!f.kw || (s.name + s.id + s.phone).includes(f.kw)) && (!f.course || s.courses.includes(f.course)) &&
-      (f.f === 'all' ? s.status !== '停用' : f.f === 'low' ? s.status !== '停用' && s.remain <= low : f.f === 'unbound' ? s.status !== '停用' && !s.bound : s.status === '停用'));
+      (f.f === 'all' ? s.status !== '停用' : f.f === 'low' ? s.status !== '停用' && (s.least ?? s.remain) <= low : f.f === 'unbound' ? s.status !== '停用' && !s.bound : s.status === '停用'));
     const cnt = k => A.students.filter(s => k === 'all' ? s.status !== '停用' : k === 'low' ? s.status !== '停用' && s.remain <= low : k === 'unbound' ? s.status !== '停用' && !s.bound : s.status === '停用').length;
     return `<div class="head"><h1>學生</h1><span class="sp"></span>${owner() ? '<button class="btn" data-import>批次匯入</button><button class="btn p" data-newstu>＋ 新增學生</button>' : ''}</div>
     <div class="card" style="margin-bottom:12px"><div class="two" style="grid-template-columns:2fr 1fr"><input id="kw" placeholder="搜尋姓名／編號／電話" value="${esc(f.kw)}">
@@ -413,7 +413,7 @@ const PAGES = {
     if (M.tab === 'cards') {
       const cards = await api('a.cards'), live = cards.filter(c => c.status === '啟用');
       return head + `<div class="grid stats" style="margin-bottom:12px"><div class="card stat"><b>${live.length}</b><span>使用中的卡</span></div><div class="card stat"><b>${live.reduce((n, c) => n + c.remain, 0)}</b><span>尚未使用的堂數</span></div></div>
-        <div class="card">${cards.length ? cards.map(c => `<div class="row"><div class="g"><div class="t">${esc(c.names || '（無學生）')} ${tag(c.status)}</div><div class="s">${esc(c.plan_name)}｜購買 ${esc(c.bought)}${c.expire ? '｜到期 ' + esc(c.expire) : ''}</div></div><span class="amt">${c.remain}／${c.total}</span></div>`).join('') : '<div class="empty">還沒有上課卡，按右上角「＋ 儲值」開始</div>'}
+        <div class="card">${cards.length ? cards.map(c => `<div class="row"><div class="g"><div class="t">${esc(c.names || '（無學生）')} ${tag(c.status)}</div><div class="s">${esc(c.plan_name)}｜購買 ${esc(c.bought)}${c.expire ? '｜到期 ' + esc(c.expire) : ''}</div><div class="s">適用：${esc(c.scope)}</div></div><span class="amt">${c.remain}／${c.total}</span></div>`).join('') : '<div class="empty">還沒有上課卡，按右上角「＋ 儲值」開始</div>'}
         ${cards.length ? '<p class="s" style="margin-bottom:0">要補登或更正堂數：到「學生」點該學生 → 上課卡旁的「調整」。</p>' : ''}</div>`;
     }
     return head + `<div class="grid stats" style="margin-bottom:12px"><div class="card stat"><b>${money(d.total)}</b><span>本月實收</span></div><div class="card stat"><b>${d.rows.length}</b><span>筆數</span></div><div class="card stat"><b>${d.lessons}</b><span>售出堂數</span></div>
@@ -528,7 +528,7 @@ const PAGES = {
         ${s.kind === 'bool' ? `<label class="switch"><input type="checkbox" data-set="${esc(s.key)}" ${s.value === '是' ? 'checked' : ''}><i></i></label>` : `<input class="setv ${s.kind === 'num' ? 'num' : ''}" data-set="${esc(s.key)}" value="${esc(s.value)}" ${s.kind === 'num' ? 'inputmode="numeric"' : ''}>`}</div>`).join('')}</div>
     </div>
     <div class="grid">
-      <div class="card"><h2>儲值方案<span class="sp"></span><button class="btn sm" data-plan="">＋ 新增</button></h2>${plans.map(p => `<div class="row"><div class="g"><div class="t">${esc(p.name)} ${p.active ? '' : tag('停用')}</div><div class="s">${p.lessons} 堂｜${money(p.price)}｜${p.valid_days ? p.valid_days + ' 天有效' : '無期限'}</div></div><button class="btn sm" data-plan="${esc(p.id)}">編輯</button></div>`).join('')}</div>
+      <div class="card"><h2>儲值方案<span class="sp"></span><button class="btn sm" data-plan="">＋ 新增</button></h2>${plans.map(p => `<div class="row"><div class="g"><div class="t">${esc(p.name)} ${p.active ? '' : tag('停用')}</div><div class="s">${p.lessons} 堂｜${money(p.price)}｜${p.valid_days ? p.valid_days + ' 天有效' : '無期限'}</div><div class="s">適用：${esc(p.scope)}</div></div><button class="btn sm" data-plan="${esc(p.id)}">編輯</button></div>`).join('')}</div>
       <div class="card"><h2>管理員與老師<span class="sp"></span><button class="btn sm" data-admin="">＋ 手動新增</button></h2>
         ${pending.length ? `<div class="s" style="color:var(--warn);margin-bottom:6px">有 ${pending.length} 位申請開通，按「開通」即可</div>` : ''}
         ${admins.map(a => `<div class="row"><div class="g"><div class="t">${esc(a.name || '（未命名）')} ${a.active ? `<span class="tag ${a.role === 'owner' ? 'info' : ''}">${a.role === 'owner' ? '管理員' : '老師'}</span>` : '<span class="tag warn">待開通</span>'}</div><div class="s" style="word-break:break-all">${esc(a.userId)}</div></div><button class="btn sm ${a.active ? '' : 'p'}" data-admin="${esc(a.userId)}">${a.active ? '編輯' : '開通'}</button></div>`).join('')}
@@ -569,7 +569,7 @@ async function openSession(id) {
   const body = () => { const here = d.list.filter(x => x.status === '出席').length, todo = d.list.filter(x => !x.status).length;
     return `<div class="s" style="margin:8px 0 10px">${dLabel(i.date)} ${esc(i.start)}–${esc(i.end)}${i.teacher ? '｜' + esc(i.teacher) : ''}${i.room ? '｜' + esc(i.room) : ''} ${i.status !== '正常' ? tag(i.status) : ''}</div>
     ${off() ? '' : `<div class="rhead"><b>點名</b><span class="s">已到 ${here}／${d.list.length}${todo ? '｜未點 ' + todo : ''}</span><span class="sp"></span>${todo ? `<button class="btn sm ok" data-a="all">全部出席</button>` : ''}<button class="btn sm" data-a="qr">QR 報到</button></div>
-    <div class="roster">${d.list.length ? d.list.map(x => `<div class="row"><div class="g"><div class="t">${esc(x.name)} ${x.makeup ? '<span class="tag info">補課</span>' : x.fixed ? '' : '<span class="tag">臨時</span>'}</div><div class="s">剩 ${x.remain} 堂${x.method ? '｜' + esc(x.method) : ''}${x.note ? '｜' + esc(x.note) : ''}${x.makeupAt ? '｜已排補課 ' + esc(x.makeupAt) : ''}</div></div>
+    <div class="roster">${d.list.length ? d.list.map(x => `<div class="row"><div class="g"><div class="t">${esc(x.name)} ${x.makeup ? '<span class="tag info">補課</span>' : x.fixed ? '' : '<span class="tag">臨時</span>'}</div><div class="s">${x.remain <= 0 && x.other > 0 ? `<b style="color:var(--bad)">沒有適用這門課的卡</b>（其他卡剩 ${x.other} 堂）` : '可用 ' + x.remain + ' 堂'}${x.method ? '｜' + esc(x.method) : ''}${x.note && !x.card ? '｜' + esc(x.note) : ''}${x.makeupAt ? '｜已排補課 ' + esc(x.makeupAt) : ''}</div>${x.card ? `<div class="s">扣 ${x.deduct} 堂：${esc(x.card)}${owner() && x.cards.some(k => k.id !== x.cardId) ? ` <button class="btn sm ghost" style="padding:1px 6px" data-swap="${esc(x.id)}">換一張卡</button>` : ''}</div>` : ''}</div>
       <div class="acts"><div class="mk3">${[['出席', 'ok'], ['請假', 'w'], ['缺席', 'b']].map(b => `<button class="${x.status === b[0] ? b[1] : ''}" data-mk="${x.status === b[0] ? '取消' : b[0]}" data-id="${esc(x.id)}" aria-pressed="${x.status === b[0]}">${b[0]}</button>`).join('')}</div>${x.status === '請假' ? `<button class="btn sm" data-mu="${esc(x.id)}" data-name="${esc(x.name)}">${x.makeupAt ? '改補課' : '排補課'}</button>` : ''}${x.makeup && !x.status ? `<button class="btn sm ghost" data-unmu="${esc(x.id)}">取消補課</button>` : ''}${!x.fixed && !x.makeup && owner() ? `<button class="btn sm ghost" data-fix="${esc(x.id)}">加入固定名單</button>` : ''}</div></div>`).join('') : `<div class="empty">這門課還沒有固定學生名單。${owner() ? '<br><br><button class="btn p" data-a="roster">設定學生名單</button><br><br>' : ''}<span class="s">設定後每堂課都會自動帶出這些學生，家長也才能在 LINE 上看到這門課並請假。</span></div>`}</div>
     <div class="radd"><button class="btn" data-a="many" style="flex:1">＋ 加入學生報到（可多選）</button>${owner() && d.list.length ? '<button class="btn" data-a="roster">管理名單</button>' : ''}</div>
     <p class="s" style="margin:6px 0 0">再按一次已選的狀態可以取消。</p>`}
@@ -584,6 +584,9 @@ async function openSession(id) {
     const keep = { date: i.date, start: i.start, end: i.end, teacher: i.rawTeacher || '', room: i.rawRoom || '' };
     try {
       if (b.dataset.mk) { const r = await api('a.mark', { sessionId: id, studentId: b.dataset.id, status: b.dataset.mk }); toast(b.dataset.mk + (r.deduct ? '，扣 ' + r.deduct + ' 堂' : '') + (r.note ? '（' + r.note + '）' : '') + '｜剩 ' + r.remain + ' 堂'); await refresh(); }
+      if (b.dataset.swap) { const x = d.list.find(k => k.id === b.dataset.swap);
+        formDialog('改扣哪一張卡｜' + x.name, [{ k: 'cardId', label: '適用「' + i.course + '」的上課卡', type: 'select', opts: [...(x.cards.some(k => k.id === x.cardId) ? [] : [[x.cardId, x.card + '（目前）']]), ...x.cards.map(k => [k.id, `${k.label}｜剩 ${k.remain} 堂${k.id === x.cardId ? '（目前）' : ''}`])] }], { cardId: x.cardId },
+          async o => { await api('a.attCard', { sessionId: id, studentId: x.id, cardId: o.cardId }); toast('已改扣'); await refresh(); }, { extra: '<p class="s">原本那張卡的堂數會退回，改從選擇的卡扣。系統預設先扣最快到期的那一張。</p>' }); }
       if (b.dataset.mu) makeupDialog(b.dataset.mu, b.dataset.name, id, refresh);
       if (b.dataset.unmu) { await api('a.makeupDelete', { studentId: b.dataset.unmu, sessionId: id }); toast('已取消補課'); await refresh(); }
       if (b.dataset.a === 'close') { if (!confirm('確定結算？未報到且未請假的學生會記為缺席' + '。')) return; const r = await api('a.close', { sessionId: id }); toast('已結算，缺席 ' + r.absent + ' 人'); await refresh(); }
@@ -737,7 +740,7 @@ async function openStudent(id) {
       <div style="margin-top:4px">綁定碼 <b style="font-size:20px;letter-spacing:3px">${esc(s.code)}</b></div></div><div style="text-align:right"><b style="font-size:30px;line-height:1">${d.remain}</b><div class="s">剩餘堂數</div></div></div>
     <div class="acts" style="margin:12px 0"><button class="btn p" data-a="topup">儲值</button><button class="btn" data-a="edit">編輯資料與排課</button><button class="btn" data-a="family">兄弟姊妹</button></div>
     ${d.family.length ? `<div class="fbox"><div class="s">👪 同一家庭｜家長輸入任一位的綁定碼，會一起綁定</div>${d.family.map(f => `<div class="row"><div class="g"><span class="t">${esc(f.name)}</span> <span class="s">${esc(f.id)}｜${f.bound ? '已綁 ' + f.bound : '未綁定'}</span></div><span class="tag ${f.remain <= 0 ? 'bad' : 'ok'}">剩 ${f.remain}</span><button class="btn sm" data-sib="${esc(f.id)}">查看</button></div>`).join('')}</div>` : ''}
-    <h4 style="margin:16px 0 4px">上課卡</h4>${d.cards.length ? d.cards.map(c => `<div class="row"><div class="g"><div class="t">${esc(c.plan_name)} ${tag(c.status)}</div><div class="s">購買 ${esc(c.bought)}${c.expire ? '｜到期 ' + esc(c.expire) : ''}</div>${c.students.length > 1 ? `<div class="s"><span class="tag info">共用</span> ${esc(c.students.map(x => x.name).join('、'))}${c.usage.length ? '｜已用：' + c.usage.map(u => esc(u.name) + ' ' + u.n).join('、') : ''}</div>` : ''}</div><b>${c.remain}／${c.total}</b><button class="btn sm" data-card="${esc(c.id)}">調整</button></div>`).join('') : '<div class="s">尚無上課卡</div>'}
+    <h4 style="margin:16px 0 4px">上課卡</h4>${d.cards.length ? d.cards.map(c => `<div class="row"><div class="g"><div class="t">${esc(c.plan_name)} ${tag(c.status)}</div><div class="s">購買 ${esc(c.bought)}${c.expire ? '｜到期 ' + esc(c.expire) : ''}</div><div class="s">適用：${esc(c.scope)}</div>${c.students.length > 1 ? `<div class="s"><span class="tag info">共用</span> ${esc(c.students.map(x => x.name).join('、'))}${c.usage.length ? '｜已用：' + c.usage.map(u => esc(u.name) + ' ' + u.n).join('、') : ''}</div>` : ''}</div><b>${c.remain}／${c.total}</b><button class="btn sm" data-card="${esc(c.id)}">調整</button></div>`).join('') : '<div class="s">尚無上課卡</div>'}
     <h4 style="margin:16px 0 4px">已綁定的家長</h4>${d.parents.length ? d.parents.map(p => `<div class="row"><div class="g"><div class="t">${esc(p.name || '（未命名）')} <span class="s">${esc(p.relation || '')}</span></div><div class="s">${esc((p.at || '').slice(0, 10))}${p.kids.length ? '｜也綁定了 ' + esc(p.kids.join('、')) : ''}</div></div><button class="btn sm ghost" style="color:var(--bad)" data-unbind="${esc(p.userId)}">解除</button></div>`).join('') : '<div class="s">尚未有家長綁定</div>'}
     <h4 style="margin:16px 0 4px">最近出席</h4>${d.attendance.length ? d.attendance.slice(0, 10).map(a => `<div class="row"><div class="g"><span class="t">${esc(a.course)}</span> <span class="s">${dLabel(a.date)} ${esc(a.start)}${a.deduct ? '｜扣 ' + a.deduct + ' 堂' : ''}</span></div>${tag(a.status)}</div>`).join('') : '<div class="s">尚無紀錄</div>'}`;
   const m = dialog(s.name, html(), { wide: true });
@@ -754,8 +757,8 @@ async function openStudent(id) {
         async o => { await api('a.studentSave', { id, ...o, regenCode: !!o.regen }); toast('已儲存'); show(); openStudent(id); }); }
       if (b.dataset.unbind) { if (!confirm('確定解除這位家長的綁定？')) return; await api('a.unbind', { userId: b.dataset.unbind, studentId: id }); toast('已解除'); m.remove(); show(); openStudent(id); }
       if (b.dataset.card) { const c = d.cards.find(x => x.id === b.dataset.card); m.remove();
-        formDialog('調整上課卡', [{ k: 'remain', label: '剩餘堂數', type: 'number', half: 1 }, { k: 'expire', label: '到期日（留白＝無期限）', type: 'date', half: 1 }, { k: 'studentIds', label: '使用這張卡的學生', type: 'checks', opts: A.students.filter(x => x.status !== '停用').map(x => [x.id, x.name]) }, { k: 'status', label: '狀態', type: 'select', opts: [['', '依堂數自動'], ['停用', '停用這張卡']] }],
-          { remain: c.remain, expire: c.expire, studentIds: c.students.map(x => x.id), status: c.status === '停用' ? '停用' : '' }, async o => { await api('a.cardSave', { id: c.id, ...o }); toast('已調整'); show(); openStudent(id); }, { extra: '<p class="s">用於補登、更正或把卡片改成兄弟姊妹共用。</p>' }); }
+        formDialog('調整上課卡', [{ k: 'remain', label: '剩餘堂數', type: 'number', half: 1 }, { k: 'expire', label: '到期日（留白＝無期限）', type: 'date', half: 1 }, { k: 'studentIds', label: '使用這張卡的學生', type: 'checks', opts: A.students.filter(x => x.status !== '停用').map(x => [x.id, x.name]) }, { k: 'courses', label: '適用課程（都不勾＝全部課程通用）', type: 'checks', opts: A.meta.courses.filter(c => c.status !== '停開').map(c => [c.id, c.name]) }, { k: 'status', label: '狀態', type: 'select', opts: [['', '依堂數自動'], ['停用', '停用這張卡']] }],
+          { remain: c.remain, expire: c.expire, studentIds: c.students.map(x => x.id), courses: c.courses ? c.courses.split(',') : [], status: c.status === '停用' ? '停用' : '' }, async o => { await api('a.cardSave', { id: c.id, ...o }); toast('已調整'); show(); openStudent(id); }, { extra: '<p class="s">用於補登、更正或把卡片改成兄弟姊妹共用。</p>' }); }
     } catch (err) { toast(err.message, true); }
   });
 }
@@ -764,15 +767,16 @@ function topup(id) {
   const fam = (s.family || []).map(f => A.students.find(x => x.id === f)).filter(x => x && x.status !== '停用');
   const F = [{ k: 'planId', label: '方案', type: 'select', opts: A.meta.plans.map(p => [p.id, `${p.name}｜${p.lessons} 堂｜${money(p.price)}`]) }, { k: 'lessons', label: '堂數', type: 'number', half: 1 }, { k: 'price', label: '實收金額', type: 'number', half: 1 },
     { k: 'pay', label: '付款方式', type: 'select', opts: ['現金', '轉帳', 'LINE Pay', '信用卡', '其他'].map(x => [x, x]), half: 1 }, { k: 'expire', label: '到期日（留白＝依方案）', type: 'date', half: 1 },
+    { k: 'courses', label: '這張卡適用的課程（依方案帶入，可調整；都不勾＝全部課程通用）', type: 'checks', opts: A.meta.courses.filter(c => c.status !== '停開').map(c => [c.id, c.name]) },
     { k: 'shareIds', label: fam.length ? '兄弟姊妹共用這張卡（勾選後一起扣同一張）' : '共用這張卡的學生（尚未設定兄弟姊妹）', type: 'checks', opts: fam.map(f => [f.id, f.name]) }, { k: 'more', label: '加入其他學生共用', type: 'select', opts: [['', '不加入']].concat(A.students.filter(x => x.id !== id && x.status !== '停用' && !fam.includes(x)).map(x => [x.id, x.name])) }, { k: 'note', label: '備註' }];
-  const m = formDialog('為「' + (s.name || id) + '」儲值', F, { planId: p0.id, lessons: p0.lessons }, async o => {
+  const m = formDialog('為「' + (s.name || id) + '」儲值', F, { planId: p0.id, lessons: p0.lessons, courses: p0.courses ? p0.courses.split(',') : [] }, async o => {
     if (String(o.price).trim() === '' || !(Number(o.price) >= 0)) throw new Error('請輸入實收金額');
     const share = [...o.shareIds, ...(o.more ? [o.more] : [])];
     if (!confirm(`確認儲值 ${o.lessons} 堂、實收 ${money(o.price)}？` + (share.length ? '\n共用：' + share.map(x => (A.students.find(y => y.id === x) || {}).name).join('、') : ''))) throw new Error('已取消');
-    const r = await api('a.topup', { studentId: id, planId: o.planId, lessons: o.lessons, price: o.price, pay: o.pay, expire: o.expire, note: o.note, shareIds: share });
+    const r = await api('a.topup', { studentId: id, planId: o.planId, lessons: o.lessons, price: o.price, pay: o.pay, expire: o.expire, note: o.note, shareIds: share, courses: o.courses });
     toast('儲值完成，剩餘 ' + r.remain + ' 堂'); show();
   }, { saveText: '確認儲值' });
-  $('[name=planId]', m).onchange = e => { const p = A.meta.plans.find(x => x.id === e.target.value); $('[name=lessons]', m).value = p.lessons; $('[name=price]', m).placeholder = '定價 ' + p.price; };
+  $('[name=planId]', m).onchange = e => { const p = A.meta.plans.find(x => x.id === e.target.value); $('[name=lessons]', m).value = p.lessons; $('[name=price]', m).placeholder = '定價 ' + p.price; const cs = p.courses ? p.courses.split(',') : []; $$('[name=courses]', m).forEach(x => { x.checked = cs.includes(x.value); }); };
   $('[name=price]', m).placeholder = '定價 ' + (p0.price ?? '');
 }
 
@@ -1196,8 +1200,8 @@ document.addEventListener('click', async e => {
     if (ds.reset) return resetData();
     if (ds.export) { const r = await api('a.export', { table: ds.export }); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([r.csv], { type: 'text/csv' })); a.download = r.name; a.click(); return; }
     if ('plan' in ds) { const p = ds.plan ? (await api('a.plans')).find(x => x.id === ds.plan) : null;
-      return formDialog(p ? '編輯方案' : '新增方案', [{ k: 'name', label: '方案名稱' }, { k: 'lessons', label: '堂數', type: 'number', half: 1 }, { k: 'price', label: '價格', type: 'number', half: 1 }, { k: 'validDays', label: '有效天數（0＝無期限）', type: 'number', half: 1 }, { k: 'active', label: '狀態', type: 'select', opts: [['1', '啟用'], ['0', '停用']], half: 1 }],
-        p ? { ...p, validDays: p.valid_days } : { validDays: 90, active: 1 }, async o => { await api('a.planSave', { id: ds.plan || undefined, ...o, active: o.active === '1' }); A.meta = await api('a.meta'); toast('已儲存'); show(); }); }
+      return formDialog(p ? '編輯方案' : '新增方案', [{ k: 'name', label: '方案名稱' }, { k: 'lessons', label: '堂數', type: 'number', half: 1 }, { k: 'price', label: '價格', type: 'number', half: 1 }, { k: 'validDays', label: '有效天數（0＝無期限）', type: 'number', half: 1 }, { k: 'active', label: '狀態', type: 'select', opts: [['1', '啟用'], ['0', '停用']], half: 1 }, { k: 'courses', label: '適用課程（都不勾＝全部課程通用）', type: 'checks', opts: A.meta.courses.filter(c => c.status !== '停開').map(c => [c.id, c.name]) }],
+        p ? { ...p, validDays: p.valid_days, courses: p.courses ? p.courses.split(',') : [] } : { validDays: 90, active: 1, courses: [] }, async o => { await api('a.planSave', { id: ds.plan || undefined, ...o, active: o.active === '1' }); A.meta = await api('a.meta'); toast('已儲存'); show(); }, { extra: '<p class="s">用這個方案儲值的上課卡，只會在勾選的課程扣堂。例如「兒童班通用卡」勾選所有兒童課程。已經賣出的卡不會跟著改，要改請到學生的上課卡按「調整」。</p>' }); }
     if ('video' in ds) return editVideo(ds.video);
     if (ds.play) { const v = (A.videos || []).find(x => x.id === ds.play); return v && openUrl(v.url); }
     if (ds.vtoggle) { const v = A.videos.find(x => x.id === ds.vtoggle); await api('a.videoSave', { id: v.id, title: v.title, url: v.url, date: v.date, courseId: v.course_id, studentId: v.student_id, status: v.status === '停用' ? '啟用' : '停用' }); toast(v.status === '停用' ? '已重新顯示' : '已隱藏，家長看不到'); return show(); }

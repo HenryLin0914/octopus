@@ -440,6 +440,37 @@ ok((await app.webhook(body, 'wrong')) === false, 'Webhook 簽章錯誤被拒');
 const pw = pushes.length; ok((await app.webhook(body, sig)) === true && pushes.length === pw + 1 && /剩餘 9 堂/.test(pushes[pw].body.messages[0].altText), 'Webhook 回覆堂數卡片');
 const walk = o => { if (o && typeof o === 'object') { if (o.type === 'text' && (typeof o.text !== 'string' || !o.text.length)) throw new Error('empty'); Object.values(o).forEach(walk); } };
 let bad = ''; try { pushes.forEach(p => p.body && p.body.messages && p.body.messages.forEach(walk)); } catch (e) { bad = e.message; } ok(!bad, '所有 Flex 文字非空');
+{ // 上課卡限定課程：一張卡可上多門課，扣堂只扣適用的卡
+  const cs = (await call('boss', 'a.meta')).data.courses, [cA, cB, cC] = [0, 1, 2].map(n => cs[n] ? cs[n].id : (cs[0].id));
+  const c2 = (await call('boss', 'a.courseSave', { name: '限定測試甲', weekdays: [1, 2, 3, 4, 5, 6, 0], start: '06:00', end: '06:30', teacher: 'T' })).data.id, c3 = (await call('boss', 'a.courseSave', { name: '限定測試乙', weekdays: [1, 2, 3, 4, 5, 6, 0], start: '07:00', end: '07:30', teacher: 'T' })).data.id;
+  const sid = (await call('boss', 'a.studentSave', { name: '限定生', courses: [c2, c3] })).data.id;
+  ok((await call('boss', 'a.planSave', { name: '甲班卡', lessons: 5, price: 2000, validDays: 30, courses: [c2, 'nope'] })).ok, '方案可設定適用課程');
+  const plans = (await call('boss', 'a.plans')).data, pA = plans.find(p => p.name === '甲班卡');
+  ok(pA.courses === c2 && pA.scope === '限定測試甲' && plans[0].scope === '全部課程', '方案顯示適用課程，沒設定＝全部課程');
+  await call('boss', 'a.topup', { studentId: sid, planId: pA.id, price: 2000 });
+  const day = (await call('boss', 'a.meta')).data.today, wk = (await call('boss', 'a.week', { start: day, days: 7 })).data.sessions, s2 = wk.find(x => x.courseId === c2).sessionId, s3 = wk.find(x => x.courseId === c3).sessionId;
+  r = await call('boss', 'a.mark', { sessionId: s3, studentId: sid, status: '出席' });
+  ok(r.data.deduct === 0 && /沒有適用這門課/.test(r.data.note) && r.data.remain === 0, '卡片不適用的課不扣堂並提示');
+  let ro = (await call('boss', 'a.roster', { sessionId: s3 })).data.list.find(x => x.id === sid);
+  ok(ro.remain === 0 && ro.other === 5 && !ro.cards.length, '點名單顯示這門課沒有適用的卡');
+  r = await call('boss', 'a.mark', { sessionId: s2, studentId: sid, status: '出席' });
+  ok(r.data.deduct === 1 && r.data.remain === 4, '適用的課正常扣堂');
+  await call('boss', 'a.topup', { studentId: sid, planId: plans[0].id, lessons: 3, price: 100, expire: day, courses: [c2, c3] }); // 今天到期 → 比甲班卡早到期
+  const cards = (await call('boss', 'a.student', { id: sid })).data.cards, kMulti = cards.find(c => c.courses.split(',').length === 2), kA = cards.find(c => c.courses === c2);
+  ok(kMulti && kMulti.scope === '限定測試甲、限定測試乙', '一張卡可適用多門課');
+  await call('boss', 'a.mark', { sessionId: s2, studentId: sid, status: '取消' });
+  r = await call('boss', 'a.mark', { sessionId: s2, studentId: sid, status: '出席' });
+  ro = (await call('boss', 'a.roster', { sessionId: s2 })).data.list.find(x => x.id === sid);
+  ok(ro.cardId === kMulti.id && ro.cards.length === 2 && ro.remain === 7, '多張適用時先扣最快到期的那張');
+  ok((await call('boss', 'a.attCard', { sessionId: s2, studentId: sid, cardId: kA.id })).ok && (await call('boss', 'a.roster', { sessionId: s2 })).data.list.find(x => x.id === sid).cardId === kA.id, '可改扣另一張卡');
+  const after = (await call('boss', 'a.student', { id: sid })).data.cards;
+  ok(after.find(c => c.id === kMulti.id).remain === 3 && after.find(c => c.id === kA.id).remain === 4, '改扣後原卡退回、新卡扣除');
+  ok(/不適用/.test((await call('boss', 'a.attCard', { sessionId: s2, studentId: sid, cardId: 'nope' })).error) && /僅限管理員/.test((await call('teacher', 'a.attCard', { sessionId: s2, studentId: sid, cardId: kA.id })).error), '不能改扣不適用的卡，老師不能換卡');
+  await call('boss', 'a.cardSave', { id: kA.id, remain: 4, expire: '', courses: [] });
+  ok((await call('boss', 'a.student', { id: sid })).data.cards.find(c => c.id === kA.id).scope === '全部課程', '可把卡改回全部課程通用');
+  await call('boss', 'a.courseSave', { id: c2, name: '限定測試甲', weekdays: [1], start: '06:00', end: '06:30', status: '停開' }); await call('boss', 'a.courseSave', { id: c3, name: '限定測試乙', weekdays: [1], start: '07:00', end: '07:30', status: '停開' });
+  await call('boss', 'a.studentSave', { id: sid, name: '限定生', status: '停用', courses: [] });
+}
 { // 上線前清除測試資料
   const before = (await call('boss', 'a.resetInfo')).data, stu = (await call('boss', 'a.students')).data.length;
   ok(before.groups.find(g => g.key === 'money').count > 0 && /僅限管理員/.test((await call('teacher', 'a.resetData', { groups: ['money'], confirm: '清除' })).error) && !(await call('boss', 'a.resetData', { groups: ['money'], confirm: 'x' })).ok, '清除資料需管理員且要輸入確認字');

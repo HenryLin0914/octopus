@@ -130,13 +130,14 @@ const PAGES = {
   home(){
     const s = curStu(), many = S.students.length > 1;
     const nx = k => k.next ? `下一堂 ${dLabel(k.next.date)} ${esc(k.next.start)} ${esc(k.next.course)}` : '近期沒有排課';
+    const brk = k => k.scoped ? k.cardList.map(c => `${esc(c.plan)} ${c.remain} 堂`).join('｜') : '';
     const kids = many ? `<div class="kids">${S.students.map(k => `<button class="kid ${k.id === S.cur ? 'on' : ''}" data-stu="${esc(k.id)}">
-        <span class="g"><span class="t">${esc(k.name)}${k.sharedWith.length ? `<span class="tag ok">與${esc(k.sharedWith.join('、'))}共用</span>` : ''}</span><span class="s">${nx(k)}</span></span>
+        <span class="g"><span class="t">${esc(k.name)}${k.sharedWith.length ? `<span class="tag ok">與${esc(k.sharedWith.join('、'))}共用</span>` : ''}</span><span class="s">${nx(k)}</span>${k.scoped ? `<span class="s" style="white-space:normal;overflow:visible">${brk(k)}</span>` : ''}</span>
         <span class="n ${k.remain <= S.lowAt ? 'low' : ''}">${esc(k.remain)}<small>堂</small></span></button>`).join('')}
         <button class="kid add" data-go="bind">＋ 綁定其他孩子</button></div>`
       : `<div class="card hero"><small>${esc(s.name||'')} 剩餘堂數</small><div class="n">${esc(s.remain)}</div>
-        <small>${s.remain <= S.lowAt ? '堂數即將用完，請記得儲值' : nx(s)}</small></div>`;
-    const shareNote = many && S.students.some(k => k.sharedWith.length) ? '<p class="hint">標示「共用」的孩子用同一張上課卡，顯示的是合計剩餘堂數，誰來上課就扣一堂。</p>' : '';
+        <small>${s.remain <= S.lowAt ? '堂數即將用完，請記得儲值' : nx(s)}</small>${s.scoped ? `<small style="display:block;margin-top:4px">${brk(s)}</small>` : ''}</div>`;
+    const shareNote = (many && S.students.some(k => k.sharedWith.length) ? '<p class="hint">標示「共用」的孩子用同一張上課卡，顯示的是合計剩餘堂數，誰來上課就扣一堂。</p>' : '') + (S.students.some(k => k.scoped) ? '<p class="hint">不同的上課卡適用不同課程，大數字是所有卡的合計。每張卡能上哪些課，請點「上課卡」查看。</p>' : '');
     return `${kids}${shareNote}${many ? `<h2>${esc(s.name)} 的功能</h2>` : ''}
       <div class="grid">${S.menu.map(m=>`<button class="tile" data-go="${esc(m.code)}"><b>${esc(m.icon)}</b>${esc(m.name)}</button>`).join('')}</div>`;
   },
@@ -147,7 +148,7 @@ const PAGES = {
     return `${chips()}
       <div class="card hero"><small>可用堂數</small><div class="n">${esc(d.remain)}</div></div>
       <h2>上課卡</h2><div class="card">${d.cards.length ? d.cards.map(c=>`
-        <div class="row"><div><div class="t">${esc(c.plan)}</div><div class="s">購買 ${esc(c.buy)}${c.expire?'｜到期 '+esc(c.expire):''}${c.shared&&c.shared.length?'<br><span class="tag ok" style="font-size:12px">與 '+esc(c.shared.join('、'))+' 共用</span>':''}${c.shared&&c.shared.length&&c.usage.length?'<br>已使用：'+c.usage.map(u=>esc(u.name)+' '+u.n+' 堂').join('、'):''}</div></div>
+        <div class="row"><div><div class="t">${esc(c.plan)}</div><div class="s">適用：${esc(c.scope)}<br>購買 ${esc(c.buy)}${c.expire?'｜到期 '+esc(c.expire):''}${c.shared&&c.shared.length?'<br><span class="tag ok" style="font-size:12px">與 '+esc(c.shared.join('、'))+' 共用</span>':''}${c.shared&&c.shared.length&&c.usage.length?'<br>已使用：'+c.usage.map(u=>esc(u.name)+' '+u.n+' 堂').join('、'):''}</div></div>
         <div style="text-align:right"><b>${esc(c.remain)}</b> / ${esc(c.total)}<br>${tagOf(c.status)}</div></div>`).join('') : '<div class="empty">尚無上課卡</div>'}</div>
       <h2>儲值紀錄</h2><div class="card">${d.topups.length ? d.topups.map(t=>`
         <div class="row"><div><div class="t">${esc(t.plan)}</div><div class="s">${esc(t.time)}</div></div><div>${esc(t.lessons)} 堂｜$${esc(t.amount)}</div></div>`).join('') : '<div class="empty">尚無紀錄</div>'}</div>`;
@@ -426,9 +427,9 @@ document.addEventListener('click', async e => {
     if(el.dataset.ck){
       el.disabled = true;
       const r = await api('checkin', { studentId: el.dataset.ck, sessionId: S.q.sid, qr: S.q.t });
-      const s = S.students.find(x => x.id === el.dataset.ck); if(s) s.remain = r.remain;
+      const s = S.students.find(x => x.id === el.dataset.ck); if(s && !s.scoped) s.remain = r.remain;
       el.outerHTML = '<span class="tag ok">' + (r.dup ? '已報到過' : '報到成功') + '</span>';
-      toast((s ? s.name : '') + (r.dup ? ' 已報到過' : ' 報到成功') + '，剩餘 ' + r.remain + ' 堂');
+      toast((s ? s.name : '') + (r.dup ? ' 已報到過' : ' 報到成功') + '，' + (s && s.scoped ? '這門課可用 ' : '剩餘 ') + r.remain + ' 堂');
     }
   }catch(err){ el.disabled = false; toast(err.message, true); }
 });
