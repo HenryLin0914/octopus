@@ -163,7 +163,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 .mk3 button{border:0;border-right:1px solid var(--line);background:#fff;padding:8px 14px;font:inherit;font-size:14px;font-weight:600;color:var(--ink)}.mk3 button:last-child{border-right:0}
 .mk3 button.ok{background:var(--ok);color:#fff}.mk3 button.w{background:var(--warn);color:#fff}.mk3 button.b{background:var(--bad);color:#fff}
 .radd{display:flex;gap:8px;align-items:center;margin-top:10px}.radd select{flex:1;min-width:0}.radd .btn{flex:none}
-.abar{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px}.abar .btn{padding:11px 8px}
+.abar{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:8px}.abar .btn{padding:10px 12px;text-align:left;white-space:normal;line-height:1.35}.abar .btn small{display:block;font-weight:400;font-size:12px;color:var(--sub);margin-top:2px}
 .notebox{display:block;width:100%;text-align:left;margin-top:10px;background:var(--soft);border:1px dashed var(--line);border-radius:10px;padding:9px 12px;font:inherit;color:inherit}
 .notebox .s{display:block}.notebox .nt{display:block;white-space:pre-wrap;overflow-wrap:anywhere}.notebox.none .nt{color:var(--brand);font-weight:600;font-size:14px}
 .notebox:not(.none){background:#fff8e6;border:1px solid #f3dca6}
@@ -612,7 +612,7 @@ async function openSession(id) {
     <p class="s" style="margin:6px 0 0">再按一次已選的狀態可以取消。</p>`}
     <button class="notebox ${i.note ? '' : 'none'}" data-a="note"><span class="s">${off() ? '停課原因' : '老師備註'}（家長在課表看得到）</span><span class="nt">${i.note ? esc(i.note) : '＋ 寫給家長的提醒，例如要帶的東西、今天的進度'}</span></button>
     <div class="s" style="margin:14px 0 6px">課堂操作</div>
-    <div class="abar">${owner() ? `<button class="btn" data-a="edit">調課／代課</button><button class="btn ${off() ? 'ok' : ''}" data-a="${off() ? 'resume' : 'stop'}" ${off() ? '' : 'style="color:var(--bad)"'}>${off() ? '恢復上課' : '停課'}</button>` : ''}${off() ? '' : '<button class="btn" data-a="close">結算（未到記缺席）</button>'}${owner() ? '<button class="btn" data-a="del" style="color:var(--bad)">刪除這堂</button>' : ''}</div>`; };
+    <div class="abar">${owner() ? `<button class="btn" data-a="edit">調課／代課<small>這堂照上，只改日期、時間、老師或教室</small></button><button class="btn ${off() ? 'ok' : ''}" data-a="${off() ? 'resume' : 'stop'}" ${off() ? '' : 'style="color:var(--bad)"'}>${off() ? '恢復上課<small>取消停課，恢復成正常上課</small>' : '停課<small>這堂不上，但留在課表上顯示「停課」，之後可恢復</small>'}</button>` : ''}${off() ? '' : '<button class="btn" data-a="close">結算（未到記缺席）<small>下課後按：名單上沒報到也沒請假的人記為缺席</small></button>'}${owner() ? '<button class="btn" data-a="del" style="color:var(--bad)">刪除這堂<small>排錯了才用：從課表整堂移除，不留紀錄</small></button>' : ''}</div>`; };
   const m = dialog(i.course + (i.seq ? '' : ''), body(), { wide: true });
   const refresh = async () => { const n = await api('a.roster', { sessionId: id }); d.list = n.list; Object.assign(i, n.info); $('.bd', m).innerHTML = body(); };
   m.addEventListener('change', async e => { if (e.target.id !== 'adhoc' || !e.target.value) return; try { const r = await api('a.mark', { sessionId: id, studentId: e.target.value, status: '出席' }); toast('已報到' + (r.note ? '（' + r.note + '）' : '')); await refresh(); } catch (err) { toast(err.message, true); } });
