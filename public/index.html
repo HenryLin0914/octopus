@@ -54,7 +54,7 @@ h2{font-size:15px;color:var(--sub);margin:18px 4px 8px;font-weight:600}
 #sheet h3{margin:0 34px 4px 0;font-size:19px}#sheet .s{font-size:14px;color:var(--sub)}
 #sheet .intro{margin:14px 0 6px;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7}
 .tlink{border:0;background:none;padding:0;font:inherit;color:var(--brand);font-weight:600;display:inline-flex;align-items:center;gap:5px;vertical-align:middle}.tnm{display:inline-flex;align-items:center;gap:5px;vertical-align:middle}
-.tav{width:22px;height:22px;border-radius:50%;object-fit:cover;flex:none;background:#eee}
+.tav{width:30px;height:30px;border-radius:50%;object-fit:cover;flex:none;background:#eee}
 .tgal{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:12px 0 4px}.tgal img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;display:block}
 #sheet-x{position:absolute;right:12px;top:12px;border:0;background:none;font-size:26px;line-height:1;color:var(--sub);padding:4px 8px}
 .dstrip{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch}
@@ -88,13 +88,16 @@ h2{font-size:15px;color:var(--sub);margin:18px 4px 8px;font-weight:600}
 /* ---- 首頁：舞台感的深色頁首＋一張「下一堂課」票券 ---- */
 .ic{width:24px;height:24px;display:block}
 body.at-home header{display:none}body.at-home main{padding:0 0 40px;max-width:none}
-.stage{position:relative;background:#231219;color:#fff;padding:calc(22px + env(safe-area-inset-top)) 20px 76px;overflow:hidden}
+.stage{position:relative;background:#231219;color:#fff;padding:calc(22px + env(safe-area-inset-top)) 20px 12px;overflow:hidden}
+.stage.solo{padding-bottom:76px}
 .stage:before{content:"";position:absolute;right:-70px;top:-90px;width:300px;height:300px;border-radius:50%;background:radial-gradient(circle,rgba(230,60,120,.55),rgba(230,60,120,0) 68%)}
 .st-in{position:relative;max-width:560px;margin:0 auto}
 .st-s{font-size:13px;letter-spacing:.14em;color:#f3a9c2;font-weight:600}
 .st-h{margin:8px 0 0;font-size:30px;line-height:1.2;font-weight:800;letter-spacing:.01em}.st-h small{font-size:16px;font-weight:500;color:rgba(255,255,255,.72)}
 .st-r{position:absolute;left:0;right:0;bottom:0;width:100%;height:74px;color:#e6457d}
-.home{position:relative;max-width:560px;margin:-56px auto 0;padding:0 16px}
+.kstick{position:sticky;top:0;z-index:6;background:#231219;padding:8px 16px 0}.kstick .kbar{max-width:560px;margin:0 auto;padding-bottom:10px}
+.tail{position:relative;height:70px;background:#231219;overflow:hidden}.tail .st-r{height:70px}
+.home{position:relative;max-width:560px;margin:-58px auto 0;padding:0 16px}
 .kbar{display:flex;gap:8px;overflow-x:auto;padding:0 0 12px;scrollbar-width:none}.kbar::-webkit-scrollbar{display:none}
 .kp{flex:none;display:flex;align-items:center;gap:8px;border:0;border-radius:999px;padding:5px 12px 5px 5px;font:inherit;font-size:15px;font-weight:600;background:rgba(255,255,255,.14);color:#fff;backdrop-filter:blur(6px)}
 .kp i{width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-style:normal;font-size:14px}
@@ -109,7 +112,7 @@ body.at-home header{display:none}body.at-home main{padding:0 0 40px;max-width:no
 .tk-b>b{font-size:20px;line-height:1.3;font-weight:800;overflow-wrap:anywhere}
 .tk-w{align-self:flex-start;font-size:12.5px;font-weight:700;color:var(--brand);background:var(--brand2);border-radius:999px;padding:1px 10px;margin-bottom:3px}.tk-w.now{background:var(--brand);color:#fff}
 .tk-t{font-size:17px;font-weight:700;font-variant-numeric:tabular-nums}
-.tk-m{font-size:14px;color:var(--sub);display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:2px}.tk-m i{font-style:normal;opacity:.5}.tk-m .tlink,.tk-m .tnm{color:var(--ink);font-weight:600}
+.tk-m{font-size:14px;color:var(--sub);display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px}.tk-m .tav{width:42px;height:42px;box-shadow:0 0 0 2px #fff,0 0 0 3.500px var(--brand2)}.tk-m .tlink,.tk-m .tnm{font-size:16px;gap:9px}.tk-m i{font-style:normal;opacity:.5}.tk-m .tlink,.tk-m .tnm{color:var(--ink);font-weight:600}
 .tk-n{font-size:13px;color:#7a4a00;background:#fff6e0;border-radius:8px;padding:5px 9px;margin-top:6px;overflow-wrap:anywhere}
 .tk.none .tk-b{padding:20px}
 .tk-a{display:flex;gap:8px;margin:10px 0 14px}.tk-a .btn{margin:0;padding:12px 8px;font-size:15px;flex:1}
@@ -192,7 +195,7 @@ const PAGES = {
     const dd = d => Math.round((new Date(d + 'T00:00:00Z') - new Date(T + 'T00:00:00Z')) / 864e5), n = s.next, gap = n ? dd(n.date) : null;
     const when = gap === 0 ? '今天' : gap === 1 ? '明天' : gap === 2 ? '後天' : gap != null ? gap + ' 天後' : '';
     const low = s.remain <= S.lowAt, wd = '日一二三四五六';
-    const kids = many ? `<div class="kbar">${S.students.map(k => `<button class="kp ${k.id === S.cur ? 'on' : ''}" data-stu="${esc(k.id)}"><i>${esc(k.name.slice(-1))}</i><span>${esc(k.name)}</span><em class="${k.remain <= S.lowAt ? 'low' : ''}">${esc(k.remain)}</em></button>`).join('')}<button class="kp add" data-go="bind" aria-label="綁定其他孩子">＋</button></div>` : '';
+    const kids = `<div class="kstick"><div class="kbar">${S.students.map(k => `<button class="kp ${k.id === S.cur ? 'on' : ''}" data-stu="${esc(k.id)}"><i>${esc(k.name.slice(-1))}</i><span>${esc(k.name)}</span><em class="${k.remain <= S.lowAt ? 'low' : ''}">${esc(k.remain)}</em></button>`).join('')}<button class="kp add" data-go="bind" aria-label="綁定其他孩子">＋</button></div></div>`;
     const ticket = n ? `<div class="tk"><div class="tk-d"><b>${+n.date.slice(8)}</b><span>${+n.date.slice(5, 7)} 月・週${wd[new Date(n.date + 'T00:00:00Z').getUTCDay()]}</span></div>
         <div class="tk-b"><span class="tk-w ${gap === 0 ? 'now' : ''}">${when}${gap === 0 ? '有課' : '上課'}</span><b>${esc(n.course)}</b><span class="tk-t">${esc(n.start)}${n.end ? '–' + esc(n.end) : ''}</span>
           <span class="tk-m">${[tName(n.teacher, n.teacherAvatar), esc(n.room || '')].filter(Boolean).join('<i>｜</i>')}</span>${n.note ? `<span class="tk-n">${esc(n.note)}</span>` : ''}</div></div>
@@ -200,11 +203,11 @@ const PAGES = {
       : `<div class="tk none"><div class="tk-b"><b>近期沒有排課</b><span class="tk-m">可以到課表看看教室開的課，直接線上報名。</span></div></div><div class="tk-a"><button class="btn" data-go="schedule">看課表</button></div>`;
     const bal = `<button class="bal ${low ? 'low' : ''}" data-go="card"><span class="bal-n">${esc(s.remain)}<small>堂</small></span><span class="bal-t"><b>${s.remain <= 0 ? '目前沒有可用的堂數' : low ? '堂數快用完了' : '剩餘堂數'}</b>
         <span>${s.remain <= 0 ? '請到櫃檯儲值' : low ? '記得到櫃檯儲值' : s.scoped ? s.cardList.map(c => `${esc(c.plan)} ${c.remain} 堂`).join('、') : '查看上課卡與儲值紀錄'}${s.sharedWith.length ? `<br>與${esc(s.sharedWith.join('、'))}共用` : ''}</span></span><i>›</i></button>`;
-    return `<section class="stage"><div class="st-in"><div class="st-s">${esc(S.studio)}</div><h1 class="st-h">${esc(s.name || '')}<small>${many ? ' 的課程' : '，歡迎回來'}</small></h1></div>
-        <svg class="st-r" viewBox="0 0 400 120" preserveAspectRatio="none" aria-hidden="true"><path d="M-10 96C70 20 130 118 210 64S340 8 410 70" fill="none" stroke="currentColor" stroke-width="2"/><path d="M-10 112C90 50 150 122 230 84S350 36 410 96" fill="none" stroke="currentColor" stroke-width="1" opacity=".5"/></svg></section>
-      <div class="home">${kids}${ticket}${bal}
+    return `<section class="stage"><div class="st-in"><div class="st-s">${esc(S.studio)}</div><h1 class="st-h">${esc(s.name || '')}<small>${many ? ' 的課程' : '，歡迎回來'}</small></h1></div></section>
+      ${kids}<div class="tail"><svg class="st-r" viewBox="0 0 400 120" preserveAspectRatio="none" aria-hidden="true"><path d="M-10 96C70 20 130 118 210 64S340 8 410 70" fill="none" stroke="currentColor" stroke-width="2"/><path d="M-10 112C90 50 150 122 230 84S350 36 410 96" fill="none" stroke="currentColor" stroke-width="1" opacity=".5"/></svg></div>
+      <div class="home">${ticket}${bal}
       <div class="fgrid">${S.menu.map(m => `<button class="ft ${m.code === 'checkin' ? 'pri' : ''}" data-go="${esc(m.code)}"><span>${ico(m.icon)}</span>${esc(m.name)}</button>`).join('')}</div>
-      ${(s.later || []).length ? `<div class="lt"><div class="lt-h"><b>接下來的課</b><button data-go="schedule">全部課表 ›</button></div>${s.later.map(x => `<button class="lt-r" data-go="schedule"><span class="lt-d"><b>${+x.date.slice(5, 7)}/${+x.date.slice(8)}</b>週${wd[new Date(x.date + 'T00:00:00Z').getUTCDay()]}</span><span class="lt-b"><b>${esc(x.course)}</b><span>${esc(x.start)}${x.end ? '–' + esc(x.end) : ''}${x.teacher ? '｜' + (x.teacherAvatar ? `<img class="tav" src="${esc(x.teacherAvatar)}" alt="" loading="lazy" style="width:18px;height:18px;vertical-align:-3px;margin-right:3px">` : '') + esc(x.teacher) : ''}</span></span></button>`).join('')}</div>` : ''}</div>`;
+      ${(s.later || []).length ? `<div class="lt"><div class="lt-h"><b>接下來的課</b><button data-go="schedule">全部課表 ›</button></div>${s.later.map(x => `<button class="lt-r" data-go="schedule"><span class="lt-d"><b>${+x.date.slice(5, 7)}/${+x.date.slice(8)}</b>週${wd[new Date(x.date + 'T00:00:00Z').getUTCDay()]}</span><span class="lt-b"><b>${esc(x.course)}</b><span>${esc(x.start)}${x.end ? '–' + esc(x.end) : ''}${x.teacher ? '｜' + (x.teacherAvatar ? `<img class="tav" src="${esc(x.teacherAvatar)}" alt="" loading="lazy" style="width:26px;height:26px;vertical-align:-7px;margin-right:5px">` : '') + esc(x.teacher) : ''}</span></span></button>`).join('')}</div>` : ''}</div>`;
   },
 
 
@@ -319,7 +322,7 @@ const PAGES = {
 
   welcome(){
     const opt = (go, ic, t, d) => `<button class="wopt" data-go="${go}"><span class="wi">${ico(ic)}</span><span class="g"><b>${t}</b><span>${d}</span></span><i>›</i></button>`;
-    return `<section class="stage"><div class="st-in"><div class="st-s">歡迎</div><h1 class="st-h">${esc(S.studio)}</h1></div>
+    return `<section class="stage solo"><div class="st-in"><div class="st-s">歡迎</div><h1 class="st-h">${esc(S.studio)}</h1></div>
         <svg class="st-r" viewBox="0 0 400 120" preserveAspectRatio="none" aria-hidden="true"><path d="M-10 96C70 20 130 118 210 64S340 8 410 70" fill="none" stroke="currentColor" stroke-width="2"/><path d="M-10 112C90 50 150 122 230 84S350 36 410 96" fill="none" stroke="currentColor" stroke-width="1" opacity=".5"/></svg></section>
       <div class="home"><div class="tk none" style="display:block;padding:6px 0"><div style="padding:14px 18px 6px;font-size:14px;color:var(--sub)">請選擇您要做的事</div>
         ${opt('bind', 'bind', '我是學生家長', '輸入教室給的綁定碼，查看課表、堂數、請假')}${opt('rent', 'rent', '我要租教室', '查看開放時段，線上預約教室')}</div></div>`;
