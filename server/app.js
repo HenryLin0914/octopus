@@ -66,14 +66,15 @@ const SETTINGS = {
   '租借需確認': ['是', '是＝管理員確認後預約才成立；否＝送出就直接成立', 'bool'],
   '租借提前小時': ['12', '最晚要在使用前幾小時預約', 'num'],
   '租借可預約天數': ['30', '可以預約未來幾天內的時段', 'num'],
-  '租借須知': ['請準時進場，結束時間前請復原場地、帶走垃圾。', '顯示在租借頁面與預約確認通知', 'text']
+  '租借須知': ['請準時進場，結束時間前請復原場地、帶走垃圾。', '顯示在租借頁面與預約確認通知', 'text'],
+  '選單列文字': ['功能選單', '聊天室下方選單列顯示的文字（最多 14 字，重新發布選單後生效）', 'text']
 };
 const PLANS = [['P01', '單堂', 1, 500, 30], ['P02', '10堂卡', 10, 4500, 90], ['P03', '20堂卡', 20, 8000, 180]];
 const COLORS = ['#D6336C', '#1971C2', '#2B8A3E', '#E67700', '#7048E8', '#0C8599', '#C2255C', '#5C940D'];
 
 const OWNER_ONLY = new Set(['a.studentSave', 'a.enroll', 'a.unbind', 'a.topup', 'a.cardSave', 'a.courseSave', 'a.sessionSave', 'a.sessionDelete', 'a.genSessions',
-  'a.videoSave', 'a.videoDelete', 'a.planSave', 'a.settingSave', 'a.adminSave', 'a.richmenu', 'a.export', 'a.student', 'a.videos', 'a.plans', 'a.settings', 'a.admins', 'a.cards', 'a.ledger', 'a.topupSave', 'a.videoInfo', 'a.dayOff', 'a.familySave', 'a.courseDelete', 'a.courseStudents', 'a.signupSave', 'a.rent', 'a.roomSave', 'a.roomDelete', 'a.rentBlockSave', 'a.rentBlockDelete', 'a.rentTagSave', 'a.rentTagDelete', 'a.bookingSave', 'a.rentSlots', 'a.roomCal', 'a.roomHours', 'a.ruleSave', 'a.ruleDelete']);
-const ASYNC = new Set(['a.richmenu', 'a.videoInfo']);
+  'a.videoSave', 'a.videoDelete', 'a.planSave', 'a.settingSave', 'a.adminSave', 'a.export', 'a.student', 'a.videos', 'a.plans', 'a.settings', 'a.admins', 'a.cards', 'a.ledger', 'a.topupSave', 'a.videoInfo', 'a.dayOff', 'a.familySave', 'a.courseDelete', 'a.courseStudents', 'a.signupSave', 'a.rent', 'a.roomSave', 'a.roomDelete', 'a.rentBlockSave', 'a.rentBlockDelete', 'a.rentTagSave', 'a.rentTagDelete', 'a.bookingSave', 'a.rentSlots', 'a.roomCal', 'a.roomHours', 'a.ruleSave', 'a.ruleDelete', 'a.upload', 'a.menu', 'a.menuPageSave', 'a.menuPageDelete', 'a.menuPageMove', 'a.replySave', 'a.replyDelete', 'a.menuPublish', 'a.menuUnpublish']);
+const ASYNC = new Set(['a.menuPublish', 'a.menuUnpublish', 'a.videoInfo']);
 /** 從各種 YouTube 網址取出影片 ID（watch、youtu.be、shorts、live、embed） */
 export const ytId = url => { const m = String(url || '').match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^#]*&)?v=|shorts\/|live\/|embed\/|v\/))([\w-]{11})(?![\w-])/); return m ? m[1] : ''; };
 
@@ -97,6 +98,8 @@ export function createApp(opts = {}) {
       CREATE TABLE IF NOT EXISTS room_rules(id TEXT PRIMARY KEY, room_id TEXT, date_from TEXT DEFAULT '', date_to TEXT DEFAULT '', weekdays TEXT DEFAULT '0123456', ranges TEXT DEFAULT '[]', created_at TEXT);
       CREATE TABLE IF NOT EXISTS room_dates(room_id TEXT, date TEXT, ranges TEXT DEFAULT '[]', PRIMARY KEY(room_id, date));
       CREATE TABLE IF NOT EXISTS rent_tags(id TEXT PRIMARY KEY, name TEXT, color TEXT, sort INTEGER DEFAULT 0);`);
+    db.exec(`CREATE TABLE IF NOT EXISTS rm_pages(id TEXT PRIMARY KEY, name TEXT, sort INTEGER DEFAULT 0, cols INTEGER DEFAULT 3, rows INTEGER DEFAULT 2, image TEXT DEFAULT '', cells TEXT DEFAULT '[]');
+      CREATE TABLE IF NOT EXISTS replies(id TEXT PRIMARY KEY, name TEXT, keywords TEXT DEFAULT '', text TEXT DEFAULT '', images TEXT DEFAULT '[]', buttons TEXT DEFAULT '[]', sort INTEGER DEFAULT 0);`);
     db.exec('CREATE TABLE IF NOT EXISTS session_skips(id TEXT PRIMARY KEY)'); // 已刪除的固定場次，不再自動排回來
     db.exec("CREATE TABLE IF NOT EXISTS makeups(id TEXT PRIMARY KEY, student_id TEXT, session_id TEXT, from_session_id TEXT DEFAULT '', created_at TEXT, by_name TEXT)");
   }
@@ -408,6 +411,48 @@ export function createApp(opts = {}) {
       sharedWith: all("SELECT DISTINCT st.name FROM card_students a JOIN card_students o ON o.card_id=a.card_id AND o.student_id<>a.student_id JOIN cards c ON c.id=a.card_id JOIN students st ON st.id=o.student_id WHERE a.student_id=? AND c.status='啟用' AND c.remain>0", s.id).map(r => r.name),
       next: ni ? { date: ni.date, start: ni.start, course: ni.course } : null };
   };
+
+  /* ---------- 上傳的檔案 ---------- */
+  const uploadParts = new Map(), memFiles = new Map(), upDir = path.join(dataDir === ':memory:' ? '.' : dataDir, 'uploads');
+  const saveFile = (name, buf) => { if (dataDir === ':memory:') return void memFiles.set(name, buf); fs.mkdirSync(upDir, { recursive: true }); fs.writeFileSync(path.join(upDir, name), buf); };
+  const readFile = name => { if (!/^[\w-]+\.(jpg|png|pdf)$/.test(name)) return null; if (dataDir === ':memory:') return memFiles.get(name) || null; const f = path.join(upDir, name); return fs.existsSync(f) ? fs.readFileSync(f) : null; };
+
+  /* ---------- 圖文選單 ---------- */
+  // 多頁時：內容縮在上方中間（保持原圖比例），下方留一條換頁列
+  const MENU_GEO = { W: 2500, H: 1686, navH: 202, side: 150 };
+  const MENU_FNS = [['checkin', '線上報到'], ['card', '上課卡'], ['schedule', '課表'], ['leave', '請假'], ['attendance', '出席紀錄'], ['video', '影片'], ['rent', '教室租借'], ['bind', '綁定學生'], ['home', '系統首頁']];
+  const menuPages = () => all('SELECT * FROM rm_pages ORDER BY sort,id').map(p => ({ id: p.id, name: p.name, cols: p.cols, rows: p.rows, image: p.image, cells: parseRanges(p.cells) }));
+  const replyList = () => all('SELECT * FROM replies ORDER BY sort,id').map(r => ({ id: r.id, name: r.name, keywords: r.keywords, text: r.text, images: parseRanges(r.images), buttons: parseRanges(r.buttons) }));
+  const menuRect = total => total > 1 ? { x: MENU_GEO.side, y: 0, w: MENU_GEO.W - MENU_GEO.side * 2, h: MENU_GEO.H - MENU_GEO.navH } : { x: 0, y: 0, w: MENU_GEO.W, h: MENU_GEO.H };
+  function menuAreas(pg, n, total, alias) {
+    const r = menuRect(total), cw = r.w / pg.cols, ch = r.h / pg.rows, out = [];
+    pg.cells.forEach((c, i) => {
+      const bounds = { x: Math.round(r.x + (i % pg.cols) * cw), y: Math.round(r.y + Math.floor(i / pg.cols) * ch), width: Math.round(cw), height: Math.round(ch) }, label = (c.label || pg.name).slice(0, 20);
+      const action = c.type === 'fn' ? { type: 'uri', label, uri: liffUrl(c.value) } : c.type === 'url' ? { type: 'uri', label, uri: c.value } : c.type === 'text' ? { type: 'message', label, text: c.value.slice(0, 300) }
+        : c.type === 'reply' ? { type: 'postback', label, data: 'reply:' + c.value, displayText: (c.label || (replyList().find(x => x.id === c.value) || {}).name || '').slice(0, 300) || undefined } : null;
+      if (action) out.push({ bounds, action });
+    });
+    if (total > 1) { const y = MENU_GEO.H - MENU_GEO.navH, w = Math.round(MENU_GEO.W / 3), sw = k => ({ type: 'richmenuswitch', richMenuAliasId: alias((k + total) % total), data: 'page:' + ((k + total) % total) });
+      out.push({ bounds: { x: 0, y, width: w, height: MENU_GEO.navH }, action: sw(n - 1) }, { bounds: { x: MENU_GEO.W - w, y, width: w, height: MENU_GEO.navH }, action: sw(n + 1) }); }
+    return out;
+  }
+  /** 回覆內容 → LINE 訊息（文字、最多三張圖、按鈕卡片） */
+  function replyMessages(r) {
+    const out = [];
+    if (r.text && !r.buttons.length) out.push({ type: 'text', text: r.text });
+    r.images.forEach(u => out.push({ type: 'image', originalContentUrl: u, previewImageUrl: u }));
+    if (r.buttons.length) out.push({ type: 'flex', altText: (r.text || r.name).slice(0, 300), contents: { type: 'bubble', size: 'kilo',
+      body: { type: 'box', layout: 'vertical', spacing: 'md', paddingAll: 'lg', contents: [{ type: 'text', text: r.name, weight: 'bold', size: 'lg', color: C.INK, wrap: true }, ...(r.text ? [{ type: 'text', text: r.text, size: 'sm', color: C.INK, wrap: true }] : [])] },
+      footer: { type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: 'md', contents: r.buttons.map((x, i) => ({ type: 'button', style: i ? 'secondary' : 'primary', color: i ? undefined : C.BRAND, height: 'sm', action: { type: 'uri', label: x.label, uri: x.url } })) } } });
+    return out.slice(0, 5);
+  }
+  if (!get("SELECT 1 x FROM meta WHERE key='menu_seeded'")) { // 第一次：帶入原本官方帳號的六格選單＋教室功能頁，管理員可再調整
+    const ins = (name, sort, cols, rows, image, cells) => run('INSERT INTO rm_pages(id,name,sort,cols,rows,image,cells) VALUES(?,?,?,?,?,?,?)', uid('P'), name, sort, cols, rows, image, JSON.stringify(cells));
+    ins('空間資訊', 1, 3, 2, '', [{ label: '租借方式及須知', type: 'text', value: '租借方式及須知' }, { label: '空間實拍展示', type: 'text', value: '空間實拍展示' }, { label: 'FB 粉絲專頁', type: 'url', value: 'https://www.facebook.com/share/1CnLmQV26C/' },
+      { label: 'Instagram', type: 'url', value: 'https://www.instagram.com/leopard.299132?igsh=MW0zamk3ZnowNXRqNQ==' }, { label: '課程資訊', type: 'text', value: '課程資訊' }, { label: '身體密碼', type: 'none', value: '' }]);
+    ins('教室功能', 2, 4, 2, '/richmenu.jpg', ['checkin', 'card', 'schedule', 'leave', 'attendance', 'video', 'rent', 'bind'].map(f => ({ label: MENU_FNS.find(x => x[0] === f)[1], type: 'fn', value: f })));
+    run("INSERT OR IGNORE INTO meta VALUES('menu_seeded','1')");
+  }
 
   /* ============================== API ============================== */
   const API = {
@@ -1150,23 +1195,113 @@ export function createApp(opts = {}) {
       const cols = rows.length ? Object.keys(rows[0]) : [];
       return { name: b.table + '-' + today() + '.csv', csv: '﻿' + [cols.join(',')].concat(rows.map(r => cols.map(k => esc(r[k])).join(','))).join('\n') };
     },
-    async 'a.richmenu'() {
-      if (!env.LINE_CHANNEL_ACCESS_TOKEN || !env.LIFF_ID) throw new Error('伺服器尚未設定 LINE token 或 LIFF ID');
-      const W = 2500, H = 1686, cw = 625, ch = 843;
-      const cells = [['checkin', '線上報到'], ['card', '上課卡'], ['schedule', '課表'], ['leave', '請假'], ['attendance', '出席紀錄'], ['video', '影片'], ['rent', '教室租借'], ['bind', '綁定學生']];
-      const areas = cells.map((c, i) => ({ bounds: { x: (i % 4) * cw, y: Math.floor(i / 4) * ch, width: cw, height: ch }, action: { type: 'uri', label: c[1], uri: liffUrl(c[0]) } }));
-      const img = fs.readFileSync(path.join(opts.publicDir || './public', 'richmenu.jpg'));
-      const r1 = await lineFetch('https://api.line.me/v2/bot/richmenu', { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHdr() }, body: JSON.stringify({ size: { width: W, height: H }, selected: true, name: cfg('教室名稱', '舞蹈教室'), chatBarText: '功能選單', areas }) });
-      if (!r1.ok) throw new Error('建立圖文選單失敗：' + await r1.text());
-      const id = (await r1.json()).richMenuId;
-      const r2 = await lineFetch('https://api-data.line.me/v2/bot/richmenu/' + id + '/content', { method: 'POST', headers: { 'Content-Type': 'image/jpeg', ...authHdr() }, body: img });
-      if (!r2.ok) throw new Error('上傳圖片失敗：' + await r2.text());
-      const r3 = await lineFetch('https://api.line.me/v2/bot/user/all/richmenu/' + id, { method: 'POST', headers: authHdr() });
-      if (!r3.ok) throw new Error('設為預設選單失敗：' + await r3.text());
-      const old = get("SELECT value FROM meta WHERE key='richmenu_id'");
-      if (old && old.value !== id) await lineFetch('https://api.line.me/v2/bot/richmenu/' + old.value, { method: 'DELETE', headers: authHdr() });
-      run("INSERT INTO meta VALUES('richmenu_id',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", id);
+    /* ---------- 圖文選單（多頁、可自訂每一格）與回覆內容 ---------- */
+    /** 上傳圖片或檔案（base64），存到資料夾後由 /files/ 提供。只接受 JPG、PNG、PDF */
+    'a.upload'(b, user) {
+      let data = String(b.data || '');
+      if (b.part) { // 分段上傳：主機的反向代理通常限制單次 1MB，大檔切成小段再組合
+        const key = user.userId + ':' + str(b.part.id, 40), n = Math.min(40, Math.max(1, Number(b.part.n) || 1)), i = Number(b.part.i) || 0;
+        const st = uploadParts.get(key) || { parts: [], at: Date.now() }; st.parts[i] = data; uploadParts.set(key, st);
+        for (const [k, v] of uploadParts) if (Date.now() - v.at > 600e3) uploadParts.delete(k);
+        if (st.parts.filter(x => x !== undefined).length < n) return { partial: true };
+        data = st.parts.join(''); uploadParts.delete(key);
+      }
+      const buf = Buffer.from(data.replace(/^data:[^,]*,/, ''), 'base64');
+      if (!buf.length) throw new Error('沒有收到檔案');
+      if (buf.length > 8 * 1024 * 1024) throw new Error('檔案太大（上限 8MB）');
+      const ext = buf[0] === 0xFF && buf[1] === 0xD8 ? 'jpg' : buf.slice(0, 8).toString('latin1') === '\x89PNG\r\n\x1a\n' ? 'png' : buf.slice(0, 5).toString('latin1') === '%PDF-' ? 'pdf' : '';
+      if (!ext) throw new Error('只能上傳 JPG、PNG 圖片或 PDF 檔');
+      const name = uid('F') + crypto.randomBytes(4).toString('hex') + '.' + ext;
+      saveFile(name, buf);
+      return { path: '/files/' + name, size: buf.length, ext };
+    },
+    'a.menu'() {
+      const pub = k => (get('SELECT value FROM meta WHERE key=?', k) || {}).value || '';
+      return { pages: menuPages(), replies: replyList(), geo: MENU_GEO, fns: MENU_FNS, publishedAt: pub('menu_published_at'), ready: !!(env.LINE_CHANNEL_ACCESS_TOKEN && env.LIFF_ID) };
+    },
+    'a.menuPageSave'(b) {
+      const name = str(b.name, 20);
+      if (!name) throw new Error('請輸入這一頁的名稱');
+      const cols = Math.min(4, Math.max(1, Math.floor(Number(b.cols)) || 3)), rows = Math.min(3, Math.max(1, Math.floor(Number(b.rows)) || 2));
+      const image = /^\/(files\/[\w.-]+|richmenu\.jpg)$/.test(b.image || '') ? b.image : '';
+      const cells = [...Array(cols * rows)].map((_, i) => { const c = (b.cells || [])[i] || {}, type = ['fn', 'url', 'text', 'reply', 'none'].includes(c.type) ? c.type : 'none', value = str(c.value, 500);
+        if (type === 'fn' && !MENU_FNS.some(f => f[0] === value)) throw new Error(`第 ${i + 1} 格請選擇系統功能`);
+        if (type === 'url' && !/^https?:\/\/\S+$|^tel:[0-9+\-]+$|^line:\/\/\S+$/.test(value)) throw new Error(`第 ${i + 1} 格的連結要以 https:// 開頭`);
+        if (type === 'text' && !value) throw new Error(`第 ${i + 1} 格請填要傳送的文字`);
+        if (type === 'reply' && !get('SELECT 1 x FROM replies WHERE id=?', value)) throw new Error(`第 ${i + 1} 格請選擇回覆內容`);
+        return { label: str(c.label, 20), type, value: type === 'none' ? '' : value }; });
+      const id = b.id || uid('P');
+      if (b.id) { if (!get('SELECT 1 x FROM rm_pages WHERE id=?', id)) throw new Error('找不到這一頁'); run('UPDATE rm_pages SET name=?,cols=?,rows=?,image=?,cells=? WHERE id=?', name, cols, rows, image, JSON.stringify(cells), id); }
+      else run('INSERT INTO rm_pages(id,name,sort,cols,rows,image,cells) VALUES(?,?,?,?,?,?,?)', id, name, (get('SELECT MAX(sort) m FROM rm_pages').m || 0) + 1, cols, rows, image, JSON.stringify(cells));
       return { id };
+    },
+    'a.menuPageDelete'(b) { run('DELETE FROM rm_pages WHERE id=?', b.id); return { ok: true }; },
+    'a.menuPageMove'(b) {
+      const list = menuPages(), i = list.findIndex(x => x.id === b.id), k = i + (Number(b.dir) < 0 ? -1 : 1);
+      if (i < 0 || k < 0 || k >= list.length) return { ok: true };
+      [list[i], list[k]] = [list[k], list[i]];
+      list.forEach((x, n) => run('UPDATE rm_pages SET sort=? WHERE id=?', n + 1, x.id));
+      return { ok: true };
+    },
+    /** 回覆內容：按選單或輸入關鍵字時，機器人回覆的文字、圖片、連結／檔案按鈕 */
+    'a.replySave'(b) {
+      const name = str(b.name, 30);
+      if (!name) throw new Error('請輸入名稱');
+      const okUrl = u => /^https:\/\/\S+$/.test(u || '');
+      const text = str(b.text, 2000), images = (b.images || []).map(u => str(u, 500)).filter(okUrl).slice(0, 3);
+      const buttons = (b.buttons || []).map(x => ({ label: str(x.label, 20), url: str(x.url, 500) })).filter(x => x.label && (okUrl(x.url) || /^tel:[0-9+\-]+$/.test(x.url))).slice(0, 4);
+      if (!text && !images.length && !buttons.length) throw new Error('請至少填一段文字、一張圖片或一個按鈕');
+      const keywords = [...new Set(String(b.keywords || '').split(/[,，、\n]+/).map(k => k.trim()).filter(Boolean))].slice(0, 10).join(',');
+      const id = b.id || uid('Y');
+      if (b.id) run('UPDATE replies SET name=?,keywords=?,text=?,images=?,buttons=? WHERE id=?', name, keywords, text, JSON.stringify(images), JSON.stringify(buttons), id);
+      else run('INSERT INTO replies(id,name,keywords,text,images,buttons,sort) VALUES(?,?,?,?,?,?,?)', id, name, keywords, text, JSON.stringify(images), JSON.stringify(buttons), get('SELECT COUNT(*) n FROM replies').n);
+      return { id };
+    },
+    'a.replyDelete'(b) {
+      if (menuPages().some(p => p.cells.some(c => c.type === 'reply' && c.value === b.id))) throw new Error('圖文選單還有格子在用這個回覆內容，請先改掉那一格');
+      run('DELETE FROM replies WHERE id=?', b.id); return { ok: true };
+    },
+    /** 發布到 LINE：每一頁建立一張圖文選單，用別名互相切換（上一頁／下一頁），第一頁設為所有人的預設 */
+    async 'a.menuPublish'(b) {
+      if (!env.LINE_CHANNEL_ACCESS_TOKEN || !env.LIFF_ID) throw new Error('伺服器尚未設定 LINE token 或 LIFF ID');
+      const pages = menuPages(), imgs = b.images || {};
+      if (!pages.length) throw new Error('請先新增至少一頁');
+      const ver = Date.now().toString(36), alias = n => `octo-${ver}-${n}`, made = [];
+      const J = { 'Content-Type': 'application/json', ...authHdr() };
+      const undo = async () => { for (const m of made) { await lineFetch('https://api.line.me/v2/bot/richmenu/alias/' + m.alias, { method: 'DELETE', headers: authHdr() }).catch(() => {}); await lineFetch('https://api.line.me/v2/bot/richmenu/' + m.id, { method: 'DELETE', headers: authHdr() }).catch(() => {}); } };
+      try {
+        for (let n = 0; n < pages.length; n++) {
+          const pg = pages[n], buf = readFile(String(imgs[pg.id] || '').replace('/files/', '')) || Buffer.alloc(0);
+          if (buf.length < 1000) throw new Error(`「${pg.name}」沒有圖片，請重新整理後再試`);
+          if (buf.length > 1024 * 1024) throw new Error(`「${pg.name}」的圖片超過 1MB`);
+          const r1 = await lineFetch('https://api.line.me/v2/bot/richmenu', { method: 'POST', headers: J, body: JSON.stringify({ size: { width: MENU_GEO.W, height: MENU_GEO.H }, selected: true, name: (cfg('教室名稱', '選單') + '｜' + pg.name).slice(0, 60), chatBarText: str(cfg('選單列文字', '功能選單'), 14) || '功能選單', areas: menuAreas(pg, n, pages.length, alias) }) });
+          if (!r1.ok) throw new Error(`建立「${pg.name}」失敗：` + await r1.text());
+          const id = (await r1.json()).richMenuId; made.push({ id, alias: alias(n) });
+          const r2 = await lineFetch('https://api-data.line.me/v2/bot/richmenu/' + id + '/content', { method: 'POST', headers: { 'Content-Type': buf[0] === 0x89 ? 'image/png' : 'image/jpeg', ...authHdr() }, body: buf });
+          if (!r2.ok) throw new Error(`上傳「${pg.name}」的圖片失敗：` + await r2.text());
+          const r3 = await lineFetch('https://api.line.me/v2/bot/richmenu/alias', { method: 'POST', headers: J, body: JSON.stringify({ richMenuAliasId: alias(n), richMenuId: id }) });
+          if (!r3.ok) throw new Error(`設定「${pg.name}」的換頁失敗：` + await r3.text());
+        }
+        const r4 = await lineFetch('https://api.line.me/v2/bot/user/all/richmenu/' + made[0].id, { method: 'POST', headers: authHdr() });
+        if (!r4.ok) throw new Error('設為預設選單失敗：' + await r4.text());
+      } catch (e) { await undo(); throw e; }
+      // 新的生效後，才移除上一次發布的選單
+      let old = []; try { old = JSON.parse((get("SELECT value FROM meta WHERE key='menu_live'") || {}).value || '[]'); } catch { /* 舊資料格式不對就略過 */ }
+      const legacy = (get("SELECT value FROM meta WHERE key='richmenu_id'") || {}).value;
+      if (legacy) old.push({ id: legacy });
+      for (const m of old) { if (m.alias) await lineFetch('https://api.line.me/v2/bot/richmenu/alias/' + m.alias, { method: 'DELETE', headers: authHdr() }).catch(() => {}); await lineFetch('https://api.line.me/v2/bot/richmenu/' + m.id, { method: 'DELETE', headers: authHdr() }).catch(() => {}); }
+      const setM = (k, v) => run('INSERT INTO meta VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value', k, v);
+      setM('menu_live', JSON.stringify(made)); setM('menu_published_at', now()); run("DELETE FROM meta WHERE key='richmenu_id'");
+      return { pages: made.length };
+    },
+    /** 停用系統的圖文選單（官方帳號管理後台設定的選單會重新顯示） */
+    async 'a.menuUnpublish'() {
+      if (!env.LINE_CHANNEL_ACCESS_TOKEN) throw new Error('伺服器尚未設定 LINE token');
+      await lineFetch('https://api.line.me/v2/bot/user/all/richmenu', { method: 'DELETE', headers: authHdr() });
+      let old = []; try { old = JSON.parse((get("SELECT value FROM meta WHERE key='menu_live'") || {}).value || '[]'); } catch { /* 略過 */ }
+      for (const m of old) { if (m.alias) await lineFetch('https://api.line.me/v2/bot/richmenu/alias/' + m.alias, { method: 'DELETE', headers: authHdr() }).catch(() => {}); await lineFetch('https://api.line.me/v2/bot/richmenu/' + m.id, { method: 'DELETE', headers: authHdr() }).catch(() => {}); }
+      run("DELETE FROM meta WHERE key IN ('menu_live','menu_published_at','richmenu_id')");
+      return { ok: true };
     }
   };
 
@@ -1236,7 +1371,11 @@ export function createApp(opts = {}) {
       try {
         const reply = messages => lineMsg('reply', { replyToken: ev.replyToken, messages });
         if (ev.type === 'follow') { await reply([menuFlex('歡迎加入！請先點「綁定學生」，輸入教室提供的綁定碼。')]); continue; }
+        if (ev.type === 'postback' && /^reply:/.test(ev.postback.data || '')) { const r = replyList().find(x => x.id === ev.postback.data.slice(6)); if (r) await reply(replyMessages(r)); continue; }
         if (ev.type !== 'message' || ev.message.type !== 'text') continue;
+        { const txt = ev.message.text.trim(), hit = replyList().find(x => x.keywords.split(',').filter(Boolean).includes(txt));
+          if (hit) { await reply(replyMessages(hit)); continue; } // 後台設定的關鍵字回覆優先
+          if (menuPages().some(p => p.cells.some(c => c.type === 'text' && c.value === txt))) continue; } // 選單上「傳送文字」的格子：交給官方帳號原本的自動回應，系統不重複回
         const t = ev.message.text.trim(), kids = kidsOf(ev.source.userId);
         const isFn = /堂數|上課卡|剩|餘額|請假|課表|上課時間|出席|出缺|紀錄|影片|影音|video|youtube|報到|綁定/i.test(t), wantMenu = /^(選單|功能|功能選單|menu|help|\?|？)$/i.test(t);
         if (/^您好，我想詢問/.test(t)) { // 從課表按「諮詢」帶進來的訊息：回覆已收到，並通知管理員由真人回覆

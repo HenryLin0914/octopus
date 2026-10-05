@@ -26,7 +26,7 @@ http.createServer(async (req, res) => {
     if (url.pathname === '/api/health') return send(res, 200, JSON.stringify({ ok: true, version: process.env.GIT_SHA || 'dev', time: now() }));
     if (url.pathname === '/api' && req.method === 'POST') {
       let body = {};
-      try { body = JSON.parse(await readBody(req)); } catch { /* 空白或格式錯誤 */ }
+      try { body = JSON.parse(await readBody(req, 16e6)); } catch { /* 空白、格式錯誤或太大 */ }
       return send(res, 200, JSON.stringify(await app.api(body)), undefined, { 'Cache-Control': 'no-store' });
     }
     if (url.pathname === '/webhook' && req.method === 'POST') {
@@ -37,6 +37,11 @@ http.createServer(async (req, res) => {
       return send(res, 200, 'const CONFIG = ' + JSON.stringify({ API: '/api', LIFF_ID: process.env.LIFF_ID || '', DEV: process.env.DEV_LOGIN === '1' }) + ';', TYPES['.js'], { 'Cache-Control': 'no-cache' });
     }
     if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, '{"ok":false}');
+    if (url.pathname.startsWith('/files/')) { // 後台上傳的圖片與檔案
+      const name = path.basename(url.pathname), f = path.join(process.env.DATA_DIR || './data', 'uploads', name);
+      if (!/^[\w-]+\.(jpg|png|pdf)$/.test(name) || !fs.existsSync(f)) return send(res, 404, 'Not found', 'text/plain; charset=utf-8');
+      return send(res, 200, req.method === 'HEAD' ? '' : fs.readFileSync(f), name.endsWith('.pdf') ? 'application/pdf' : TYPES[path.extname(name)], { 'Cache-Control': 'public, max-age=31536000, immutable' });
+    }
     let p = decodeURIComponent(url.pathname);
     if (p.endsWith('/')) p += 'index.html';
     const file = path.normalize(path.join(PUBLIC, p));

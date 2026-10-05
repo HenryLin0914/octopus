@@ -399,6 +399,38 @@ ok((await call('boss', 'a.unbind', { userId: (await call('dad', 'init')).data.us
   await call('boss', 'a.roomSave', { id: rid, name: 'A教室', status: '關閉' });
 }
 
+{ // 圖文選單：多頁、換頁、自訂格子、回覆內容
+  let mn = (await call('boss', 'a.menu')).data;
+  ok(mn.pages.length === 2 && mn.pages[0].cells.length === 6 && mn.pages[0].cells[2].type === 'url' && mn.pages[1].cells.every(c => c.type === 'fn') && /僅限管理員/.test((await call('teacher', 'a.menu')).error), '預設帶入原選單六格與教室功能頁');
+  const jpg = Buffer.concat([Buffer.from([0xFF, 0xD8, 0xFF, 0xE0]), Buffer.alloc(3000, 7)]).toString('base64');
+  ok(/只能上傳/.test((await call('boss', 'a.upload', { data: Buffer.from('hello world').toString('base64') })).error), '只接受圖片與 PDF');
+  await call('boss', 'a.upload', { data: jpg.slice(0, 2000), part: { id: 'u1', i: 0, n: 2 } });
+  r = await call('boss', 'a.upload', { data: jpg.slice(2000), part: { id: 'u1', i: 1, n: 2 } });
+  ok(r.data.ext === 'jpg' && r.data.size === 3004, '分段上傳後組合'); const f1 = r.data.path, f2 = (await call('boss', 'a.upload', { data: jpg })).data.path;
+  r = await call('boss', 'a.replySave', { name: '租借方式及須知', keywords: '租借方式及須知，怎麼租', text: '每小時 400 元，請提前預約。', images: ['https://x.test/files/a.jpg'], buttons: [{ label: '下載場地須知', url: 'https://x.test/files/rule.pdf' }, { label: '壞的', url: 'javascript:1' }] });
+  const rid = r.data.id; mn = (await call('boss', 'a.menu')).data;
+  ok(mn.replies[0].buttons.length === 1 && mn.replies[0].keywords === '租借方式及須知,怎麼租', '建立回覆內容（不合法的連結被濾掉）');
+  const p1 = mn.pages[0];
+  ok(/https/.test((await call('boss', 'a.menuPageSave', { ...p1, cells: [{ type: 'url', value: 'ftp://x' }] })).error), '連結格式檢查');
+  await call('boss', 'a.menuPageSave', { ...p1, image: f1, cells: p1.cells.map((c, i) => i ? c : { label: '租借方式及須知', type: 'reply', value: rid }) });
+  const n0 = pushes.length;
+  r = await call('boss', 'a.menuPublish', { images: { [p1.id]: f1, [mn.pages[1].id]: f2 } });
+  const made = pushes.slice(n0).filter(x => /\/v2\/bot\/richmenu$/.test(x.url)).map(x => x.body), sw = made[0].areas.filter(a => a.action.type === 'richmenuswitch');
+  ok(r.ok && r.data.pages === 2 && made.length === 2 && made[0].areas.length === 7 && sw.length === 2 && sw[0].bounds.y === 1484 && made[0].areas[0].action.type === 'postback' && made[0].areas[0].bounds.x === 150 && made[0].areas[1].action.type === 'message'
+    && made[1].areas.filter(a => a.action.type === 'uri').length === 8 && pushes.slice(n0).some(x => /user\/all\/richmenu\//.test(x.url)) && pushes.slice(n0).filter(x => /richmenu\/alias$/.test(x.url)).length === 2 && (await call('boss', 'a.menu')).data.publishedAt, '發布兩頁選單：格子動作、上一頁／下一頁、預設選單');
+  const uidM = (await call('mom', 'init')).data.userId, sign = bd => crypto.createHmac('sha256', 'sec').update(bd).digest('base64');
+  let bd = JSON.stringify({ events: [{ type: 'postback', replyToken: 'r', postback: { data: 'reply:' + rid }, source: { userId: uidM } }] }), n1 = pushes.length; await app.webhook(bd, sign(bd));
+  let ms = pushes[n1] && pushes[n1].body.messages;
+  ok(ms && ms.length === 2 && ms[0].type === 'image' && ms[1].type === 'flex' && ms[1].contents.footer.contents[0].action.uri.endsWith('rule.pdf'), '點選單回覆圖片與檔案按鈕');
+  bd = JSON.stringify({ events: [{ type: 'message', replyToken: 'r', message: { type: 'text', text: '怎麼租' }, source: { userId: 'Ustranger' } }] }); n1 = pushes.length; await app.webhook(bd, sign(bd));
+  ok(pushes.length === n1 + 1 && pushes[n1].body.messages[0].type === 'image', '輸入關鍵字也會回覆（未綁定的人也可以）');
+  bd = JSON.stringify({ events: [{ type: 'message', replyToken: 'r', message: { type: 'text', text: '課程資訊' }, source: { userId: uidM } }] }); n1 = pushes.length; await app.webhook(bd, sign(bd));
+  ok(pushes.length === n1, '選單「傳送文字」的格子，系統不重複回覆');
+  ok(/還有格子在用/.test((await call('boss', 'a.replyDelete', { id: rid })).error), '使用中的回覆內容不能刪');
+  await call('boss', 'a.menuPageMove', { id: p1.id, dir: 1 });
+  ok((await call('boss', 'a.menu')).data.pages[1].id === p1.id && (await call('boss', 'a.menuUnpublish')).ok && !(await call('boss', 'a.menu')).data.publishedAt, '調整頁面順序、停用選單');
+}
+
 // Webhook
 const body = JSON.stringify({ events: [{ type: 'message', replyToken: 'r', message: { type: 'text', text: '剩幾堂' }, source: { userId: (await call('mom', 'init')).data.userId } }] });
 const sig = crypto.createHmac('sha256', 'sec').update(body).digest('base64');

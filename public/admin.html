@@ -74,6 +74,11 @@ main{padding:22px 26px 60px;min-width:0}
 .bkm .tm{font-weight:700;font-variant-numeric:tabular-nums;flex:none;width:50px}.bkm .tm small{display:block;font-weight:400;color:var(--sub);font-size:12px}
 .bkm .g{flex:1;min-width:0}.bkm .t,.bkm .s{display:block;overflow-wrap:anywhere}.bkm .tgs{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}.bkm .tgs:empty{display:none}
 .bk .acts{padding:0 4px 6px 62px}
+.rmpv{display:block;width:100%;max-width:560px;height:auto;border-radius:10px;border:1px solid var(--line)}
+.mpc{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line)}.mpc .g{flex:1;min-width:0}
+.mpn{width:28px;height:28px;border-radius:50%;background:var(--brand2);color:var(--brand);font-weight:700;display:flex;align-items:center;justify-content:center;flex:none;margin-top:6px}
+.rpi{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0}.rpi span{position:relative}.rpi img{width:96px;height:96px;object-fit:cover;border-radius:8px;border:1px solid var(--line);display:block}
+.rpi button{position:absolute;right:-6px;top:-6px;width:24px;height:24px;border-radius:50%;border:0;background:#231a20;color:#fff;font-size:15px;line-height:1}
 .fam{color:var(--info)}
 .fbox{background:#eef5fc;border:1px solid #cfe2f5;border-radius:10px;padding:10px 12px;margin-top:10px}.fbox .row{padding:7px 0;border-color:#cfe2f5}
 .amt{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -485,6 +490,23 @@ const PAGES = {
       <p class="s">外部的人加入官方帳號後，點圖文選單「教室租借」或傳「租借」就能預約。點預約可修改時間、貼標籤、寫備註。</p>`;
   },
 
+  async menu() {
+    const d = await api('a.menu'); A.menu = d;
+    const act = c => c.type === 'fn' ? '開啟系統功能：' + ((d.fns.find(f => f[0] === c.value) || [])[1] || c.value) : c.type === 'url' ? '開啟連結：' + c.value : c.type === 'text' ? '傳送文字「' + c.value + '」' : c.type === 'reply' ? '機器人回覆：' + ((d.replies.find(r => r.id === c.value) || {}).name || '（已刪除）') : '不設定';
+    return `<div class="head"><h1>圖文選單</h1><span class="sp"></span><a class="btn" href="#settings" style="text-decoration:none;color:inherit">‹ 回設定</a><button class="btn p" data-mn="publish">發布到 LINE</button></div>
+      <div class="note">${d.publishedAt ? '目前 LINE 上顯示的是 <b>' + esc(d.publishedAt.slice(5, 16)) + '</b> 發布的版本。這裡改完要按「發布到 LINE」才會更新。' : '還沒有發布。這裡設定好之後按「發布到 LINE」，聊天室下方的選單才會換成這一套。'}${d.ready ? '' : '<br>⚠ 伺服器還沒設定 LINE 金鑰，無法發布。'}</div>
+      ${d.pages.map((p, n) => `<div class="card" style="margin-bottom:12px"><h2>第 ${n + 1} 頁｜<span style="color:var(--ink)">${esc(p.name)}</span>${n === 0 ? '<span class="tag ok">打開聊天室先看到這頁</span>' : ''}<span class="sp"></span></h2>
+        <canvas class="rmpv" data-pv="${esc(p.id)}" width="1250" height="843"></canvas>
+        ${p.image ? '' : '<div class="s" style="color:var(--warn);margin-top:6px">這一頁還沒有上傳圖片，現在是系統自動畫的格子。按「編輯」可以上傳您原本的選單圖。</div>'}
+        <div style="margin-top:8px">${p.cells.map((c, i) => `<div class="s" style="overflow-wrap:anywhere"><b style="color:var(--ink)">${i + 1}. ${esc(c.label || '（未命名）')}</b>　${esc(act(c))}</div>`).join('')}</div>
+        <div class="acts" style="margin-top:10px"><button class="btn sm p" data-mn="edit" data-id="${esc(p.id)}">編輯</button>${n ? `<button class="btn sm" data-mn="up" data-id="${esc(p.id)}">往前移</button>` : ''}${n < d.pages.length - 1 ? `<button class="btn sm" data-mn="down" data-id="${esc(p.id)}">往後移</button>` : ''}<button class="btn sm ghost" style="color:var(--bad)" data-mn="del" data-id="${esc(p.id)}">刪除這頁</button></div></div>`).join('') || '<div class="card empty">還沒有任何一頁</div>'}
+      <button class="btn" data-mn="add" style="width:100%;margin-bottom:16px">＋ 新增一頁</button>
+      <div class="card"><h2>回覆內容<span class="sp"></span><button class="btn sm" data-mn="reply" data-id="">＋ 新增</button></h2>
+        ${d.replies.length ? d.replies.map(r => `<div class="row"><div class="g"><div class="t">${esc(r.name)}</div><div class="s">${[r.text ? '文字' : '', r.images.length ? r.images.length + ' 張圖' : '', r.buttons.length ? r.buttons.length + ' 個按鈕' : ''].filter(Boolean).join('＋')}${r.keywords ? '｜關鍵字：' + esc(r.keywords.replace(/,/g, '、')) : ''}</div></div><button class="btn sm" data-mn="reply" data-id="${esc(r.id)}">編輯</button></div>`).join('') : '<div class="empty">還沒有回覆內容</div>'}
+        <p class="s" style="margin-bottom:0">回覆內容＝機器人自動回的一組訊息（文字、圖片、連結或檔案按鈕）。可以掛在選單的某一格上，也可以設定關鍵字，客人打那幾個字就會回。</p></div>
+      <p class="s">${d.pages.length > 1 ? '有兩頁以上時，系統會在每一頁下方加上「上一頁／下一頁」，原本的圖會等比例縮小一點放在上方。' : '只有一頁時不會出現換頁按鈕。'}<br>要回到官方帳號管理後台設定的選單，可以按 <button class="btn sm ghost" data-mn="unpublish">停用系統選單</button></p>`;
+  },
+
   async leaves() {
     const d = await api('a.leaves'), t = A.meta.today;
     const up = d.filter(l => l.date >= t), past = d.filter(l => l.date < t).reverse();
@@ -511,7 +533,7 @@ const PAGES = {
           <input id="invurl" readonly value="${esc(location.origin + '/admin.html')}" onclick="this.select()" style="font-size:13px;margin-bottom:8px">
           <div class="acts"><button class="btn sm p" data-copy="msg">複製邀請訊息</button><button class="btn sm" data-copy="url">只複製網址</button></div></div>
         <p class="s" style="margin-bottom:0">老師只能看課表、點名與出席；儲值、帳務、影片與設定只有管理員能用。</p></div>
-      <div class="card"><h2>LINE 圖文選單</h2><p class="s" style="margin-top:0">把六格功能選單套用到官方帳號聊天室下方。</p><button class="btn" data-richmenu>重新套用圖文選單</button></div>
+      <div class="card"><h2>LINE 圖文選單與自動回覆</h2><p class="s" style="margin-top:0">聊天室下方的選單：可以有多頁（上一頁／下一頁）、自訂每一格按下去要開連結、開系統功能，或回覆文字、圖片、檔案。</p><a class="btn p" href="#menu" style="display:inline-block;text-decoration:none">管理圖文選單</a></div>
       <div class="card"><h2>匯出資料（CSV，可用 Excel 開啟）</h2><div class="acts">${[['students', '學生'], ['attendance', '出席紀錄'], ['topups', '儲值紀錄'], ['cards', '上課卡'], ['sessions', '課表'], ['leaves', '請假']].map(x => `<button class="btn sm" data-export="${x[0]}">${x[1]}</button>`).join('')}</div>
         <p class="s" style="margin-bottom:0">資料庫每天自動備份，保留最近 14 天。</p></div>
     </div></div>`;
@@ -749,6 +771,149 @@ function topup(id) {
   $('[name=price]', m).placeholder = '定價 ' + (p0.price ?? '');
 }
 
+/* ---------- 圖文選單 ---------- */
+const loadImg = src => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error('圖片載入失敗')); i.src = src; });
+const rrect = (c, x, y, w, h, r) => { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); };
+const RMFONT = '"PingFang TC","Noto Sans TC","Noto Sans CJK TC","Microsoft JhengHei",sans-serif';
+/** 把一頁畫成 2500×1686 的選單圖：原圖等比例放在上方，多頁時下方加「上一頁／頁名／下一頁」 */
+async function composePage(pg, n, total) {
+  const G = A.menu.geo, cv = document.createElement('canvas'); cv.width = G.W; cv.height = G.H; const c = cv.getContext('2d');
+  const R = total > 1 ? { x: G.side, y: 0, w: G.W - G.side * 2, h: G.H - G.navH } : { x: 0, y: 0, w: G.W, h: G.H };
+  let bg = '#fdf1f5', ink = '#3b2430';
+  if (pg.image) {
+    const img = await loadImg(pg.image);
+    c.drawImage(img, 0, 0, 12, 12, 0, 0, 1, 1); const px = c.getImageData(0, 0, 1, 1).data; bg = `rgb(${px[0]},${px[1]},${px[2]})`; ink = px[0] * .3 + px[1] * .59 + px[2] * .11 > 140 ? '#3b2430' : '#fff';
+    c.fillStyle = bg; c.fillRect(0, 0, G.W, G.H);
+    const k = Math.min(R.w / img.width, R.h / img.height), w = img.width * k, h = img.height * k;
+    c.drawImage(img, R.x + (R.w - w) / 2, R.y + (R.h - h) / 2, w, h);
+  } else {
+    c.fillStyle = bg; c.fillRect(0, 0, G.W, G.H);
+    const cw = R.w / pg.cols, ch = R.h / pg.rows, pad = 14;
+    pg.cells.forEach((cell, i) => { const x = R.x + (i % pg.cols) * cw + pad, y = R.y + Math.floor(i / pg.cols) * ch + pad, w = cw - pad * 2, h = ch - pad * 2;
+      c.fillStyle = cell.type === 'none' ? '#f8e6ec' : '#fff'; rrect(c, x, y, w, h, 46); c.fill(); c.strokeStyle = '#f7d6e1'; c.lineWidth = 4; c.stroke();
+      let fs = Math.min(110, h * .22); c.font = `900 ${fs}px ${RMFONT}`; const t = cell.label || '';
+      while (c.measureText(t).width > w - 60 && fs > 30) { fs -= 4; c.font = `900 ${fs}px ${RMFONT}`; }
+      c.fillStyle = '#3b2430'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(t, x + w / 2, y + h / 2); });
+  }
+  if (total > 1) { // 換頁列
+    const y = G.H - G.navH, light = ink === '#3b2430', bw = 620, bh = G.navH - 56, by = y + 28;
+    c.fillStyle = light ? 'rgba(0,0,0,.05)' : 'rgba(255,255,255,.12)'; c.fillRect(0, y, G.W, G.navH);
+    [[60, '‹  上一頁'], [G.W - 60 - bw, '下一頁  ›']].forEach(([x, t]) => { c.fillStyle = light ? '#fff' : 'rgba(255,255,255,.2)'; rrect(c, x, by, bw, bh, bh / 2); c.fill(); c.strokeStyle = light ? 'rgba(0,0,0,.12)' : 'rgba(255,255,255,.4)'; c.lineWidth = 3; c.stroke();
+      c.fillStyle = ink; c.font = `700 68px ${RMFONT}`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(t, x + bw / 2, by + bh / 2 + 2); });
+    c.fillStyle = ink; c.font = `700 62px ${RMFONT}`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(pg.name, G.W / 2, y + G.navH / 2 - 24);
+    const gap = 44, x0 = G.W / 2 - (total - 1) * gap / 2;
+    for (let i = 0; i < total; i++) { c.beginPath(); c.arc(x0 + i * gap, y + G.navH - 44, i === n ? 13 : 9, 0, 7); c.fillStyle = ink; c.globalAlpha = i === n ? 1 : .3; c.fill(); c.globalAlpha = 1; }
+  }
+  return cv;
+}
+async function drawMenuPreviews() {
+  const d = A.menu; if (!d) return;
+  for (let n = 0; n < d.pages.length; n++) { const el = $(`[data-pv="${d.pages[n].id}"]`); if (!el) continue;
+    try { const cv = await composePage(d.pages[n], n, d.pages.length); el.getContext('2d').drawImage(cv, 0, 0, el.width, el.height); } catch (e) { const c = el.getContext('2d'); c.fillStyle = '#eee'; c.fillRect(0, 0, el.width, el.height); c.fillStyle = '#c92a2a'; c.font = '40px sans-serif'; c.fillText('預覽失敗：' + e.message, 40, 80); } }
+}
+/** 畫布轉成不超過 limit 位元組的 JPEG（data URL） */
+function toJpeg(cv, limit) { let q = .92, u = cv.toDataURL('image/jpeg', q); while (u.length * .75 > limit && q > .4) { q -= .08; u = cv.toDataURL('image/jpeg', q); } if (u.length * .75 > limit) throw new Error('圖片壓縮後還是太大，請換一張比較單純的圖'); return u; }
+/** 分段上傳（每段約 500KB，避開主機單次 1MB 的限制） */
+async function uploadData(dataUrl) {
+  const b64 = dataUrl.replace(/^data:[^,]*,/, ''), size = 500000, n = Math.ceil(b64.length / size), id = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  let r; for (let i = 0; i < n; i++) r = await api('a.upload', { data: b64.slice(i * size, (i + 1) * size), part: { id, i, n } });
+  return r;
+}
+const readFileUrl = f => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(new Error('讀取檔案失敗')); r.readAsDataURL(f); });
+/** 選檔案並上傳：圖片會先縮到寬 2500 以內並壓到 1MB 以下；PDF 原檔上傳。回傳 { path, ext } */
+function pickUpload(accept) {
+  return new Promise((resolve, reject) => { const inp = document.createElement('input'); inp.type = 'file'; inp.accept = accept; inp.style.display = 'none'; document.body.appendChild(inp);
+    inp.onchange = async () => { const f = inp.files[0]; inp.remove(); if (!f) return resolve(null);
+      try { toast('上傳中…'); let url = await readFileUrl(f);
+        if (/^image\//.test(f.type)) { const img = await loadImg(url), k = Math.min(1, 2500 / img.width), cv = document.createElement('canvas'); cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
+          const c = cv.getContext('2d'); c.fillStyle = '#fff'; c.fillRect(0, 0, cv.width, cv.height); c.drawImage(img, 0, 0, cv.width, cv.height); url = toJpeg(cv, 950000); }
+        else if (f.size > 8 * 1024 * 1024) throw new Error('檔案太大（上限 8MB）');
+        const r = await uploadData(url); toast('已上傳'); resolve(r); } catch (e) { reject(e); } };
+    inp.click(); });
+}
+function editMenuPage(id) {
+  const d = A.menu, src = id ? d.pages.find(p => p.id === id) : null;
+  const st = src ? JSON.parse(JSON.stringify(src)) : { name: '', cols: 3, rows: 2, image: '', cells: [] };
+  const LAY = [[3, 2], [4, 2], [2, 2], [2, 1], [3, 1], [1, 1], [2, 3], [3, 3]];
+  const m = dialog(src ? '編輯選單｜' + src.name : '新增一頁選單', `
+    <label class="f" style="margin-top:10px">這一頁的名稱（會顯示在換頁列中間）<input id="mp-name" value="${esc(st.name)}" placeholder="例：空間資訊"></label>
+    <label class="f">格子排列<select id="mp-lay">${LAY.map(l => `<option value="${l[0]}x${l[1]}" ${st.cols === l[0] && st.rows === l[1] ? 'selected' : ''}>${l[0]} 欄 × ${l[1]} 列（共 ${l[0] * l[1]} 格）</option>`).join('')}</select></label>
+    <div class="f s" style="margin-top:12px">選單圖片</div><div id="mp-img"></div>
+    <h4 style="margin:18px 0 2px">每一格按下去要做什麼</h4><div class="s">格子順序：由左到右、由上到下。</div><div id="mp-cells"></div>`,
+    { wide: true, foot: '<span class="sp"></span><button class="btn" data-x>取消</button><button class="btn p" data-mpsave>儲存</button>' });
+  const types = [['fn', '開啟系統功能'], ['url', '開啟連結'], ['reply', '機器人回覆內容'], ['text', '替客人傳送一段文字'], ['none', '不設定']];
+  const grab = () => { st.name = $('#mp-name', m).value.trim(); $$('.mpc', m).forEach((row, i) => { st.cells[i] = { label: $('[data-k=label]', row).value.trim(), type: $('[data-k=type]', row).value, value: ($('[data-k=value]', row) || {}).value || '' }; }); };
+  const paint = () => {
+    $('#mp-img', m).innerHTML = `${st.image ? `<img src="${esc(st.image)}" style="width:100%;max-width:420px;border-radius:10px;border:1px solid var(--line);display:block;margin:6px 0">` : '<div class="s" style="margin:4px 0">沒有圖片：系統會自動畫出白色格子和文字。</div>'}
+      <div class="acts"><button class="btn sm p" data-mpi="up">上傳圖片</button><button class="btn sm" data-mpi="sys">用系統的教室功能圖（4×2）</button>${st.image ? '<button class="btn sm ghost" data-mpi="none">不用圖片</button>' : ''}</div>
+      <div class="s" style="margin-top:4px">建議 2500×1686 像素（和 LINE 官方帳號後台的大型選單相同），可直接上傳您原本的選單圖。</div>`;
+    const n = st.cols * st.rows; st.cells.length = n;
+    $('#mp-cells', m).innerHTML = [...Array(n)].map((_, i) => { const c = st.cells[i] || (st.cells[i] = { label: '', type: 'none', value: '' });
+      const val = c.type === 'fn' ? `<select data-k="value">${d.fns.map(f => `<option value="${f[0]}" ${c.value === f[0] ? 'selected' : ''}>${f[1]}</option>`).join('')}</select>`
+        : c.type === 'reply' ? (d.replies.length ? `<select data-k="value">${d.replies.map(r => `<option value="${esc(r.id)}" ${c.value === r.id ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}</select>` : '<div class="s" style="color:var(--warn)">還沒有回覆內容，請先存檔，到下方「回覆內容」新增後再回來選。</div>')
+        : c.type === 'url' ? `<input data-k="value" value="${esc(c.value)}" placeholder="https://…" inputmode="url">` : c.type === 'text' ? `<input data-k="value" value="${esc(c.value)}" placeholder="客人按下後，會以他的名義傳出這段文字">` : '';
+      return `<div class="mpc"><div class="mpn">${i + 1}</div><div class="g"><input data-k="label" value="${esc(c.label)}" placeholder="這一格的名稱（例：租借須知）"><select data-k="type" style="margin-top:6px">${types.map(t => `<option value="${t[0]}" ${c.type === t[0] ? 'selected' : ''}>${t[1]}</option>`).join('')}</select>${val ? `<div style="margin-top:6px">${val}</div>` : ''}</div></div>`; }).join('');
+  };
+  paint();
+  m.addEventListener('change', e => { if (e.target.id === 'mp-lay') { grab(); [st.cols, st.rows] = e.target.value.split('x').map(Number); paint(); } if (e.target.dataset.k === 'type') { grab(); const i = $$('.mpc', m).indexOf(e.target.closest('.mpc')); st.cells[i].value = ''; paint(); } });
+  m.addEventListener('click', async e => { const b = e.target.closest('button'); if (!b) return;
+    try {
+      if (b.dataset.mpi === 'up') { const r = await pickUpload('image/jpeg,image/png'); if (r) { grab(); st.image = r.path; paint(); } }
+      if (b.dataset.mpi === 'none') { grab(); st.image = ''; paint(); }
+      if (b.dataset.mpi === 'sys') { grab(); st.image = '/richmenu.jpg'; st.cols = 4; st.rows = 2; st.cells = ['checkin', 'card', 'schedule', 'leave', 'attendance', 'video', 'rent', 'bind'].map(f => ({ label: d.fns.find(x => x[0] === f)[1], type: 'fn', value: f })); $('#mp-lay', m).value = '4x2'; paint(); }
+      if ('mpsave' in b.dataset) { grab(); st.cells.forEach(c => { if (c.type === 'fn' && !c.value) c.value = d.fns[0][0]; if (c.type === 'reply' && !c.value && d.replies[0]) c.value = d.replies[0].id; });
+        await api('a.menuPageSave', { id: id || undefined, ...st }); toast('已儲存，記得按「發布到 LINE」'); m.remove(); show(); }
+    } catch (err) { toast(err.message, true); } });
+}
+function editReply(id) {
+  const d = A.menu, src = id ? d.replies.find(r => r.id === id) : null, st = src ? JSON.parse(JSON.stringify(src)) : { name: '', keywords: '', text: '', images: [], buttons: [] };
+  const m = dialog(src ? '編輯回覆內容' : '新增回覆內容', `
+    <label class="f" style="margin-top:10px">名稱（也是卡片的標題）<input id="rp-name" value="${esc(st.name)}" placeholder="例：租借方式及須知"></label>
+    <label class="f">文字內容<textarea id="rp-text" rows="5" placeholder="要回覆給客人的文字">${esc(st.text)}</textarea></label>
+    <div class="f s" style="margin-top:12px">圖片（最多 3 張）</div><div id="rp-imgs"></div>
+    <div class="f s" style="margin-top:12px">按鈕（最多 4 個：開連結，或下載您上傳的檔案）</div><div id="rp-btns"></div>
+    <label class="f">關鍵字（選填；客人打這些字也會回覆，多個用逗號分開，要完全相同才算）<input id="rp-kw" value="${esc(st.keywords.replace(/,/g, '，'))}" placeholder="例：租借方式及須知，怎麼租"></label>
+    <p class="s">回覆順序：圖片 → 文字與按鈕。LINE 不能直接傳 PDF 檔，所以檔案會做成「下載」按鈕，客人點了就能開啟。</p>`,
+    { wide: true, foot: `${src ? '<button class="btn ghost" style="color:var(--bad)" data-rpdel>刪除</button>' : ''}<span class="sp"></span><button class="btn" data-x>取消</button><button class="btn p" data-rpsave>儲存</button>` });
+  const grab = () => { st.name = $('#rp-name', m).value.trim(); st.text = $('#rp-text', m).value.trim(); st.keywords = $('#rp-kw', m).value; $$('.rpb', m).forEach((row, i) => { st.buttons[i] = { label: $('[data-k=label]', row).value.trim(), url: $('[data-k=url]', row).value.trim() }; }); };
+  const paint = () => {
+    $('#rp-imgs', m).innerHTML = `<div class="rpi">${st.images.map((u, i) => `<span><img src="${esc(u)}"><button data-rpi="${i}" aria-label="移除">×</button></span>`).join('')}</div>${st.images.length < 3 ? '<button class="btn sm" data-rpa="img">＋ 上傳圖片</button>' : ''}`;
+    $('#rp-btns', m).innerHTML = st.buttons.map((x, i) => `<div class="rpb mpc"><div class="mpn">${i + 1}</div><div class="g"><input data-k="label" value="${esc(x.label)}" placeholder="按鈕文字（例：下載場地須知）"><input data-k="url" value="${esc(x.url)}" placeholder="https://… 或按右邊上傳檔案" style="margin-top:6px" inputmode="url">
+      <div class="acts" style="margin-top:6px"><button class="btn sm" data-rpf="${i}">上傳檔案（PDF／圖片）</button><button class="btn sm ghost" style="color:var(--bad)" data-rpx="${i}">移除</button></div></div></div>`).join('') + (st.buttons.length < 4 ? '<button class="btn sm" data-rpa="btn">＋ 新增按鈕</button>' : '');
+  };
+  paint();
+  m.addEventListener('click', async e => { const b = e.target.closest('button'); if (!b) return;
+    try {
+      if (b.dataset.rpa === 'img') { const r = await pickUpload('image/jpeg,image/png'); if (r) { grab(); st.images.push(location.origin + r.path); paint(); } }
+      if (b.dataset.rpi) { grab(); st.images.splice(+b.dataset.rpi, 1); paint(); }
+      if (b.dataset.rpa === 'btn') { grab(); st.buttons.push({ label: '', url: '' }); paint(); }
+      if (b.dataset.rpx) { grab(); st.buttons.splice(+b.dataset.rpx, 1); paint(); }
+      if (b.dataset.rpf) { const r = await pickUpload('application/pdf,image/jpeg,image/png'); if (r) { grab(); st.buttons[+b.dataset.rpf].url = location.origin + r.path; paint(); } }
+      if ('rpsave' in b.dataset) { grab(); const bad = st.buttons.find(x => (x.label && !x.url) || (!x.label && x.url)); if (bad) throw new Error('每個按鈕都要有文字和連結（或上傳檔案）');
+        await api('a.replySave', { id: id || undefined, ...st, buttons: st.buttons.filter(x => x.label && x.url) }); toast('已儲存'); m.remove(); show(); }
+      if ('rpdel' in b.dataset) { if (!confirm('確定刪除這個回覆內容？')) return; await api('a.replyDelete', { id }); toast('已刪除'); m.remove(); show(); }
+    } catch (err) { toast(err.message, true); } });
+}
+async function menuAct(act, id, el) {
+  const d = A.menu;
+  if (act === 'edit' || act === 'add') return editMenuPage(act === 'edit' ? id : '');
+  if (act === 'reply') return editReply(id);
+  if (act === 'up' || act === 'down') { await api('a.menuPageMove', { id, dir: act === 'up' ? -1 : 1 }); return show(); }
+  if (act === 'del') { if (!confirm('確定刪除這一頁？')) return; await api('a.menuPageDelete', { id }); return show(); }
+  if (act === 'unpublish') { if (!confirm('確定停用系統的圖文選單？\n停用後，聊天室會改回顯示 LINE 官方帳號管理後台設定的選單。')) return; await api('a.menuUnpublish'); toast('已停用'); return show(); }
+  if (act === 'publish') {
+    if (!d.pages.length) return toast('請先新增至少一頁', true);
+    if (!d.ready) return toast('伺服器還沒設定 LINE 金鑰，無法發布', true);
+    const noImg = d.pages.filter(p => !p.image).map(p => p.name);
+    if (!confirm(`確定把這 ${d.pages.length} 頁選單發布到 LINE？\n所有好友的聊天室選單會立刻換成這一套。` + (noImg.length ? `\n\n注意：「${noImg.join('、')}」還沒有上傳圖片，會用系統自動畫的格子。` : ''))) return;
+    el.disabled = true;
+    try { const images = {};
+      for (let n = 0; n < d.pages.length; n++) { toast(`準備第 ${n + 1}／${d.pages.length} 頁…`); images[d.pages[n].id] = (await uploadData(toJpeg(await composePage(d.pages[n], n, d.pages.length), 950000))).path; }
+      toast('發布中…'); const r = await api('a.menuPublish', { images }); toast(`已發布 ${r.pages} 頁，請到 LINE 聊天室確認`); show();
+    } finally { el.disabled = false; }
+  }
+}
+
 /* ---------- 教室租借 ---------- */
 const rentNoti = r => r && r.notified ? '，已用 LINE 通知預約人' : '';
 function editBooking(id) {
@@ -914,9 +1079,9 @@ function editVideo(id) {
 async function show(page) {
   if (page) A.page = page;
   if (A.page === 'leaves') { A.page = 'attend'; A.att.tab = 'leave'; }
-  if (!PAGES[A.page] || ((NAV.find(n => n[0] === A.page) || [])[2] && !owner())) A.page = 'home';
-  $$('#side a').forEach(a => a.classList.toggle('on', a.dataset.p === A.page));
-  try { $('#app').innerHTML = await PAGES[A.page](); } catch (e) { $('#app').innerHTML = `<div class="card empty">⚠️ ${esc(e.message)}</div>`; }
+  if (!PAGES[A.page] || (((NAV.find(n => n[0] === A.page) || [])[2] || A.page === 'menu') && !owner())) A.page = 'home';
+  $$('#side a').forEach(a => a.classList.toggle('on', a.dataset.p === (A.page === 'menu' ? 'settings' : A.page)));
+  try { $('#app').innerHTML = await PAGES[A.page](); if (A.page === 'menu') drawMenuPreviews(); } catch (e) { $('#app').innerHTML = `<div class="card empty">⚠️ ${esc(e.message)}</div>`; }
 }
 window.addEventListener('hashchange', () => { $$('.mask').forEach(m => m.remove()); show(location.hash.slice(1) || 'home'); });
 let rs; window.addEventListener('resize', () => { clearTimeout(rs); rs = setTimeout(() => { if (A.page === 'schedule' && !$('.mask')) show(); }, 300); });
@@ -983,7 +1148,7 @@ document.addEventListener('click', async e => {
       const text = ds.copy === 'url' ? url : `【${A.meta.studio}】後台邀請\n1. 用 LINE 開啟這個連結：${url}\n2. 按「申請開通」\n3. 跟我說一聲，我開通後頁面會自動進入後台`;
       let ok = false; try { await navigator.clipboard.writeText(text); ok = true; } catch { const t = document.createElement('textarea'); t.value = text; t.style.cssText = 'position:fixed;opacity:0'; document.body.appendChild(t); t.select(); try { ok = document.execCommand('copy'); } catch { /* 不支援 */ } t.remove(); }
       return toast(ok ? '已複製，貼到 LINE 傳給對方即可' : '無法自動複製，請長按上方網址手動複製', !ok); }
-    if ('richmenu' in ds) { if (!confirm('確定重新套用圖文選單？')) return; await api('a.richmenu'); return toast('圖文選單已套用'); }
+    if (ds.mn) return menuAct(ds.mn, ds.id, el);
     if (ds.export) { const r = await api('a.export', { table: ds.export }); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([r.csv], { type: 'text/csv' })); a.download = r.name; a.click(); return; }
     if ('plan' in ds) { const p = ds.plan ? (await api('a.plans')).find(x => x.id === ds.plan) : null;
       return formDialog(p ? '編輯方案' : '新增方案', [{ k: 'name', label: '方案名稱' }, { k: 'lessons', label: '堂數', type: 'number', half: 1 }, { k: 'price', label: '價格', type: 'number', half: 1 }, { k: 'validDays', label: '有效天數（0＝無期限）', type: 'number', half: 1 }, { k: 'active', label: '狀態', type: 'select', opts: [['1', '啟用'], ['0', '停用']], half: 1 }],
