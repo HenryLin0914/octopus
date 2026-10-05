@@ -723,7 +723,7 @@ function coursesDialog() {
   const C = A.meta.courses, T = A.meta.today, st = coursesDialog.st || (coursesDialog.st = { tab: 'fixed', kw: '', teacher: '' });
   const wdKey = c => { const w = String(c.weekdays).split('').map(d => (+d + 6) % 7); return Math.min(...w); }; // 週一排最前面
   const wdText = c => '週' + String(c.weekdays).split('').sort((a, b) => (+a + 6) % 7 - (+b + 6) % 7).map(d => WD[d]).join('、');
-  const period = c => c.date_to ? `${esc((c.date_from || '').slice(5).replace('-', '/') || '即日')} – ${esc(c.date_to.slice(2).replace(/-/g, '/'))}${c.date_to < T ? ' <span class="tag">已結束</span>' : ''}` : '持續開課';
+  const period = c => c.date_to ? `${esc((c.date_from || '').replace(/-/g, '/') || '即日起')} – ${esc(c.date_to.replace(/-/g, '/'))}${c.date_to < T ? ' <span class="tag">已結束</span>' : ''}` : c.date_from ? esc(c.date_from.replace(/-/g, '/')) + ' 起，持續開課' : '持續開課';
   const groups = { fixed: C.filter(c => c.status === '啟用' && c.weekdays !== '').sort((a, b) => wdKey(a) - wdKey(b) || a.start.localeCompare(b.start)),
     once: C.filter(c => c.status === '啟用' && c.weekdays === '').sort((a, b) => (b.date_from || '').localeCompare(a.date_from || '')), off: C.filter(c => c.status !== '啟用'), teacher: A.meta.teachers || [] };
   const teachers = (A.meta.teachers || []).map(t => t.name);
