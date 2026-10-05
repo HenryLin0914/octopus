@@ -528,7 +528,7 @@ export function createApp(opts = {}) {
     'a.mark': ['出席', b => r => `${A_sl(b.sessionId)}｜${A_sn(b.studentId)} → ${b.status === '取消' ? '取消點名' : b.status}${r.deduct ? `，扣 ${r.deduct} 堂（${A_card(r.cardId)}）` : ''}${r.note ? '，' + r.note : ''}${r.dup ? '（重複，未變更）' : ''}`],
     'a.markAll': ['出席', b => { let names = ''; try { names = API['a.roster']({ sessionId: b.sessionId }).list.filter(x => !x.status).map(x => x.name).join('、'); } catch { /* 找不到場次時由動作本身報錯 */ } return r => `${A_sl(b.sessionId)}｜全部出席，${r.marked} 人${names ? '：' + names : ''}`; }],
     'a.markMany': ['出席', b => r => `${A_sl(b.sessionId)}｜加入報到：${A_names(b.studentIds)}${r.noCard ? `（${r.noCard} 人沒有可扣的卡）` : ''}${r.added ? `，${r.added} 人加入固定名單` : ''}`],
-    'a.attCard': ['出席', b => { const old = (activeRecord(b.sessionId, b.studentId) || {}).card_id; return () => `${A_sl(b.sessionId)}｜${A_sn(b.studentId)} 改扣卡：${A_card(old) || '（無）'} → ${A_card(b.cardId)}`; }],
+    'a.attCard': ['出席', b => { const old = (activeRecord(b.sessionId, b.studentId) || {}).card_id; return () => old ? `${A_sl(b.sessionId)}｜${A_sn(b.studentId)} 改扣卡：${A_card(old)} → ${A_card(b.cardId)}` : `${A_sl(b.sessionId)}｜${A_sn(b.studentId)} 補扣堂：${A_card(b.cardId)}`; }],
     'a.close': ['出席', b => { const x = sessRow(b.sessionId), names = x ? all("SELECT s.id,s.name FROM enrollments e JOIN students s ON s.id=e.student_id WHERE e.course_id=? AND s.status='在學'", x.course_id).filter(k => !activeRecord(b.sessionId, k.id)).map(k => k.name).join('、') : ''; return r => `${A_sl(b.sessionId)}｜結算，${r.absent} 人記為缺席${names ? '：' + names : ''}${r.absent && cfgOn('缺席扣堂') ? '（依設定扣堂）' : ''}`; }],
     checkin: ['出席', b => r => `${A_sl(b.sessionId)}｜${A_sn(b.studentId)} 線上報到${r.dup ? '（已報到過）' : r.deduct ? `，扣 ${r.deduct} 堂（${A_card(r.cardId)}）` : '，未扣堂'}`],
     leave: ['出席', b => `${A_sl(b.sessionId)}｜${A_sn(b.studentId)} 線上請假${b.reason ? '：' + str(b.reason, 60) : ''}`],
@@ -816,7 +816,8 @@ export function createApp(opts = {}) {
         const fit = validCards(id, sess.course_id), used = r && r.card_id ? get('SELECT * FROM cards WHERE id=?', r.card_id) : null;
         return s && { id, name: s.name, status: r ? r.status : '', method: r ? r.method : '', note: r ? r.note : '', remain: fit.reduce((n, c) => n + c.remain, 0), other: totalRemain(id) - fit.reduce((n, c) => n + c.remain, 0),
           deduct: r ? r.deduct : 0, cardId: r ? r.card_id : '', card: used ? cardLabel(used) : '', cards: fit.map(c => ({ id: c.id, label: cardLabel(c), remain: c.remain })), makeup: mk.includes(id), fixed: fixedN > ids.indexOf(id), makeupAt: m ? m.date.slice(5).replace('-', '/') + ' ' + m.start : '' }; }).filter(Boolean);
-      return { info: sessionInfo(sess), list };
+      const inf = sessionInfo(sess);
+      return { info: inf, list, rules: { deduct: inf.deduct, leave: cfgOn('請假扣堂'), absent: cfgOn('缺席扣堂') } };
     },
     'a.mark'(b, user) {
       const sess = sessRow(b.sessionId);

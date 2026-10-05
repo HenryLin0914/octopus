@@ -522,4 +522,8 @@ let bad = ''; try { pushes.forEach(p => p.body && p.body.messages && p.body.mess
   ok(r.ok && r.data.removed > 0 && after.groups.find(g => g.key === 'money').count === 0 && after.groups.find(g => g.key === 'attend').count === before.groups.find(g => g.key === 'attend').count && after.keep.students === before.keep.students && (await call('boss', 'a.students')).data.length === stu && after.keep.courses === before.keep.courses, '只清帳務：學生、課程、出席紀錄都還在');
   ok((await call('boss', 'a.resetData', { groups: ['attend', 'signup', 'rent'], confirm: '清除' })).ok && (await call('boss', 'a.resetInfo')).data.groups.every(g => g.count === 0), '可再清除出席、報名、租借');
 }
+{ // 前端頁面的 JavaScript 語法檢查（避免把語法錯誤的頁面推上線）
+  const fs2 = await import('node:fs');
+  for (const f of ['public/admin.html', 'public/index.html']) { let bad = ''; for (const m of fs2.readFileSync(new URL('../' + f, import.meta.url), 'utf8').matchAll(/<script>([\s\S]*?)<\/script>/g)) { try { new Function(m[1]); } catch (e) { bad = e.message; } } ok(!bad, f + ' 語法正確' + (bad ? '：' + bad : '')); }
+}
 console.log(fail ? '\n' + fail + ' FAILED' : '\nALL PASS'); process.exit(fail ? 1 : 0);
