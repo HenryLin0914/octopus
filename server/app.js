@@ -73,8 +73,8 @@ const PLANS = [['P01', '單堂', 1, 500, 30], ['P02', '10堂卡', 10, 4500, 90],
 const COLORS = ['#D6336C', '#1971C2', '#2B8A3E', '#E67700', '#7048E8', '#0C8599', '#C2255C', '#5C940D'];
 
 const OWNER_ONLY = new Set(['a.studentSave', 'a.enroll', 'a.unbind', 'a.topup', 'a.cardSave', 'a.courseSave', 'a.sessionSave', 'a.sessionDelete', 'a.genSessions',
-  'a.videoSave', 'a.videoDelete', 'a.planSave', 'a.settingSave', 'a.adminSave', 'a.export', 'a.student', 'a.videos', 'a.plans', 'a.settings', 'a.admins', 'a.cards', 'a.ledger', 'a.topupSave', 'a.videoInfo', 'a.dayOff', 'a.familySave', 'a.courseDelete', 'a.courseStudents', 'a.signupSave', 'a.rent', 'a.roomSave', 'a.roomDelete', 'a.rentBlockSave', 'a.rentBlockDelete', 'a.rentTagSave', 'a.rentTagDelete', 'a.bookingSave', 'a.rentSlots', 'a.roomCal', 'a.roomHours', 'a.ruleSave', 'a.ruleDelete', 'a.upload', 'a.menu', 'a.menuPageSave', 'a.menuTheme', 'a.resetInfo', 'a.resetData', 'a.audit', 'a.teacherSave', 'a.teacherDelete', 'a.attCard', 'a.menuPageDelete', 'a.menuPageMove', 'a.replySave', 'a.replyDelete', 'a.menuPublish', 'a.menuUnpublish']);
-const ASYNC = new Set(['a.resetData', 'a.menuPublish', 'a.menuUnpublish', 'a.videoInfo']);
+  'a.videoSave', 'a.videoDelete', 'a.planSave', 'a.settingSave', 'a.adminSave', 'a.export', 'a.student', 'a.videos', 'a.plans', 'a.settings', 'a.admins', 'a.cards', 'a.ledger', 'a.topupSave', 'a.videoInfo', 'a.dayOff', 'a.familySave', 'a.courseDelete', 'a.courseStudents', 'a.signupSave', 'a.rent', 'a.roomSave', 'a.roomDelete', 'a.rentBlockSave', 'a.rentBlockDelete', 'a.rentTagSave', 'a.rentTagDelete', 'a.bookingSave', 'a.rentSlots', 'a.roomCal', 'a.roomHours', 'a.ruleSave', 'a.ruleDelete', 'a.upload', 'a.menu', 'a.menuPageSave', 'a.menuTheme', 'a.resetInfo', 'a.resetData', 'a.audit', 'a.pushCheck', 'a.teacherSave', 'a.teacherDelete', 'a.attCard', 'a.menuPageDelete', 'a.menuPageMove', 'a.replySave', 'a.replyDelete', 'a.menuPublish', 'a.menuUnpublish']);
+const ASYNC = new Set(['a.pushCheck', 'a.resetData', 'a.menuPublish', 'a.menuUnpublish', 'a.videoInfo']);
 /** 從各種 YouTube 網址取出影片 ID（watch、youtu.be、shorts、live、embed） */
 export const ytId = url => { const m = String(url || '').match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^#]*&)?v=|shorts\/|live\/|embed\/|v\/))([\w-]{11})(?![\w-])/); return m ? m[1] : ''; };
 
@@ -139,9 +139,13 @@ export function createApp(opts = {}) {
     if (!env.LINE_CHANNEL_ACCESS_TOKEN) return;
     try {
       const r = await lineFetch('https://api.line.me/v2/bot/message/' + pathname, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHdr() }, body: JSON.stringify(payload) });
-      if (!r.ok) console.error('LINE', pathname, r.status, await r.text());
-    } catch (e) { console.error('LINE', pathname, e.message); }
+      let err = '';
+      if (!r.ok) { err = (await r.text()).slice(0, 300); console.error('LINE', pathname, r.status, err); }
+      pushLog.unshift({ time: now(), kind: pathname, to: Array.isArray(payload.to) ? payload.to.length : 1, status: r.status || (r.ok ? 200 : 0), ok: !!r.ok, error: err, alt: ((payload.messages || [])[0] || {}).altText || ((payload.messages || [])[0] || {}).text || '' });
+    } catch (e) { console.error('LINE', pathname, e.message); pushLog.unshift({ time: now(), kind: pathname, to: 0, status: 0, ok: false, error: '連不上 LINE：' + e.message, alt: '' }); }
+    pushLog.length = Math.min(pushLog.length, 40);
   }
+  const pushLog = []; // 最近 40 次發送結果（重啟後清空），給「推播檢查」看
   let outbox = [];
   const pushMsg = (userIds, message) => { const to = [...new Set(userIds.filter(Boolean))]; for (let i = 0; i < to.length; i += 500) outbox.push({ to: to.slice(i, i + 500), messages: [message] }); };
   const flush = () => { const o = outbox; outbox = []; return Promise.all(o.map(m => lineMsg('multicast', m))); };
@@ -1409,6 +1413,31 @@ export function createApp(opts = {}) {
       return { removed, backup, groups: groups.map(g => g.name) };
     },
     /** 操作紀錄查詢（只有管理員）：可依日期、分類、操作人、關鍵字篩選 */
+    /** 推播檢查：確認連到哪個官方帳號、額度、自己是不是好友、家長的 ID 是否有效，並實際發一則測試訊息給自己 */
+    async 'a.pushCheck'(b, user) {
+      const out = { steps: [], recent: pushLog.slice(0, 15), userId: user.userId };
+      const add = (name, ok, text, hint = '') => out.steps.push({ name, ok, text, hint });
+      if (!env.LINE_CHANNEL_ACCESS_TOKEN) { add('伺服器金鑰', false, '伺服器沒有設定 Channel access token', '請在主機執行 deploy/set-line.sh'); return out; }
+      const call = async (url, init) => { try { const r = await lineFetch(url, { ...(init || {}), headers: { 'Content-Type': 'application/json', ...authHdr() } }); let j = {}; const t = await r.text(); try { j = JSON.parse(t || '{}'); } catch { /* 不是 JSON */ } return { ok: !!r.ok, status: r.status || (r.ok ? 200 : 0), j, t: (t || '').slice(0, 300) }; } catch (e) { return { ok: false, status: 0, j: {}, t: '連不上 LINE：' + e.message }; } };
+      const info = await call('https://api.line.me/v2/bot/info');
+      add('連接的官方帳號', info.ok, info.ok ? `${info.j.displayName || ''} ${info.j.basicId || ''}` : `金鑰無效（${info.status}）${info.t}`, info.ok ? '' : 'Channel access token 不正確或已被重新發行，請重新執行 deploy/set-line.sh');
+      if (!info.ok) return out;
+      const q = await call('https://api.line.me/v2/bot/message/quota'), c = await call('https://api.line.me/v2/bot/message/quota/consumption');
+      if (q.ok) { const lim = q.j.type === 'limited' ? q.j.value : null, used = c.ok ? c.j.totalUsage : null, full = lim != null && used != null && used >= lim;
+        add('本月推播額度', !full, lim == null ? '不限則數' : `已用 ${used ?? '?'}／${lim} 則`, full ? '這個月的免費推播則數用完了，LINE 會擋下所有主動推播（回覆訊息不受影響）。請到 LINE Official Account Manager 升級方案或等下個月。' : ''); }
+      const me = await call('https://api.line.me/v2/bot/profile/' + encodeURIComponent(user.userId));
+      add('您的 LINE 帳號', me.ok, me.ok ? `${me.j.displayName || ''}：是這個官方帳號的好友` : `這個官方帳號找不到您的帳號（${me.status}）`,
+        me.ok ? '' : '兩種可能：① 您還沒把這個官方帳號加為好友（或封鎖了）；② 後台登入用的 LINE Login／LIFF 不在這個官方帳號的 Provider 底下，所以系統記到的是別的 Provider 的使用者 ID，推播會全部發不到。若是 ②，請在同一個 Provider 建立 LINE Login 與 LIFF 後重新執行 deploy/set-line.sh。');
+      const wh = await call('https://api.line.me/v2/bot/channel/webhook/endpoint');
+      if (wh.ok) add('Webhook', !!wh.j.active && /\/webhook$/.test(wh.j.endpoint || ''), `${wh.j.endpoint || '（未設定）'}｜${wh.j.active ? '已啟用' : '未啟用'}`, wh.j.active ? '' : '請到 LINE Developers 的 Messaging API 設定開啟 Use webhook');
+      const ids = [...new Set(all('SELECT user_id FROM bindings').map(r => r.user_id))], sample = ids.slice(0, 20); let good = 0;
+      for (const id of sample) if ((await call('https://api.line.me/v2/bot/profile/' + encodeURIComponent(id))).ok) good++;
+      if (ids.length) add('已綁定的家長', good === sample.length, `抽查 ${sample.length} 位，${good} 位收得到（共 ${ids.length} 位綁定）`, good === sample.length ? '' : good === 0 ? '抽查的家長都收不到：很可能是切換官方帳號前綁定的舊資料，或 LIFF 不在同一個 Provider。請家長加入新的官方帳號後重新綁定。' : '收不到的家長可能已封鎖或刪除官方帳號好友，或是切換帳號前綁定的。');
+      else add('已綁定的家長', true, '目前沒有任何家長綁定', '');
+      if (b.send !== false) { const t = await call('https://api.line.me/v2/bot/message/push', { method: 'POST', body: JSON.stringify({ to: user.userId, messages: [{ type: 'text', text: '✅ 這是「' + cfg('教室名稱', '教室') + '」後台發出的推播測試（' + now().slice(5, 16) + '）。收到這則訊息代表推播功能正常。' }] }) });
+        add('測試推播', t.ok, t.ok ? '已送出，請看 LINE 有沒有收到' : `LINE 拒絕發送（${t.status}）${t.j.message || t.t}`, t.ok ? '送出成功但沒收到時，請確認沒有封鎖這個官方帳號，且看的是正確的官方帳號聊天室。' : t.status === 429 ? '本月推播額度已用完。' : ''); }
+      return out;
+    },
     'a.audit'(b) {
       const from = nd(b.from) || addDays(today(), -6), to = nd(b.to) || today(), kw = str(b.kw, 40), cat = str(b.cat, 10), who = str(b.who, 60);
       const cond = ['time>=?', 'time<?'], args = [from, addDays(to, 1)];

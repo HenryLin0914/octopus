@@ -630,6 +630,7 @@ const PAGES = {
           <div class="acts"><button class="btn sm p" data-copy="msg">複製邀請訊息</button><button class="btn sm" data-copy="url">只複製網址</button></div></div>
         <p class="s" style="margin-bottom:0">老師只能看課表、點名與出席；儲值、帳務、影片與設定只有管理員能用。</p></div>
       ${A.meta.role === 'owner' ? `<div class="card"><h2>操作紀錄</h2><p class="s" style="margin-top:0">查看每個人在平台上做過什麼：點名扣堂、儲值、調整上課卡、刪除資料、設定變更等。扣錯堂或誤刪資料時可以回頭查。</p><a class="btn p" href="#audit" style="text-decoration:none;display:inline-block">查看操作紀錄</a></div>` : ''}
+      ${A.meta.role === 'owner' ? `<div class="card"><h2>LINE 推播檢查</h2><p class="s" style="margin-top:0">家長或管理員收不到通知時用：檢查連到哪個官方帳號、本月額度、您和家長的帳號是否收得到，並發一則測試訊息到您的 LINE。</p><button class="btn p" data-pushcheck>開始檢查並發送測試訊息</button></div>` : ''}
       <div class="card"><h2>LINE 圖文選單與自動回覆</h2><p class="s" style="margin-top:0">聊天室下方的選單：可以有多頁（上一頁／下一頁）、自訂每一格按下去要開連結、開系統功能，或回覆文字、圖片、檔案。</p><a class="btn p" href="#menu" style="display:inline-block;text-decoration:none">管理圖文選單</a></div>
       <div class="card"><h2>匯出資料（CSV，可用 Excel 開啟）</h2><div class="acts">${[['students', '學生'], ['attendance', '出席紀錄'], ['topups', '儲值紀錄'], ['cards', '上課卡'], ['sessions', '課表'], ['leaves', '請假']].map(x => `<button class="btn sm" data-export="${x[0]}">${x[1]}</button>`).join('')}</div>
         <p class="s" style="margin-bottom:0">資料庫每天自動備份，保留最近 14 天。</p></div>
@@ -1357,6 +1358,13 @@ document.addEventListener('click', async e => {
     if ('aucsv' in ds) { const q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"', csv = '\ufeff' + [['時間', '操作人', '身分', '類別', '內容'], ...(A.auRows || []).map(r => [r.time, r.name, r.role, r.cat, r.summary])].map(r => r.map(q).join(',')).join('\r\n');
       const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = `操作紀錄_${A.au.from}_${A.au.to}.csv`; a.click(); return; }
     if (ds.aulog) { A.au = { from: dAdd(A.meta.today, -89), to: A.meta.today, cat: '', who: '', kw: ds.aulog }; $$('.mask').forEach(m => m.remove()); location.hash = '#audit'; if (A.page === 'audit') show(); return; }
+    if ('pushcheck' in ds) { el.disabled = true; toast('檢查中…');
+      try { const r = await api('a.pushCheck'), bad = r.steps.filter(x => !x.ok);
+        dialog('LINE 推播檢查', `<div class="note" style="margin-top:12px;${bad.length ? 'background:#fdecec;border-color:#f1b7b7;color:#7a1f1f' : 'background:#e6f4ea;border-color:#b9dcc1;color:#1d5f2c'}"><b>${bad.length ? '發現 ' + bad.length + ' 個問題' : '檢查都通過，測試訊息已送出'}</b>${bad.length ? '' : '<br>請打開 LINE 確認有沒有收到。'}</div>
+          ${r.steps.map(x => `<div class="row" style="align-items:flex-start"><span class="tag ${x.ok ? 'ok' : 'bad'}" style="margin-top:2px">${x.ok ? '正常' : '異常'}</span><div class="g"><div class="t">${esc(x.name)}</div><div class="s" style="color:var(--ink);overflow-wrap:anywhere">${esc(x.text)}</div>${x.hint ? `<div class="s" style="margin-top:3px;overflow-wrap:anywhere">${esc(x.hint)}</div>` : ''}</div></div>`).join('')}
+          <h4 style="margin:16px 0 4px">最近的發送紀錄</h4>${r.recent.length ? r.recent.map(x => `<div class="row" style="align-items:flex-start"><span class="tag ${x.ok ? 'ok' : 'bad'}">${x.ok ? '成功' : x.status || '失敗'}</span><div class="g"><div class="s" style="color:var(--ink);overflow-wrap:anywhere">${esc(x.time.slice(5, 16))}｜${x.kind === 'reply' ? '回覆' : '推播給 ' + x.to + ' 人'}${x.alt ? '｜' + esc(x.alt.slice(0, 40)) : ''}</div>${x.error ? `<div class="s" style="color:var(--bad);overflow-wrap:anywhere">${esc(x.error)}</div>` : ''}</div></div>`).join('') : '<div class="s">伺服器重新啟動後還沒有發送過訊息。</div>'}
+          <p class="s">「成功」代表 LINE 收下了這則訊息；對方若已封鎖官方帳號，或 ID 不屬於這個官方帳號，LINE 仍會回成功但不會送達，所以請以上面的檢查結果為準。</p>`, { wide: true, foot: '<span class="sp"></span><button class="btn p" data-x>關閉</button>' });
+      } finally { el.disabled = false; } return; }
     if (ds.jump) { const k = ds.jump;
       if (k === 'low' || k === 'unbound' || k === 'lowall') { if (k === 'low' && $('#ov-low')) return $('#ov-low').scrollIntoView({ behavior: 'smooth', block: 'center' }); A.filter = { kw: '', f: k === 'unbound' ? 'unbound' : 'low', course: '' }; location.hash = '#students'; return; }
       if (k === 'rent' || k === 'settings') { location.hash = '#' + k; return; }

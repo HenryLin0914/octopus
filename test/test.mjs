@@ -509,6 +509,11 @@ let bad = ''; try { pushes.forEach(p => p.body && p.body.messages && p.body.mess
   ok((await call('boss', 'a.audit', { cat: '出席' })).data.rows.length === before && (await call('boss', 'a.audit', {})).data.rows.some(x => x.role === '家長／客人'), '家長的操作也有紀錄');
   await call('boss', 'a.studentSave', { id: sid, name: '紀錄生', status: '停用' });
 }
+{ // 推播檢查
+  const n0 = pushes.length, pc = await call('boss', 'a.pushCheck');
+  ok(pc.ok && pc.data.steps.some(x => x.name === '測試推播' && x.ok) && pc.data.steps.some(x => x.name === '您的 LINE 帳號') && pushes.slice(n0).some(x => /message\/push$/.test(x.url) && /推播測試/.test(x.body.messages[0].text)) && /僅限管理員/.test((await call('teacher', 'a.pushCheck')).error), '推播檢查會發測試訊息給自己，只有管理員能用');
+  ok(Array.isArray(pc.data.recent), '回傳最近的發送紀錄');
+}
 { // 上線前清除測試資料
   const before = (await call('boss', 'a.resetInfo')).data, stu = (await call('boss', 'a.students')).data.length;
   ok(before.groups.find(g => g.key === 'money').count > 0 && /僅限管理員/.test((await call('teacher', 'a.resetData', { groups: ['money'], confirm: '清除' })).error) && !(await call('boss', 'a.resetData', { groups: ['money'], confirm: 'x' })).ok, '清除資料需管理員且要輸入確認字');
