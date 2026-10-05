@@ -437,7 +437,7 @@ export function createApp(opts = {}) {
     return 1;
   }
 
-  /* ---------- 家庭（兄弟姊妹）：共用上課卡、家長一次綁定 ---------- */
+  /* ---------- 家庭（家人）：共用上課卡、家長一次綁定 ---------- */
   const siblingsOf = sid => { const s = student(sid); return s && s.family ? all("SELECT * FROM students WHERE family=? AND id<>? AND status<>'停用' ORDER BY id", s.family, sid) : []; };
   /** 把幾位學生併成同一個家庭（沿用已有的家庭編號） */
   function linkFamily(ids) {
@@ -567,7 +567,7 @@ export function createApp(opts = {}) {
     'a.studentSave': ['學生', b => { const o = b.id ? student(b.id) : null; return r => o ? `修改學生：${o.name}${o.name !== str(b.name, 40) && b.name ? ' → ' + str(b.name, 40) : ''}${b.status && b.status !== o.status ? `｜狀態 ${o.status} → ${b.status}` : ''}${b.regenCode ? '｜重新產生綁定碼' : ''}` : `新增學生：${str(b.name, 40)}（${(r && r.id) || ''}）`; }],
     'a.studentImport': ['學生', () => r => `批次匯入學生：${(r && (r.added ?? r.count ?? (r.list || []).length)) || ''} 位`],
     'a.enroll': ['學生', b => `設定學生的課程：${A_sn(b.studentId)}｜${(b.courseIds || []).map(A_cn).join('、') || '（全部移出）'}`],
-    'a.familySave': ['學生', b => `設定兄弟姊妹：${A_sn(b.studentId)}｜${A_names(b.memberIds) || '（移出家庭）'}`],
+    'a.familySave': ['學生', b => `設定家人：${A_sn(b.studentId)}｜${A_names(b.memberIds) || '（移出家庭）'}`],
     'a.unbind': ['學生', b => { const k = get('SELECT line_name n FROM bindings WHERE user_id=? AND student_id=?', b.userId, b.studentId) || {}; return `解除家長綁定：${A_sn(b.studentId)}｜${k.n || '家長'}`; }],
     bind: ['學生', b => r => `家長綁定學生：${[r.name, ...(r.also || []).map(x => x.name || x)].filter(Boolean).join('、')}${b.relation ? '（' + str(b.relation, 10) + '）' : ''}${r.already ? '（原本就綁定了）' : ''}`],
     signup: ['學生', b => r => `線上報名：${A_sn(b.studentId)} → ${A_cn(b.courseId)}（${(r && r.status) || ''}）`],
@@ -622,7 +622,7 @@ export function createApp(opts = {}) {
       const stu = get("SELECT * FROM students WHERE bind_code=? AND status<>'停用'", code);
       if (!stu) throw new Error('綁定碼不正確，請向教室確認');
       const add = x => Number(run('INSERT OR IGNORE INTO bindings(user_id,line_name,student_id,relation,created_at) VALUES(?,?,?,?,?)', user.userId, user.name, x.id, str(b.relation, 20), now()).changes);
-      const fresh = add(stu), also = siblingsOf(stu.id).filter(add).map(x => x.name); // 同家庭的兄弟姊妹一起綁定
+      const fresh = add(stu), also = siblingsOf(stu.id).filter(add).map(x => x.name); // 同家庭的家人一起綁定
       linkFamily(kidsOf(user.userId).map(x => x.id)); // 同一位家長綁定的孩子，自動視為同一家庭
       return { id: stu.id, name: stu.name, already: !fresh && !also.length, also };
     },
@@ -1112,17 +1112,17 @@ export function createApp(opts = {}) {
       ids.forEach(id => run('INSERT INTO enrollments VALUES(?,?,?)', b.studentId, id, today()));
       return { courses: ids };
     },
-    /** 設定兄弟姊妹：memberIds 為同一家庭的其他學生（空陣列＝移出家庭） */
+    /** 設定家人：memberIds 為同一家庭的其他學生（空陣列＝移出家庭） */
     'a.familySave'(b) {
       const me = student(b.studentId);
       if (!me) throw new Error('找不到學生');
       const want = [...new Set((b.memberIds || []).filter(id => id !== me.id && student(id)))];
       const old = me.family ? all('SELECT id FROM students WHERE family=? AND id<>?', me.family, me.id).map(r => r.id) : [];
-      if (!want.length) run("UPDATE students SET family='' WHERE id=?", me.id); // 只把自己移出，其他兄弟姊妹維持
+      if (!want.length) run("UPDATE students SET family='' WHERE id=?", me.id); // 只把自己移出，其他家人維持
       else { old.filter(id => !want.includes(id)).forEach(id => run("UPDATE students SET family='' WHERE id=?", id)); linkFamily([me.id, ...want]); }
       const left = me.family ? all('SELECT id FROM students WHERE family=?', me.family) : [];
       if (left.length === 1) run("UPDATE students SET family='' WHERE id=?", left[0].id);
-      let bound = 0; // 已綁定其中一位的家長，其他兄弟姊妹一起補綁
+      let bound = 0; // 已綁定其中一位的家長，其他家人一起補綁
       if (b.syncParents && want.length) { const ids = [me.id, ...want];
         all(`SELECT DISTINCT user_id,line_name,relation FROM bindings WHERE student_id IN (${ids.map(() => '?').join(',')})`, ...ids).forEach(p => ids.forEach(id => { bound += Number(run('INSERT OR IGNORE INTO bindings(user_id,line_name,student_id,relation,created_at) VALUES(?,?,?,?,?)', p.user_id, p.line_name, id, p.relation, now()).changes); })); }
       return { family: siblingsOf(me.id).map(x => x.id), bound };

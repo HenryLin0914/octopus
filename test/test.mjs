@@ -214,12 +214,12 @@ ok((await call('boss', 'a.unbind', { userId: (await call('dad', 'init')).data.us
   await call('boss', 'a.unbind', { userId: (await call('mom', 'init')).data.userId, studentId: kid.id });
 }
 
-{ // 家庭：兄弟姊妹一次綁定、共用卡用量
+{ // 家庭：家人一次綁定、共用卡用量
   const k1 = (await call('boss', 'a.studentSave', { name: '大寶' })).data, k2 = (await call('boss', 'a.studentSave', { name: '二寶', familyWith: k1.id })).data, k3 = (await call('boss', 'a.studentSave', { name: '三寶' })).data;
   let L = (await call('boss', 'a.students')).data;
-  ok(L.find(x => x.id === k1.id).family.includes(k2.id) && L.find(x => x.id === k2.id).family.includes(k1.id) && !L.find(x => x.id === k3.id).family.length, '新增學生時可指定兄弟姊妹');
+  ok(L.find(x => x.id === k1.id).family.includes(k2.id) && L.find(x => x.id === k2.id).family.includes(k1.id) && !L.find(x => x.id === k3.id).family.length, '新增學生時可指定家人');
   r = await call('fam', 'bind', { code: k1.code, relation: '父親' });
-  ok(r.data.also.join() === '二寶' && (await call('fam', 'init')).data.students.length === 2, '輸入一位的綁定碼，兄弟姊妹一起綁定');
+  ok(r.data.also.join() === '二寶' && (await call('fam', 'init')).data.students.length === 2, '輸入一位的綁定碼，家人一起綁定');
   r = await call('fam', 'bind', { code: k3.code, relation: '父親' });
   ok((await call('boss', 'a.student', { id: k3.id })).data.family.length === 2, '同一位家長再綁第三位，自動併入同一家庭');
   await call('boss', 'a.topup', { studentId: k1.id, planId: 'P02', price: 4500, shareIds: [k2.id] });
