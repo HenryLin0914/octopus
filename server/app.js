@@ -72,7 +72,7 @@ const SETTINGS = {
 const PLANS = [['P01', '單堂', 1, 500, 30], ['P02', '10堂卡', 10, 4500, 90], ['P03', '20堂卡', 20, 8000, 180]];
 const COLORS = ['#D6336C', '#1971C2', '#2B8A3E', '#E67700', '#7048E8', '#0C8599', '#C2255C', '#5C940D'];
 
-const OWNER_ONLY = new Set(['a.studentSave', 'a.enroll', 'a.unbind', 'a.topup', 'a.cardSave', 'a.familyShare', 'a.courseSave', 'a.sessionSave', 'a.sessionDelete', 'a.genSessions',
+const OWNER_ONLY = new Set(['a.studentSave', 'a.enroll', 'a.unbind', 'a.topup', 'a.cardSave', 'a.familyShare', 'a.cardShare', 'a.courseSave', 'a.sessionSave', 'a.sessionDelete', 'a.genSessions',
   'a.videoSave', 'a.videoDelete', 'a.planSave', 'a.settingSave', 'a.adminSave', 'a.export', 'a.student', 'a.videos', 'a.plans', 'a.settings', 'a.admins', 'a.cards', 'a.ledger', 'a.topupSave', 'a.videoInfo', 'a.dayOff', 'a.familySave', 'a.courseDelete', 'a.courseStudents', 'a.signupSave', 'a.rent', 'a.roomSave', 'a.roomDelete', 'a.rentBlockSave', 'a.rentBlockDelete', 'a.rentTagSave', 'a.rentTagDelete', 'a.bookingSave', 'a.rentSlots', 'a.roomCal', 'a.roomHours', 'a.ruleSave', 'a.ruleDelete', 'a.upload', 'a.menu', 'a.menuPageSave', 'a.menuTheme', 'a.resetInfo', 'a.resetData', 'a.audit', 'a.pushCheck', 'a.teacherSave', 'a.teacherDelete', 'a.attCard', 'a.menuPageDelete', 'a.menuPageMove', 'a.replySave', 'a.replyDelete', 'a.menuPublish', 'a.menuUnpublish']);
 const ASYNC = new Set(['a.pushCheck', 'a.resetData', 'a.menuPublish', 'a.menuUnpublish', 'a.videoInfo']);
 /** 從各種 YouTube 網址取出影片 ID（watch、youtu.be、shorts、live、embed） */
@@ -572,6 +572,7 @@ export function createApp(opts = {}) {
     'a.studentSave': ['學生', b => { const o = b.id ? student(b.id) : null; return r => o ? `修改學生：${o.name}${o.name !== str(b.name, 40) && b.name ? ' → ' + str(b.name, 40) : ''}${b.status && b.status !== o.status ? `｜狀態 ${o.status} → ${b.status}` : ''}${b.regenCode ? '｜重新產生綁定碼' : ''}` : `新增學生：${str(b.name, 40)}（${(r && r.id) || ''}）`; }],
     'a.studentImport': ['學生', () => r => `批次匯入學生：${(r && (r.added ?? r.count ?? (r.list || []).length)) || ''} 位`],
     'a.enroll': ['學生', b => `設定學生的課程：${A_sn(b.studentId)}｜${(b.courseIds || []).map(A_cn).join('、') || '（全部移出）'}`],
+    'a.cardShare': ['帳務', b => `上課卡${b.on ? '加入共用' : '取消共用'}：${(get('SELECT plan_name n FROM cards WHERE id=?', b.cardId) || {}).n || b.cardId}｜${A_sn(b.studentId)}`],
     'a.familyShare': ['帳務', b => `上課卡設為全家共用：${A_sn(b.studentId)}`],
     'a.familySave': ['學生', b => `設定家人：${A_sn(b.studentId)}｜${A_names(b.memberIds) || '（移出家庭）'}`],
     'a.unbind': ['學生', b => { const k = get('SELECT line_name n FROM bindings WHERE user_id=? AND student_id=?', b.userId, b.studentId) || {}; return `解除家長綁定：${A_sn(b.studentId)}｜${k.n || '家長'}`; }],
@@ -1119,6 +1120,14 @@ export function createApp(opts = {}) {
       run('DELETE FROM enrollments WHERE student_id=?', b.studentId);
       ids.forEach(id => run('INSERT INTO enrollments VALUES(?,?,?)', b.studentId, id, today()));
       return { courses: ids };
+    },
+    /** 單張卡：加入／移除一位共用的學生 */
+    'a.cardShare'(b) {
+      const c = get('SELECT * FROM cards WHERE id=?', b.cardId), st = student(b.studentId);
+      if (!c || !st) throw new Error('找不到上課卡或學生');
+      if (b.on) { run('INSERT OR IGNORE INTO card_students VALUES(?,?)', c.id, st.id); linkFamily(all('SELECT student_id id FROM card_students WHERE card_id=?', c.id).map(r => r.id)); }
+      else { if (get('SELECT COUNT(*) n FROM card_students WHERE card_id=?', c.id).n <= 1) throw new Error('至少要有一位學生使用這張卡'); run('DELETE FROM card_students WHERE card_id=? AND student_id=?', c.id, st.id); }
+      return { students: all('SELECT s.id,s.name FROM card_students cs JOIN students s ON s.id=cs.student_id WHERE cs.card_id=?', c.id) };
     },
     /** 一鍵把全家人手上還能用的上課卡，設成每位家人都共用 */
     'a.familyShare'(b) {
