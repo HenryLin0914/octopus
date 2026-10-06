@@ -443,7 +443,7 @@ export function createApp(opts = {}) {
   const famUnshared = sid => { const ids = siblingsOf(sid).map(x => x.id); if (!ids.length) return [];
     return all(`SELECT DISTINCT c.* FROM cards c JOIN card_students cs ON cs.card_id=c.id WHERE cs.student_id IN (${ids.map(() => '?').join(',')}) AND c.status='啟用' AND c.remain>0 AND (c.expire='' OR c.expire>=?) AND NOT EXISTS(SELECT 1 FROM card_students m WHERE m.card_id=c.id AND m.student_id=?)`, ...ids, today(), sid); };
   /** 全家人之中，還沒有讓每個人都共用到的卡數 */
-  const famGap = sid => new Set([sid, ...siblingsOf(sid).map(x => x.id)].flatMap(id => famUnshared(id).map(c => c.id))).size;
+  const famGap = sid => new Set([sid, ...siblingsOf(sid).map(x => x.id)].filter(id => totalRemain(id) <= 0).flatMap(id => famUnshared(id).map(c => c.id))).size;
   /** 把幾位學生併成同一個家庭（沿用已有的家庭編號） */
   function linkFamily(ids) {
     ids = [...new Set(ids)].filter(student);
@@ -1058,7 +1058,7 @@ export function createApp(opts = {}) {
       return all('SELECT * FROM students ORDER BY status, id').map(s => ({ id: s.id, name: s.name, birthday: s.birthday, phone: s.phone, code: s.bind_code, status: s.status, note: s.note, remain: totalRemain(s.id), least: tightest(s.id).remain,
         bound: get('SELECT COUNT(*) n FROM bindings WHERE student_id=?', s.id).n, courses: all('SELECT course_id FROM enrollments WHERE student_id=?', s.id).map(r => r.course_id),
         family: siblingsOf(s.id).map(r => r.id), parents: all('SELECT line_name n, relation r FROM bindings WHERE student_id=?', s.id).map(r => (r.n || '家長') + (r.r ? '（' + r.r + '）' : '')),
-        famUnshared: famUnshared(s.id).reduce((n, c) => n + c.remain, 0),
+        famUnshared: totalRemain(s.id) > 0 ? 0 : famUnshared(s.id).reduce((n, c) => n + c.remain, 0), // 自己有卡可用就不提示（例如小孩共用一張、媽媽自己一張）
         shared: !!get("SELECT 1 x FROM card_students a JOIN card_students o ON o.card_id=a.card_id AND o.student_id<>a.student_id JOIN cards c ON c.id=a.card_id WHERE a.student_id=? AND c.status='啟用' AND c.remain>0", s.id) }));
     },
     /** 出席總表：某月（可再依課程、學生篩選）的明細、統計與每位學生出席率 */

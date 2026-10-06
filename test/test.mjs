@@ -227,6 +227,9 @@ ok((await call('boss', 'a.unbind', { userId: (await call('dad', 'init')).data.us
   ok(i2.find(x => x.id === k1.id).sharedWith.join() === '二寶' && i2.find(x => x.id === k1.id).remain === 10 && i2.find(x => x.id === k3.id).remain === 0, '家長首頁資料帶出共用對象');
   L = (await call('boss', 'a.students')).data;
   ok(L.find(x => x.id === k3.id).famUnshared === 10 && !L.find(x => x.id === k1.id).famUnshared && (await call('boss', 'a.student', { id: k3.id })).data.famGap === 1, '列表提示家人的卡還沒共用');
+  { const own = (await call('boss', 'a.topup', { studentId: k3.id, planId: 'P02', price: 4500 })).data; L = (await call('boss', 'a.students')).data;
+    ok(!L.find(x => x.id === k3.id).famUnshared && (await call('boss', 'a.student', { id: k3.id })).data.famGap === 0, '自己有卡的家人不提示未共用');
+    const cid = (await call('boss', 'a.student', { id: k3.id })).data.cards[0].id; await call('boss', 'a.cardSave', { id: cid, remain: 0, expire: '' }); }
   r = await call('boss', 'a.familyShare', { studentId: k3.id });
   L = (await call('boss', 'a.students')).data;
   ok(r.data.cards === 1 && L.find(x => x.id === k3.id).remain === 10 && !L.find(x => x.id === k3.id).famUnshared, '一鍵全家共用上課卡');
