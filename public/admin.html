@@ -675,10 +675,10 @@ async function openSession(id) {
       const rule = `出席：按下的當下扣 ${R.deduct} 堂｜請假：${R.leave ? '扣 ' + R.deduct + ' 堂' : '不扣堂'}｜缺席：${R.absent ? '扣 ' + R.deduct + ' 堂' : '不扣堂'}`;
       return `<div class="rhead"><b>點名</b><span class="sp"></span>${todo ? `<button class="btn sm ok" data-a="all">剩下 ${todo} 位全部出席</button>` : ''}<button class="btn sm" data-a="qr">QR 報到</button></div>
     <div class="rsum"><span class="ok"><b>${here}</b>出席</span><span class="w"><b>${lv}</b>請假</span><span class="b"><b>${ab}</b>缺席</span><span class="${todo ? 'todo' : ''}"><b>${todo}</b>還沒點</span></div>
-    <details class="rrule"><summary>什麼時候扣堂？　${rule.split('｜')[0]}</summary><div>${rule.split('｜').slice(1).join('｜')}<br>按下狀態的當下就會扣（或不扣），不用等結算。點錯了再按一次同一個狀態，或用「⋯」→「清除點名」，堂數會立刻退回。<br>「結算」只是把還沒點的人一次記為缺席。${owner() ? '扣堂規則在「設定」可以修改。' : ''}</div></details>`; })() + `
+    <details class="rrule"><summary>什麼時候扣堂？　${rule.split('｜')[0]}</summary><div>${rule.split('｜').slice(1).join('｜')}<br>按下狀態的當下就會扣（或不扣），不用等結算。有好幾張卡時的順序：限定這門課的卡 → 自己專用的卡 → 家人共用的卡，同類先扣快到期的；每一列都會寫出「會扣」哪一張，要換用「⋯」。點錯了再按一次同一個狀態，或用「⋯」→「清除點名」，堂數會立刻退回。<br>「結算」只是把還沒點的人一次記為缺席。${owner() ? '扣堂規則在「設定」可以修改。' : ''}</div></details>`; })() + `
     <div class="roster">${d.list.length ? d.list.map(x => { const need = x.status && (x.status === '出席' || (x.status === '請假' && (d.rules || {}).leave) || (x.status === '缺席' && (d.rules || {}).absent)), opened = d.open === x.id;
-      const res = !x.status ? (x.remain <= 0 ? (x.other > 0 ? `<span class="rw">沒有適用這門課的卡（其他卡剩 ${x.other} 堂），報到不會扣堂</span>` : '<span class="rw">沒有可用的堂數，報到不會扣堂</span>') : `可用 ${x.remain} 堂`)
-        : x.card ? `<span class="rok">已扣 ${x.deduct} 堂</span>　剩 ${x.remain} 堂${x.cards.length > 1 || x.other > 0 || /（/.test(x.card) ? '<br>扣的是：' + esc(x.card) : ''}` : need ? `<span class="rw">沒有扣到堂數</span>${x.cards.length ? '　現在有可用的卡了，可以補扣' : '　沒有可用的卡'}` : `不扣堂　可用 ${x.remain} 堂`;
+      const res = !x.status ? (x.remain <= 0 ? (x.other > 0 ? `<span class="rw">沒有適用這門課的卡（其他卡剩 ${x.other} 堂），報到不會扣堂</span>` : '<span class="rw">沒有可用的堂數，報到不會扣堂</span>') : `可用 ${x.remain} 堂${x.cards[0] ? '　會扣：' + esc(x.cards[0].label) : ''}`)
+        : x.card ? `<span class="rok">已扣 ${x.deduct} 堂</span>　剩 ${x.remain} 堂<br>扣的是：${esc(x.card)}` : need ? `<span class="rw">沒有扣到堂數</span>${x.cards.length ? '　現在有可用的卡了，可以補扣' : '　沒有可用的卡'}` : `不扣堂　可用 ${x.remain} 堂`;
       return `<div class="rr ${x.status ? 'done' : ''}"><div class="rr-m"><div class="rr-n"><b>${esc(x.name)}</b>${x.makeup ? '<span class="tag info">補課</span>' : x.fixed ? '' : '<span class="tag">臨時</span>'}${x.method && x.method !== '後台' ? `<span class="tag">${esc(x.method)}</span>` : ''}</div><div class="rr-s">${res}${x.makeupAt ? '　已排補課 ' + esc(x.makeupAt) : ''}</div></div>
         <div class="mk3">${[['出席', 'ok'], ['請假', 'w'], ['缺席', 'b']].map(b => `<button class="${x.status === b[0] ? b[1] : ''}" data-mk="${x.status === b[0] ? '取消' : b[0]}" data-id="${esc(x.id)}" aria-pressed="${x.status === b[0]}">${b[0]}</button>`).join('')}</div>
         <button class="rr-x ${opened ? 'on' : ''}" data-more="${esc(x.id)}" aria-label="更多操作">⋯</button>
@@ -896,7 +896,7 @@ function editCourse(id, renew) {
 }
 
 /* ---------- 學生 ---------- */
-const STU_F = () => [{ k: 'name', label: '姓名' }, { k: 'birthday', label: '生日', type: 'date', half: 1 }, { k: 'phone', label: '家長電話', half: 1 },
+const STU_F = () => [{ k: 'name', label: '姓名' }, { k: 'birthday', label: '生日', type: 'date', half: 1 }, { k: 'phone', label: '聯絡電話', half: 1 },
   { k: 'courses', label: '排入課程（點名單會出現這位學生）', type: 'checks', opts: A.meta.courses.filter(c => c.status === '啟用').map(c => [c.id, c.name]) }, { k: 'note', label: '備註' }];
 function newStudent() {
   const F = [...STU_F().slice(0, 3), { k: 'familyWith', label: '家人（同一家庭，例如兄弟姊妹、媽媽；可不選）', type: 'select', opts: [['', '沒有／之後再設定']].concat(A.students.filter(x => x.status !== '停用').map(x => [x.id, x.name + '（' + x.id + '）'])) }, ...STU_F().slice(3)];

@@ -239,7 +239,7 @@ export function createApp(opts = {}) {
   /** 卡片能不能用在這門課（卡片沒設定適用課程＝全部通用） */
   const cardFits = (c, courseId) => !c.courses || !courseId || c.courses.split(',').includes(courseId);
   /** 可用的上課卡，先到期的排前面；給 courseId 時只留適用這門課的 */
-  const validCards = (sid, courseId) => all("SELECT c.* FROM cards c JOIN card_students cs ON cs.card_id=c.id WHERE cs.student_id=? AND c.status='啟用' AND c.remain>0 AND (c.expire='' OR c.expire>=?) ORDER BY CASE WHEN c.expire='' THEN '9999' ELSE c.expire END, c.bought, c.id", sid, today()).filter(c => cardFits(c, courseId));
+  const validCards = (sid, courseId) => all("SELECT c.* FROM cards c JOIN card_students cs ON cs.card_id=c.id WHERE cs.student_id=? AND c.status='啟用' AND c.remain>0 AND (c.expire='' OR c.expire>=?) ORDER BY CASE WHEN c.courses<>'' THEN 0 ELSE 1 END, CASE WHEN (SELECT COUNT(*) FROM card_students x WHERE x.card_id=c.id)>1 THEN 1 ELSE 0 END, CASE WHEN c.expire='' THEN '9999' ELSE c.expire END, c.bought, c.id", sid, today()).filter(c => cardFits(c, courseId)); // 扣卡順序：限定課程的卡 → 自己專用的卡 → 家人共用的卡；同類先扣快到期的
   const totalRemain = (sid, courseId) => validCards(sid, courseId).reduce((n, c) => n + c.remain, 0);
   const pickCard = (sid, need, courseId, preferId) => { const list = validCards(sid, courseId).filter(c => c.remain >= need); return (preferId && list.find(c => c.id === preferId)) || list[0] || null; };
   /** 最吃緊的堂數：有限定課程的卡時，看學生每門固定課各自還能上幾堂，回傳最少的那門 */
@@ -249,7 +249,7 @@ export function createApp(opts = {}) {
   const cleanCourses = v => [...new Set((Array.isArray(v) ? v : String(v || '').split(',')).map(x => String(x).trim()).filter(id => id && get('SELECT 1 x FROM courses WHERE id=?', id)))].join(',');
   /** 適用課程的文字：'' → 全部課程 */
   const scopeText = csv => !csv ? '全部課程' : csv.split(',').map(id => (get('SELECT name FROM courses WHERE id=?', id) || {}).name).filter(Boolean).join('、') || '（課程已刪除）';
-  const cardLabel = c => c.plan_name + (c.courses ? '（' + scopeText(c.courses) + '）' : '');
+  const cardLabel = c => c.plan_name + (c.courses ? '（' + scopeText(c.courses) + '）' : '') + (get('SELECT COUNT(*) n FROM card_students WHERE card_id=?', c.id).n > 1 ? '・共用' : '');
   const shouldDeduct = st => st === '出席' ? true : st === '請假' ? cfgOn('請假扣堂') : st === '缺席' ? cfgOn('缺席扣堂') : false;
   const sessRow = id => get('SELECT * FROM sessions WHERE id=?', id);
   function sessionInfo(s) {

@@ -476,6 +476,18 @@ let bad = ''; try { pushes.forEach(p => p.body && p.body.messages && p.body.mess
   ok(/不適用/.test((await call('boss', 'a.attCard', { sessionId: s2, studentId: sid, cardId: 'nope' })).error) && /僅限管理員/.test((await call('teacher', 'a.attCard', { sessionId: s2, studentId: sid, cardId: kA.id })).error), '不能改扣不適用的卡，老師不能換卡');
   await call('boss', 'a.cardSave', { id: kA.id, remain: 4, expire: '', courses: [] });
   ok((await call('boss', 'a.student', { id: sid })).data.cards.find(c => c.id === kA.id).scope === '全部課程', '可把卡改回全部課程通用');
+  { // 扣卡順序：限定卡 → 自己專用 → 家人共用
+    await call('boss', 'a.cardSave', { id: kMulti.id, remain: 3, expire: '', courses: [c2, c3] }); // 兩張都不會到期：通用卡先買，但限定卡要先扣
+    let o = (await call('boss', 'a.roster', { sessionId: s3 })).data.list.find(x => x.id === sid);
+    ok(o.cards[0].id === kMulti.id && o.cards[1].id === kA.id, '限定課程的卡優先於通用卡');
+    const mate = (await call('boss', 'a.studentSave', { name: '限定生家人', familyWith: sid })).data.id;
+    await call('boss', 'a.cardSave', { id: kMulti.id, remain: 0, expire: '' });
+    await call('boss', 'a.cardSave', { id: kA.id, remain: 4, expire: day, studentIds: [sid, mate] }); // 共用卡今天到期
+    await call('boss', 'a.topup', { studentId: sid, planId: plans[0].id, lessons: 2, price: 100 });
+    o = (await call('boss', 'a.roster', { sessionId: s3 })).data.list.find(x => x.id === sid);
+    ok(o.cards.length === 2 && o.cards[1].id === kA.id && /共用/.test(o.cards[1].label) && !/共用/.test(o.cards[0].label), '自己專用的卡優先於家人共用的卡，共用卡有標示');
+    await call('boss', 'a.studentSave', { id: mate, name: '限定生家人', status: '停用' });
+  }
   await call('boss', 'a.courseSave', { id: c2, name: '限定測試甲', weekdays: [1], start: '06:00', end: '06:30', status: '停開' }); await call('boss', 'a.courseSave', { id: c3, name: '限定測試乙', weekdays: [1], start: '07:00', end: '07:30', status: '停開' });
   await call('boss', 'a.studentSave', { id: sid, name: '限定生', status: '停用', courses: [] });
 }
