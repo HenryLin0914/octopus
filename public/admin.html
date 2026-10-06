@@ -350,13 +350,17 @@ function readForm(el, fields) {
   return o;
 }
 /** 表單對話框：save(values) 回傳 Promise，成功後自動關閉 */
-function formDialog(title, fields, values, save, { extra = '', saveText = '儲存', del } = {}) {
+function formDialog(title, fields, values, save, { extra = '', saveText = '儲存', del, back } = {}) {
   const m = dialog(title, fieldsHtml(fields, values) + extra, { foot: `${del ? '<button class="btn ghost" style="color:var(--bad)" data-del>' + esc(del.text) + '</button>' : ''}<span class="sp"></span><button class="btn" data-x>取消</button><button class="btn p" data-save>${esc(saveText)}</button>` });
   $('[data-save]', m).onclick = async e => {
     e.target.disabled = true;
     try { await save(readForm(m, fields), m); m.remove(); } catch (err) { toast(err.message, true); e.target.disabled = false; }
   };
   if (del) $('[data-del]', m).onclick = async () => { if (!confirm(del.confirm)) return; try { await del.run(); m.remove(); } catch (err) { toast(err.message, true); } };
+  if (back) { // 從別的彈窗開進來的：按取消／×／點背景，回到原本的彈窗
+    m.addEventListener('click', e => { if (e.target.closest('[data-x]')) back(); });
+    m.addEventListener('mousedown', e => { if (e.target === m) back(); });
+  }
   const first = $('input,select,textarea', m); if (first && window.innerWidth > 860) first.focus();
   return m;
 }
@@ -925,24 +929,24 @@ async function openStudent(id) {
   m.addEventListener('click', async e => {
     const b = e.target.closest('button'); if (!b) return;
     try {
-      if (b.dataset.a === 'topup') { m.remove(); topup(id); }
+      if (b.dataset.a === 'topup') { m.remove(); topup(id, () => openStudent(id)); }
       if (b.dataset.a === 'log') { A.au = { from: dAdd(A.meta.today, -89), to: A.meta.today, cat: '', who: '', kw: s.name }; m.remove(); location.hash = '#audit'; }
       if (b.dataset.sib) { m.remove(); openStudent(b.dataset.sib); }
       if (b.dataset.famshare) { if (!confirm('把這一家人手上還能用的上課卡，全部設成每位家人都可以扣？\n（之後仍可在上課卡「調整」個別修改）')) return; try { const r = await api('a.familyShare', { studentId: id }); toast('已設定 ' + r.cards + ' 張卡為全家共用'); m.remove(); await show(); openStudent(id); } catch (err) { toast(err.message, true); } }
       if (b.dataset.a === 'family') { m.remove();
         formDialog('家人｜' + s.name, [{ k: 'memberIds', label: '和 ' + s.name + ' 同一家庭的學生', type: 'checks', opts: A.students.filter(x => x.id !== id && x.status !== '停用').map(x => [x.id, x.name]) }, { k: 'sync', label: '家長綁定', type: 'select', opts: [['1', '已綁定其中一位的家長，其他人也一起綁定'], ['', '不動家長綁定']] }],
           { memberIds: d.family.map(f => f.id), sync: '1' }, async o => { const r = await api('a.familySave', { studentId: id, memberIds: o.memberIds, syncParents: !!o.sync }); toast('已儲存' + (r.bound ? '，補綁 ' + r.bound + ' 筆家長綁定' : '')); await show(); openStudent(id); },
-          { extra: '<p class="s">同一家庭的好處：家長輸入任一位的綁定碼就全部綁定；儲值時可直接勾選共用上課卡。全部取消勾選＝把這位學生移出家庭。</p>' }); }
+          { extra: '<p class="s">同一家庭的好處：家長輸入任一位的綁定碼就全部綁定；儲值時可直接勾選共用上課卡。全部取消勾選＝把這位學生移出家庭。</p>', back: () => openStudent(id) }); }
       if (b.dataset.a === 'edit') { m.remove(); formDialog('編輯 ' + s.name, [...STU_F(), { k: 'status', label: '狀態', type: 'select', opts: [['在學', '在學'], ['停用', '停用（離開教室）']] }, { k: 'regen', label: '綁定碼', type: 'select', opts: [['', '維持不變'], ['1', '重新產生（舊的失效）']] }], { ...s, courses: d.courses },
-        async o => { await api('a.studentSave', { id, ...o, regenCode: !!o.regen }); toast('已儲存'); show(); openStudent(id); }); }
+        async o => { await api('a.studentSave', { id, ...o, regenCode: !!o.regen }); toast('已儲存'); show(); openStudent(id); }, { back: () => openStudent(id) }); }
       if (b.dataset.unbind) { if (!confirm('確定解除這位家長的綁定？')) return; await api('a.unbind', { userId: b.dataset.unbind, studentId: id }); toast('已解除'); m.remove(); show(); openStudent(id); }
       if (b.dataset.card) { const c = d.cards.find(x => x.id === b.dataset.card); m.remove();
         formDialog('調整上課卡', [{ k: 'remain', label: '剩餘堂數', type: 'number', half: 1 }, { k: 'expire', label: '到期日（留白＝無期限）', type: 'date', half: 1 }, { k: 'studentIds', label: '使用這張卡的學生', type: 'checks', opts: A.students.filter(x => x.status !== '停用').map(x => [x.id, x.name]) }, { k: 'courses', label: '適用課程（都不勾＝全部課程通用）', type: 'checks', opts: A.meta.courses.filter(c => c.status !== '停開').map(c => [c.id, c.name]) }, { k: 'status', label: '狀態', type: 'select', opts: [['', '依堂數自動'], ['停用', '停用這張卡']] }],
-          { remain: c.remain, expire: c.expire, studentIds: c.students.map(x => x.id), courses: c.courses ? c.courses.split(',') : [], status: c.status === '停用' ? '停用' : '' }, async o => { await api('a.cardSave', { id: c.id, ...o }); toast('已調整'); show(); openStudent(id); }, { extra: '<p class="s">用於補登、更正或把卡片改成家人共用。</p>' }); }
+          { remain: c.remain, expire: c.expire, studentIds: c.students.map(x => x.id), courses: c.courses ? c.courses.split(',') : [], status: c.status === '停用' ? '停用' : '' }, async o => { await api('a.cardSave', { id: c.id, ...o }); toast('已調整'); show(); openStudent(id); }, { back: () => openStudent(id), extra: '<p class="s">用於補登、更正或把卡片改成家人共用。</p>' }); }
     } catch (err) { toast(err.message, true); }
   });
 }
-function topup(id) {
+function topup(id, back) {
   const s = A.students.find(x => x.id === id) || {}, p0 = A.meta.plans[1] || A.meta.plans[0] || {};
   const fam = (s.family || []).map(f => A.students.find(x => x.id === f)).filter(x => x && x.status !== '停用');
   const F = [{ k: 'planId', label: '方案', type: 'select', opts: A.meta.plans.map(p => [p.id, `${p.name}｜${p.lessons} 堂｜${money(p.price)}`]) }, { k: 'lessons', label: '堂數', type: 'number', half: 1 }, { k: 'price', label: '實收金額', type: 'number', half: 1 },
@@ -955,7 +959,7 @@ function topup(id) {
     if (!confirm(`確認儲值 ${o.lessons} 堂、實收 ${money(o.price)}？` + (share.length ? '\n共用：' + share.map(x => (A.students.find(y => y.id === x) || {}).name).join('、') : ''))) throw new Error('已取消');
     const r = await api('a.topup', { studentId: id, planId: o.planId, lessons: o.lessons, price: o.price, pay: o.pay, expire: o.expire, note: o.note, shareIds: share, courses: o.courses });
     toast('儲值完成，剩餘 ' + r.remain + ' 堂'); show();
-  }, { saveText: '確認儲值' });
+  }, { saveText: '確認儲值', back });
   $('[name=planId]', m).onchange = e => { const p = A.meta.plans.find(x => x.id === e.target.value); $('[name=lessons]', m).value = p.lessons; $('[name=price]', m).placeholder = '定價 ' + p.price; const cs = p.courses ? p.courses.split(',') : []; $$('[name=courses]', m).forEach(x => { x.checked = cs.includes(x.value); }); };
   $('[name=price]', m).placeholder = '定價 ' + (p0.price ?? '');
 }
