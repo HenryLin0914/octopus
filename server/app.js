@@ -73,7 +73,7 @@ const PLANS = [['P01', '單堂', 1, 500, 30], ['P02', '10堂卡', 10, 4500, 90],
 const COLORS = ['#D6336C', '#1971C2', '#2B8A3E', '#E67700', '#7048E8', '#0C8599', '#C2255C', '#5C940D'];
 
 const OWNER_ONLY = new Set(['a.studentSave', 'a.enroll', 'a.unbind', 'a.topup', 'a.cardSave', 'a.familyShare', 'a.cardShare', 'a.courseSave', 'a.sessionSave', 'a.sessionDelete', 'a.genSessions',
-  'a.videoSave', 'a.videoDelete', 'a.planSave', 'a.settingSave', 'a.adminSave', 'a.export', 'a.student', 'a.videos', 'a.plans', 'a.settings', 'a.admins', 'a.cards', 'a.ledger', 'a.topupSave', 'a.videoInfo', 'a.dayOff', 'a.familySave', 'a.courseDelete', 'a.courseStudents', 'a.signupSave', 'a.rent', 'a.roomSave', 'a.roomDelete', 'a.rentBlockSave', 'a.rentBlockDelete', 'a.rentTagSave', 'a.rentTagDelete', 'a.bookingSave', 'a.rentSlots', 'a.roomCal', 'a.roomHours', 'a.ruleSave', 'a.ruleDelete', 'a.upload', 'a.menu', 'a.menuPageSave', 'a.menuTheme', 'a.resetInfo', 'a.resetData', 'a.audit', 'a.pushCheck', 'a.teacherSave', 'a.teacherDelete', 'a.attCard', 'a.menuPageDelete', 'a.menuPageMove', 'a.replySave', 'a.replyDelete', 'a.menuPublish', 'a.menuUnpublish']);
+  'a.videoSave', 'a.videoDelete', 'a.planSave', 'a.settingSave', 'a.adminSave', 'a.export', 'a.student', 'a.videos', 'a.plans', 'a.settings', 'a.admins', 'a.cards', 'a.cardLog', 'a.ledger', 'a.topupSave', 'a.videoInfo', 'a.dayOff', 'a.familySave', 'a.courseDelete', 'a.courseStudents', 'a.signupSave', 'a.rent', 'a.roomSave', 'a.roomDelete', 'a.rentBlockSave', 'a.rentBlockDelete', 'a.rentTagSave', 'a.rentTagDelete', 'a.bookingSave', 'a.rentSlots', 'a.roomCal', 'a.roomHours', 'a.ruleSave', 'a.ruleDelete', 'a.upload', 'a.menu', 'a.menuPageSave', 'a.menuTheme', 'a.resetInfo', 'a.resetData', 'a.audit', 'a.pushCheck', 'a.teacherSave', 'a.teacherDelete', 'a.attCard', 'a.menuPageDelete', 'a.menuPageMove', 'a.replySave', 'a.replyDelete', 'a.menuPublish', 'a.menuUnpublish']);
 const ASYNC = new Set(['a.pushCheck', 'a.resetData', 'a.menuPublish', 'a.menuUnpublish', 'a.videoInfo']);
 /** 從各種 YouTube 網址取出影片 ID（watch、youtu.be、shorts、live、embed） */
 export const ytId = url => { const m = String(url || '').match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^#]*&)?v=|shorts\/|live\/|embed\/|v\/))([\w-]{11})(?![\w-])/); return m ? m[1] : ''; };
@@ -1343,7 +1343,14 @@ export function createApp(opts = {}) {
       return { ok: true };
     },
     'a.cards'() {
-      return all("SELECT c.*, (SELECT GROUP_CONCAT(s.name,'、') FROM card_students cs JOIN students s ON s.id=cs.student_id WHERE cs.card_id=c.id) names FROM cards c ORDER BY (c.status='啟用') DESC, c.bought DESC, c.id DESC LIMIT 300").map(c => ({ ...c, scope: scopeText(c.courses) }));
+      return all("SELECT c.*, (SELECT GROUP_CONCAT(s.name,'、') FROM card_students cs JOIN students s ON s.id=cs.student_id WHERE cs.card_id=c.id) names FROM cards c ORDER BY (c.status='啟用') DESC, c.bought DESC, c.id DESC LIMIT 500").map(c => ({ ...c, scope: scopeText(c.courses), students: all('SELECT s.id,s.name FROM card_students cs JOIN students s ON s.id=cs.student_id WHERE cs.card_id=?', c.id), usage: cardUsage(c.id),
+        expired: !!(c.expire && c.expire < today()), soon: !!(c.expire && c.expire >= today() && c.expire <= addDays(today(), 14)) }));
+    },
+    /** 單張卡的使用明細：哪一堂、誰、扣幾堂，以及當初的儲值紀錄 */
+    'a.cardLog'(b) {
+      if (!get('SELECT 1 x FROM cards WHERE id=?', b.id)) throw new Error('找不到上課卡');
+      return { uses: all("SELECT s.date,s.start,COALESCE(c.name,s.course_id) course,st.name,a.status,a.deduct,a.method FROM attendance a JOIN sessions s ON s.id=a.session_id LEFT JOIN courses c ON c.id=s.course_id JOIN students st ON st.id=a.student_id WHERE a.card_id=? AND a.status<>'取消' AND a.deduct>0 ORDER BY s.date DESC, s.start DESC LIMIT 100", b.id),
+        topup: get('SELECT time,amount,pay,operator,note FROM topups WHERE card_id=?', b.id) || null };
     },
     'a.videos'() { return all('SELECT * FROM videos ORDER BY date DESC, id DESC').map(v => ({ ...v, yt: ytId(v.url) })); },
     /** 貼上連結時自動帶出 YouTube 標題（抓不到就回空字串） */

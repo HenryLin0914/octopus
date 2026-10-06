@@ -498,10 +498,13 @@ const PAGES = {
       <div class="acts" style="margin-bottom:12px;align-items:center"><div class="seg"><button class="${M.tab === 'log' ? 'on' : ''}" data-mtab="log">儲值紀錄</button><button class="${M.tab === 'cards' ? 'on' : ''}" data-mtab="cards">上課卡</button></div>
         ${M.tab === 'log' ? `<select id="mmonth" style="width:auto">${d.months.map(m => `<option value="${m}" ${m === d.month ? 'selected' : ''}>${m.replace('-', ' 年 ')} 月</option>`).join('')}</select>` : ''}</div>`;
     if (M.tab === 'cards') {
-      const cards = await api('a.cards'), live = cards.filter(c => c.status === '啟用');
-      return head + `<div class="grid stats" style="margin-bottom:12px"><div class="card stat"><b>${live.length}</b><span>使用中的卡</span></div><div class="card stat"><b>${live.reduce((n, c) => n + c.remain, 0)}</b><span>尚未使用的堂數</span></div></div>
-        <div class="card">${cards.length ? cards.map(c => `<div class="row"><div class="g"><div class="t">${esc(c.names || '（無學生）')} ${tag(c.status)}</div><div class="s">${esc(c.plan_name)}｜購買 ${esc(c.bought)}${c.expire ? '｜到期 ' + esc(c.expire) : ''}</div><div class="s">適用：${esc(c.scope)}</div></div><span class="amt">${c.remain}／${c.total}</span></div>`).join('') : '<div class="empty">還沒有上課卡，按右上角「＋ 儲值」開始</div>'}
-        ${cards.length ? '<p class="s" style="margin-bottom:0">要補登或更正堂數：到「學生」點該學生 → 上課卡旁的「調整」。</p>' : ''}</div>`;
+      const cards = A.cardList = await api('a.cards'), live = cards.filter(c => c.status === '啟用' && !c.expired), kw = (M.ckw || '').toLowerCase(), cf = M.cf || 'live';
+      const FS = [['live', '使用中', c => c.status === '啟用' && !c.expired], ['soon', '14 天內到期', c => c.status === '啟用' && c.soon], ['shared', '共用卡', c => c.status === '啟用' && !c.expired && c.students.length > 1], ['done', '用完／過期／停用', c => c.status !== '啟用' || c.expired], ['all', '全部', () => true]];
+      const list = cards.filter(FS.find(x => x[0] === cf)[2]).filter(c => !kw || (c.names + ' ' + c.plan_name + ' ' + c.scope).toLowerCase().includes(kw));
+      return head + `<div class="grid stats" style="margin-bottom:12px"><div class="card stat"><b>${live.length}</b><span>使用中的卡</span></div><div class="card stat"><b>${live.reduce((n, c) => n + c.remain, 0)}</b><span>尚未使用的堂數</span></div><div class="card stat"><b>${cards.filter(FS[1][2]).length}</b><span>14 天內到期</span></div></div>
+        <div class="card" style="margin-bottom:12px"><input id="ckw" placeholder="搜尋學生姓名／方案／適用課程" value="${esc(M.ckw || '')}"><div class="acts" style="margin-top:10px">${FS.map(x => `<button class="btn sm ${cf === x[0] ? 'p' : ''}" data-cf="${x[0]}">${x[1]} ${cards.filter(x[2]).length}</button>`).join('')}</div></div>
+        <div class="card">${list.length ? list.map(c => `<div class="row"><div class="g"><div class="t">${esc(c.names || '（無學生）')} ${c.expired && c.status === '啟用' ? '<span class="tag bad">已過期</span>' : tag(c.status)}${c.students.length > 1 ? ' <span class="tag info">共用</span>' : ''}${c.soon && c.status === '啟用' ? ' <span class="tag warn">快到期</span>' : ''}</div><div class="s">${esc(c.plan_name)}｜購買 ${esc(c.bought)}${c.expire ? '｜到期 ' + esc(c.expire) : '｜無期限'}</div><div class="s">適用：${esc(c.scope)}${c.usage.length ? '｜已用：' + c.usage.map(u => esc(u.name) + ' ' + u.n).join('、') : ''}</div></div><span class="amt">${c.remain}／${c.total}</span>${owner() ? `<button class="btn sm" data-cardm="${esc(c.id)}">調整</button>` : ''}</div>`).join('') : `<div class="empty">${cards.length ? '沒有符合的上課卡' : '還沒有上課卡，按右上角「＋ 儲值」開始'}</div>`}</div>
+        <p class="s">按「調整」可以補登或更正堂數、延長期限、改共用對象與適用課程、停用，並看到這張卡每一堂是誰用掉的。</p>`;
     }
     return head + `<div class="grid stats" style="margin-bottom:12px"><div class="card stat"><b>${money(d.total)}</b><span>本月實收</span></div><div class="card stat"><b>${d.rows.length}</b><span>筆數</span></div><div class="card stat"><b>${d.lessons}</b><span>售出堂數</span></div>
         <div class="card" style="padding:11px 14px"><div class="s">付款方式</div>${Object.keys(d.byPay).length ? Object.entries(d.byPay).map(x => `<div class="s" style="display:flex;justify-content:space-between;gap:8px"><span>${esc(x[0])}</span><b style="color:var(--ink)">${money(x[1])}</b></div>`).join('') : '<div class="s">—</div>'}</div></div>
@@ -942,11 +945,18 @@ async function openStudent(id) {
       if (b.dataset.a === 'edit') { m.remove(); formDialog('編輯 ' + s.name, [...STU_F(), { k: 'status', label: '狀態', type: 'select', opts: [['在學', '在學'], ['停用', '停用（離開教室）']] }, { k: 'regen', label: '綁定碼', type: 'select', opts: [['', '維持不變'], ['1', '重新產生（舊的失效）']] }], { ...s, courses: d.courses },
         async o => { await api('a.studentSave', { id, ...o, regenCode: !!o.regen }); toast('已儲存'); show(); openStudent(id); }, { back: () => openStudent(id) }); }
       if (b.dataset.unbind) { if (!confirm('確定解除這位家長的綁定？')) return; await api('a.unbind', { userId: b.dataset.unbind, studentId: id }); toast('已解除'); m.remove(); show(); openStudent(id); }
-      if (b.dataset.card) { const c = d.cards.find(x => x.id === b.dataset.card); m.remove();
-        formDialog('調整上課卡', [{ k: 'remain', label: '剩餘堂數', type: 'number', half: 1 }, { k: 'expire', label: '到期日（留白＝無期限）', type: 'date', half: 1 }, { k: 'studentIds', label: '使用這張卡的學生', type: 'checks', opts: A.students.filter(x => x.status !== '停用').map(x => [x.id, x.name]) }, { k: 'courses', label: '適用課程（都不勾＝全部課程通用）', type: 'checks', opts: A.meta.courses.filter(c => c.status !== '停開').map(c => [c.id, c.name]) }, { k: 'status', label: '狀態', type: 'select', opts: [['', '依堂數自動'], ['停用', '停用這張卡']] }],
-          { remain: c.remain, expire: c.expire, studentIds: c.students.map(x => x.id), courses: c.courses ? c.courses.split(',') : [], status: c.status === '停用' ? '停用' : '' }, async o => { await api('a.cardSave', { id: c.id, ...o }); toast('已調整'); show(); openStudent(id); }, { back: () => openStudent(id), extra: '<p class="s">用於補登、更正或把卡片改成家人共用。</p>' }); }
+      if (b.dataset.card) { m.remove(); cardDialog(d.cards.find(x => x.id === b.dataset.card), () => { show(); openStudent(id); }, () => openStudent(id)); }
     } catch (err) { toast(err.message, true); }
   });
+}
+/** 調整上課卡（學生明細與「帳務 → 上課卡」共用）：堂數、到期日、使用的學生、適用課程、停用，並附使用明細 */
+async function cardDialog(c, after, back) {
+  let log = { uses: [], topup: null }; try { log = await api('a.cardLog', { id: c.id }); } catch {}
+  const t = log.topup, extra = `<p class="s">用於補登、更正堂數、延長期限、改成家人共用，或把卡停用。所有調整都會記在「操作紀錄」。</p>
+    <div class="fbox" style="background:var(--soft);border-color:var(--line)"><div class="s"><b style="color:var(--ink)">${esc(c.plan_name)}</b>｜購買 ${esc(c.bought)}｜原 ${c.total} 堂${t ? '｜實收 ' + money(t.amount) + '（' + esc(t.pay || '') + '）' + (t.operator ? '｜經手 ' + esc(t.operator) : '') : ''}</div>
+    <div class="s" style="margin-top:6px"><b style="color:var(--ink)">使用明細</b>（已扣 ${log.uses.reduce((n, u) => n + u.deduct, 0)} 堂）</div>${log.uses.length ? `<div style="max-height:170px;overflow:auto">${log.uses.map(u => `<div class="s" style="display:flex;justify-content:space-between;gap:8px;padding:3px 0"><span>${esc(u.date.slice(5).replace('-', '/'))} ${esc(u.start)}　${esc(u.course)}　${esc(u.name)}（${esc(u.status)}）</span><b style="color:var(--ink)">−${u.deduct}</b></div>`).join('')}</div>` : '<div class="s">還沒有扣過堂</div>'}</div>`;
+  formDialog('調整上課卡', [{ k: 'remain', label: '剩餘堂數', type: 'number', half: 1 }, { k: 'expire', label: '到期日（留白＝無期限）', type: 'date', half: 1 }, { k: 'studentIds', label: '使用這張卡的學生', type: 'checks', opts: A.students.filter(x => x.status !== '停用' || c.students.some(k => k.id === x.id)).map(x => [x.id, x.name]) }, { k: 'courses', label: '適用課程（都不勾＝全部課程通用）', type: 'checks', opts: A.meta.courses.filter(k => k.status !== '停開').map(k => [k.id, k.name]) }, { k: 'status', label: '狀態', type: 'select', opts: [['', '依堂數自動'], ['停用', '停用這張卡']] }],
+    { remain: c.remain, expire: c.expire, studentIds: c.students.map(x => x.id), courses: c.courses ? c.courses.split(',') : [], status: c.status === '停用' ? '停用' : '' }, async o => { await api('a.cardSave', { id: c.id, ...o }); toast('已調整'); after(); }, { back, extra });
 }
 function topup(id, back) {
   const s = A.students.find(x => x.id === id) || {}, p0 = A.meta.plans[1] || A.meta.plans[0] || {};
@@ -1320,6 +1330,7 @@ async function show(page) {
 window.addEventListener('hashchange', () => { $$('.mask').forEach(m => m.remove()); show(location.hash.slice(1) || 'home'); });
 let rs; window.addEventListener('resize', () => { clearTimeout(rs); rs = setTimeout(() => { if (A.page === 'schedule' && !$('.mask')) show(); }, 300); });
 document.addEventListener('input', e => {
+  if (e.target.id === 'ckw') { A.money.ckw = e.target.value.trim(); clearTimeout(show.h); show.h = setTimeout(async () => { await show(); const i = $('#ckw'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }, 350); }
   if (e.target.id === 'kw') { A.filter.kw = e.target.value.trim(); clearTimeout(show.h); show.h = setTimeout(async () => { await show(); const i = $('#kw'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }, 350); }
 });
 document.addEventListener('change', async e => {
@@ -1374,6 +1385,8 @@ document.addEventListener('click', async e => {
     if (ds.atab) { A.att.tab = ds.atab; return show(); }
     if (ds.astu) { A.att.student = ds.astu; A.att.tab = 'log'; return show(); }
     if (ds.mtab) { A.money.tab = ds.mtab; return show(); }
+    if (ds.cf) { A.money.cf = ds.cf; return show(); }
+    if (ds.cardm) { const c = (A.cardList || []).find(x => x.id === ds.cardm); return c && cardDialog(c, show); }
     if (ds.tp) { const r = (await api('a.ledger', { month: A.money.month })).rows.find(x => x.id === ds.tp); if (!r) return show();
       return formDialog('更正儲值｜' + (r.names || r.student || ''), [{ k: 'amount', label: '實收金額', type: 'number', half: 1 }, { k: 'pay', label: '付款方式', type: 'select', opts: ['現金', '轉帳', 'LINE Pay', '信用卡', '其他'].map(x => [x, x]), half: 1 }, { k: 'note', label: '備註' }], r,
         async o => { await api('a.topupSave', { id: r.id, ...o }); toast('已更正'); show(); },

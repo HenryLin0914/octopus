@@ -481,6 +481,8 @@ let bad = ''; try { pushes.forEach(p => p.body && p.body.messages && p.body.mess
   ok(/不適用/.test((await call('boss', 'a.attCard', { sessionId: s2, studentId: sid, cardId: 'nope' })).error) && /僅限管理員/.test((await call('teacher', 'a.attCard', { sessionId: s2, studentId: sid, cardId: kA.id })).error), '不能改扣不適用的卡，老師不能換卡');
   await call('boss', 'a.cardSave', { id: kA.id, remain: 4, expire: '', courses: [] });
   ok((await call('boss', 'a.student', { id: sid })).data.cards.find(c => c.id === kA.id).scope === '全部課程', '可把卡改回全部課程通用');
+  { const lg = (await call('boss', 'a.cardLog', { id: kA.id })).data, cl = (await call('boss', 'a.cards')).data.find(c => c.id === kA.id);
+    ok(lg.uses.length === 1 && lg.uses[0].name === '限定生' && lg.uses[0].deduct === 1 && lg.topup.amount === 2000 && cl.students[0].id === sid && cl.usage[0].n === 1 && !cl.expired, '帳務的上課卡帶出使用者與使用明細'); }
   { // 扣卡順序：限定卡 → 自己專用 → 家人共用
     await call('boss', 'a.cardSave', { id: kMulti.id, remain: 3, expire: '', courses: [c2, c3] }); // 兩張都不會到期：通用卡先買，但限定卡要先扣
     let o = (await call('boss', 'a.roster', { sessionId: s3 })).data.list.find(x => x.id === sid);
