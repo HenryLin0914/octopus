@@ -924,7 +924,9 @@ const STU_F = () => [{ k: 'name', label: '姓名' }, { k: 'birthday', label: '�
   { k: 'courses', label: '排入課程（點名單會出現這位學生）', type: 'checks', opts: A.meta.courses.filter(c => c.status === '啟用').map(c => [c.id, c.name]) }, { k: 'note', label: '備註' }];
 function newStudent() {
   const F = [...STU_F().slice(0, 3), { k: 'familyWith', label: '家人（同一家庭，例如兄弟姊妹、媽媽；可不選）', type: 'select', opts: [['', '沒有／之後再設定']].concat(A.students.filter(x => x.status !== '停用').map(x => [x.id, x.name + '（' + x.id + '）'])) }, ...STU_F().slice(3)];
-  formDialog('新增學生', F, {}, async o => { const r = await api('a.studentSave', o); const sib = o.familyWith && (A.students.find(x => x.id === o.familyWith) || {}); await show(); setTimeout(() => dialog('已新增 ' + o.name, `<p>學生編號：<b>${esc(r.id)}</b></p><p>綁定碼：<b style="font-size:28px;letter-spacing:4px">${esc(r.code)}</b></p>
+  formDialog('新增學生', F, {}, async o => { const dup = A.students.filter(x => x.name === (o.name || '').trim() || (o.phone && x.phone === o.phone && x.name === (o.name || '').trim()));
+    if (dup.length && !confirm('已經有同名的學生：\n' + dup.map(x => x.name + '（' + x.id + (x.phone ? '｜' + x.phone : '') + (x.status === '停用' ? '｜已停用' : '') + '）').join('\n') + '\n\n確定要再新增一位嗎？')) throw new Error('已取消，沒有新增');
+    const r = await api('a.studentSave', o); const sib = o.familyWith && (A.students.find(x => x.id === o.familyWith) || {}); await show(); setTimeout(() => dialog('已新增 ' + o.name, `<p>學生編號：<b>${esc(r.id)}</b></p><p>綁定碼：<b style="font-size:28px;letter-spacing:4px">${esc(r.code)}</b></p>
     ${sib && sib.name ? `<p class="s">已和 <b>${esc(sib.name)}</b> 設為同一家庭。${sib.bound ? '點學生 →「家人」可以幫已綁定的家長直接補綁，家長不用再輸入綁定碼。' : '家長輸入其中一位的綁定碼，兩位會一起綁定。'}</p>` : '<p class="s">請把綁定碼交給家長。家長在 LINE 點選單任一格，輸入綁定碼即可；爸爸媽媽可以各自綁定。</p>'}`), 50); }, { saveText: '新增', extra: '<p class="s">設為同一家庭後：家長輸入其中一位的綁定碼就會全部綁定，儲值時也會優先列出家人供勾選共用上課卡。</p>' });
 }
 function importStudents() {
@@ -940,7 +942,7 @@ async function openStudent(id) {
   const d = await api('a.student', { id }), s = d.info;
   const html = () => `<div class="row"><div class="g"><div class="s">${esc(s.id)}${s.birthday ? '｜' + esc(s.birthday) : ''}${s.phone ? '｜' + esc(s.phone) : ''} ${tag(s.status)}</div>
       <div style="margin-top:4px">綁定碼 <b style="font-size:20px;letter-spacing:3px">${esc(s.code)}</b></div></div><div style="text-align:right"><b style="font-size:30px;line-height:1">${d.remain}</b><div class="s">剩餘堂數</div></div></div>
-    <div class="acts" style="margin:12px 0"><button class="btn p" data-a="topup">儲值</button><button class="btn" data-a="edit">編輯資料與排課</button><button class="btn" data-a="family">家人</button><button class="btn ghost" data-a="log">操作紀錄</button></div>
+    <div class="acts" style="margin:12px 0"><button class="btn p" data-a="topup">儲值</button><button class="btn" data-a="edit">編輯資料與排課</button><button class="btn" data-a="family">家人</button><button class="btn ghost" data-a="log">操作紀錄</button><span class="sp"></span><button class="btn ghost" style="color:var(--bad)" data-a="remove">刪除／合併重複</button></div>
     ${d.family.length ? `<div class="fbox"><div class="s">👪 同一家庭｜家長輸入任一位的綁定碼，會一起綁定</div>${d.famGap ? `<div class="row" style="align-items:center"><div class="g s" style="color:#8a5300">有家人沒有可用的堂數。要共用哪一張卡，在下方那張卡的「誰可以用」點家人的名字即可。</div></div>` : ''}${d.family.map(f => `<div class="row"><div class="g"><span class="t">${esc(f.name)}</span> <span class="s">${esc(f.id)}｜${f.bound ? '已綁 ' + f.bound : '未綁定'}</span></div><span class="tag ${f.remain <= 0 ? 'bad' : 'ok'}">剩 ${f.remain}</span><button class="btn sm" data-sib="${esc(f.id)}">查看</button></div>`).join('')}</div>` : ''}
     <h4 style="margin:16px 0 4px">上課卡</h4>${d.cards.length ? d.cards.map(c => `<div class="row"><div class="g"><div class="t">${esc(c.plan_name)} ${tag(c.status)}</div><div class="s">購買 ${esc(c.bought)}${c.expire ? '｜到期 ' + esc(c.expire) : ''}</div><div class="s">適用：${esc(c.scope)}</div>${c.students.length > 1 ? `<div class="s"><span class="tag info">共用</span> ${esc(c.students.map(x => x.name).join('、'))}${c.usage.length ? '｜已用：' + c.usage.map(u => esc(u.name) + ' ' + u.n).join('、') : ''}</div>` : ''}${d.family.length && c.status === '啟用' ? `<div class="who"><span class="s">誰可以用：</span>${[{ id, name: s.name }, ...d.family].map(f => { const on = c.students.some(x => x.id === f.id); return `<button class="chip ${on ? 'on' : ''}" data-share="${esc(c.id)}" data-sid="${esc(f.id)}" data-on="${on ? '' : '1'}" aria-pressed="${on}">${on ? '✓ ' : '＋ '}${esc(f.name)}</button>`; }).join('')}</div>` : ''}</div><b>${c.remain}／${c.total}</b><button class="btn sm" data-card="${esc(c.id)}">調整</button></div>`).join('') : '<div class="s">尚無上課卡</div>'}
     <h4 style="margin:16px 0 4px">已綁定的家長</h4>${d.parents.length ? d.parents.map(p => `<div class="row">${pAv(p.pic, p.name, 36)}<div class="g"><div class="t">${esc(p.name || '（未命名）')} <span class="s">${esc(p.relation || '')}</span></div><div class="s">${esc((p.at || '').slice(0, 10))}${p.kids.length ? '｜也綁定了 ' + esc(p.kids.join('、')) : ''}</div></div><button class="btn sm ghost" style="color:var(--bad)" data-unbind="${esc(p.userId)}">解除</button></div>`).join('') : '<div class="s">尚未有家長綁定</div>'}
@@ -950,6 +952,7 @@ async function openStudent(id) {
     const b = e.target.closest('button'); if (!b) return;
     try {
       if (b.dataset.a === 'topup') { m.remove(); topup(id, () => openStudent(id)); }
+      if (b.dataset.a === 'remove') { m.remove(); removeStudent(id); }
       if (b.dataset.a === 'log') { A.au = { from: dAdd(A.meta.today, -89), to: A.meta.today, cat: '', who: '', kw: s.name }; m.remove(); location.hash = '#audit'; }
       if (b.dataset.sib) { m.remove(); openStudent(b.dataset.sib); }
       if (b.dataset.share) { await api('a.cardShare', { cardId: b.dataset.share, studentId: b.dataset.sid, on: !!b.dataset.on }); toast(b.dataset.on ? '已加入共用' : '已取消共用'); m.remove(); await show(); openStudent(id); return; }
@@ -973,6 +976,23 @@ async function cardDialog(c, after, back) {
     <div class="s" style="margin-top:6px"><b style="color:var(--ink)">使用明細</b>（已扣 ${log.uses.reduce((n, u) => n + u.deduct, 0)} 堂）</div>${log.uses.length ? `<div style="max-height:170px;overflow:auto">${log.uses.map(u => `<div class="s" style="display:flex;justify-content:space-between;gap:8px;padding:3px 0"><span>${esc(u.date.slice(5).replace('-', '/'))} ${esc(u.start)}　${esc(u.course)}　${esc(u.name)}（${esc(u.status)}）</span><b style="color:var(--ink)">−${u.deduct}</b></div>`).join('')}</div>` : '<div class="s">還沒有扣過堂</div>'}</div>`;
   formDialog('調整上課卡', [{ k: 'remain', label: '剩餘堂數', type: 'number', half: 1 }, { k: 'expire', label: '到期日（留白＝無期限）', type: 'date', half: 1 }, { k: 'studentIds', label: '使用這張卡的學生', type: 'checks', opts: A.students.filter(x => x.status !== '停用' || c.students.some(k => k.id === x.id)).map(x => [x.id, x.name]) }, { k: 'courses', label: '適用課程（都不勾＝全部課程通用）', type: 'checks', opts: A.meta.courses.filter(k => k.status !== '停開').map(k => [k.id, k.name]) }, { k: 'status', label: '狀態', type: 'select', opts: [['', '依堂數自動'], ['停用', '停用這張卡']] }],
     { remain: c.remain, expire: c.expire, studentIds: c.students.map(x => x.id), courses: c.courses ? c.courses.split(',') : [], status: c.status === '停用' ? '停用' : '' }, async o => { await api('a.cardSave', { id: c.id, ...o }); toast('已調整'); after(); }, { back, extra });
+}
+/** 刪除重複建立的學生，或把它合併到正確的那一筆（上課卡、儲值、出席、家長綁定、課程都搬過去） */
+async function removeStudent(id) {
+  const i = await api('a.studentRemoveInfo', { id }), D = i.data, back = () => openStudent(id);
+  const has = [D.cards && D.cards + ' 張上課卡', D.topups && D.topups + ' 筆儲值', D.attend && D.attend + ' 筆出席', D.bindings && D.bindings + ' 位家長綁定', D.courses && D.courses + ' 門課程', D.videos && D.videos + ' 支個人影片'].filter(Boolean);
+  const others = A.students.filter(x => x.id !== id), like = i.like.map(x => x.id);
+  const opts = [['', i.empty ? '不合併，直接刪除' : '請選擇…']].concat(others.filter(x => like.includes(x.id)).map(x => [x.id, '⭐ ' + x.name + '（' + x.id + (x.phone ? '｜' + x.phone : '') + '）可能重複'])).concat(others.filter(x => !like.includes(x.id) && x.status !== '停用').map(x => [x.id, x.name + '（' + x.id + '）']));
+  formDialog('刪除／合併：' + i.name + '（' + i.id + '）', [{ k: 'into', label: i.empty ? '要合併到另一位學生嗎？（重複建立的資料通常選「直接刪除」即可）' : '合併到哪一位學生（這筆的資料會全部搬過去）', type: 'select', opts }],
+    { into: like[0] && !i.empty ? like[0] : '' }, async o => {
+      if (!o.into && !i.empty) throw new Error('這位學生已有上課卡、儲值或出席紀錄，請選擇要合併到哪一位');
+      const t = o.into && A.students.find(x => x.id === o.into);
+      if (!confirm(t ? `把「${i.name}（${i.id}）」合併到「${t.name}（${t.id}）」？\n上課卡、儲值、出席、家長綁定、課程都會搬過去，${i.id} 這筆會被刪除。系統會先自動備份。` : `刪除「${i.name}（${i.id}）」？\n家長綁定、排課名單會一起移除，無法復原。`)) throw new Error('已取消');
+      const r = await api('a.studentRemove', { id, mergeInto: o.into || '' });
+      toast(r.mergedInto ? '已合併到 ' + r.intoName : '已刪除 ' + r.name); await show(); if (r.mergedInto) openStudent(r.mergedInto);
+    }, { saveText: '確定', back, extra: `<div class="fbox" style="background:var(--soft);border-color:var(--line)"><div class="s">這筆學生目前有：${has.length ? esc(has.join('、')) : '沒有任何資料'}</div>
+      <div class="s" style="margin-top:6px">${i.empty ? '沒有上課卡、儲值與出席紀錄，可以直接刪除；家長綁定與排課名單會一起移除。' : '已有帳務或出席紀錄，不能直接刪除，只能合併到正確的那一筆（或在「編輯資料」改成停用）。'}</div>
+      <div class="s" style="margin-top:6px">合併：上課卡、儲值、出席、請假、補課、家長綁定、課程名單全部搬到選擇的學生；同一堂兩邊都有點名時保留對方的、這邊的退回堂數。合併前系統會自動備份，所有動作記在「操作紀錄」。</div></div>` });
 }
 function topup(id, back) {
   const s = A.students.find(x => x.id === id) || {}, p0 = A.meta.plans[1] || A.meta.plans[0] || {};

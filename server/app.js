@@ -72,9 +72,9 @@ const SETTINGS = {
 const PLANS = [['P01', '單堂', 1, 500, 30], ['P02', '10堂卡', 10, 4500, 90], ['P03', '20堂卡', 20, 8000, 180]];
 const COLORS = ['#D6336C', '#1971C2', '#2B8A3E', '#E67700', '#7048E8', '#0C8599', '#C2255C', '#5C940D'];
 
-const OWNER_ONLY = new Set(['a.pushQuota', 'a.studentSave', 'a.enroll', 'a.unbind', 'a.topup', 'a.cardSave', 'a.familyShare', 'a.cardShare', 'a.courseSave', 'a.sessionSave', 'a.sessionDelete', 'a.genSessions',
+const OWNER_ONLY = new Set(['a.studentRemove', 'a.studentRemoveInfo', 'a.pushQuota', 'a.studentSave', 'a.enroll', 'a.unbind', 'a.topup', 'a.cardSave', 'a.familyShare', 'a.cardShare', 'a.courseSave', 'a.sessionSave', 'a.sessionDelete', 'a.genSessions',
   'a.videoSave', 'a.videoDelete', 'a.planSave', 'a.settingSave', 'a.adminSave', 'a.export', 'a.student', 'a.videos', 'a.plans', 'a.settings', 'a.admins', 'a.cards', 'a.cardLog', 'a.ledger', 'a.topupSave', 'a.videoInfo', 'a.dayOff', 'a.familySave', 'a.courseDelete', 'a.courseStudents', 'a.signupSave', 'a.rent', 'a.roomSave', 'a.roomDelete', 'a.rentBlockSave', 'a.rentBlockDelete', 'a.rentTagSave', 'a.rentTagDelete', 'a.bookingSave', 'a.rentSlots', 'a.roomCal', 'a.roomHours', 'a.ruleSave', 'a.ruleDelete', 'a.upload', 'a.menu', 'a.menuPageSave', 'a.menuTheme', 'a.resetInfo', 'a.resetData', 'a.audit', 'a.pushCheck', 'a.teacherSave', 'a.teacherDelete', 'a.attCard', 'a.menuPageDelete', 'a.menuPageMove', 'a.replySave', 'a.replyDelete', 'a.menuPublish', 'a.menuUnpublish']);
-const ASYNC = new Set(['a.syncAvatars', 'a.pushQuota', 'a.pushCheck', 'a.resetData', 'a.menuPublish', 'a.menuUnpublish', 'a.videoInfo']);
+const ASYNC = new Set(['a.studentRemove', 'a.syncAvatars', 'a.pushQuota', 'a.pushCheck', 'a.resetData', 'a.menuPublish', 'a.menuUnpublish', 'a.videoInfo']);
 /** 從各種 YouTube 網址取出影片 ID（watch、youtu.be、shorts、live、embed） */
 export const ytId = url => { const m = String(url || '').match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^#]*&)?v=|shorts\/|live\/|embed\/|v\/))([\w-]{11})(?![\w-])/); return m ? m[1] : ''; };
 
@@ -577,6 +577,7 @@ export function createApp(opts = {}) {
         Array.isArray(b.studentIds) && b.studentIds.length && `使用人 ${who} → ${A_names(b.studentIds)}`].filter(Boolean); return `調整上課卡：${who}｜${c.plan_name || ''}｜${ch.join('；') || '沒有變更'}`; }; }],
     'a.planSave': ['帳務', b => `${b.id ? '修改' : '新增'}方案：${str(b.name, 40)}｜${b.lessons} 堂 ${b.price} 元`],
     // 學生
+    'a.studentRemove': ['學生', b => { const o = student(b.id) || {}, t = b.mergeInto ? student(b.mergeInto) || {} : null; return `${t ? '合併學生' : '刪除學生'}：${o.name || b.id}（${b.id}）${t ? ' → ' + (t.name || '') + '（' + b.mergeInto + '）' : ''}`; }],
     'a.studentSave': ['學生', b => { const o = b.id ? student(b.id) : null; return r => o ? `修改學生：${o.name}${o.name !== str(b.name, 40) && b.name ? ' → ' + str(b.name, 40) : ''}${b.status && b.status !== o.status ? `｜狀態 ${o.status} → ${b.status}` : ''}${b.regenCode ? '｜重新產生綁定碼' : ''}` : `新增學生：${str(b.name, 40)}（${(r && r.id) || ''}）`; }],
     'a.studentImport': ['學生', () => r => `批次匯入學生：${(r && (r.added ?? r.count ?? (r.list || []).length)) || ''} 位`],
     'a.enroll': ['學生', b => `設定學生的課程：${A_sn(b.studentId)}｜${(b.courseIds || []).map(A_cn).join('、') || '（全部移出）'}`],
@@ -1471,6 +1472,42 @@ export function createApp(opts = {}) {
       const n = t => get('SELECT COUNT(*) n FROM ' + t).n;
       return { groups: RESET_GROUPS.map(g => ({ key: g.key, name: g.name, note: g.note, count: g.tables.reduce((a, t) => a + n(t), 0) })),
         keep: { students: n('students'), bindings: n('bindings'), courses: n('courses'), sessions: n('sessions') } };
+    },
+    /** 刪除或合併重複的學生：先看這筆學生有哪些資料、有哪些可能重複的人 */
+    'a.studentRemoveInfo'(b) {
+      const s = student(b.id); if (!s) throw new Error('找不到學生');
+      const n = (sql, ...a) => get(sql, ...a).n;
+      const data = { cards: n('SELECT COUNT(*) n FROM card_students WHERE student_id=?', s.id), topups: n('SELECT COUNT(*) n FROM topups WHERE student_id=?', s.id),
+        attend: n("SELECT COUNT(*) n FROM attendance WHERE student_id=? AND status<>'取消'", s.id), bindings: n('SELECT COUNT(*) n FROM bindings WHERE student_id=?', s.id),
+        courses: n('SELECT COUNT(*) n FROM enrollments WHERE student_id=?', s.id), videos: n('SELECT COUNT(*) n FROM videos WHERE student_id=?', s.id) };
+      const like = all("SELECT id,name,phone,status FROM students WHERE id<>? AND (name=? OR (phone<>'' AND phone=?)) ORDER BY status, id", s.id, s.name, s.phone || '#');
+      return { id: s.id, name: s.name, data, empty: !data.cards && !data.topups && !data.attend && !data.videos, like };
+    },
+    /** 刪除（沒有任何帳務與出席資料時）或合併到另一位學生（上課卡、儲值、出席、家長綁定、課程全部搬過去）；合併前自動備份 */
+    async 'a.studentRemove'(b) {
+      const s = student(b.id); if (!s) throw new Error('找不到學生');
+      const into = b.mergeInto ? student(b.mergeInto) : null;
+      if (b.mergeInto && (!into || into.id === s.id)) throw new Error('請選擇要合併過去的學生');
+      const info = API['a.studentRemoveInfo']({ id: s.id });
+      if (!into && !info.empty) throw new Error('這位學生已有上課卡、儲值或出席紀錄，不能直接刪除。請選擇「合併到另一位學生」，或改成停用。');
+      let backup = '';
+      if (into && dataDir !== ':memory:') { const dir = path.join(dataDir, 'backups'); fs.mkdirSync(dir, { recursive: true }); backup = 'before-merge-' + now().replace(/[^0-9]/g, '').slice(0, 14) + '.db'; db.exec("VACUUM INTO '" + path.join(dir, backup).replace(/'/g, "''") + "'"); }
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        if (into) {
+          // 同一堂兩人都有紀錄：保留合併目標的，這筆取消並退回堂數
+          all("SELECT a.session_id sid FROM attendance a WHERE a.student_id=? AND a.status<>'取消' AND EXISTS(SELECT 1 FROM attendance t WHERE t.session_id=a.session_id AND t.student_id=? AND t.status<>'取消')", s.id, into.id)
+            .forEach(r => recordAttendance(sessRow(r.sid), s.id, '取消', '後台', '系統（合併學生）', false));
+          for (const t of ['bindings', 'enrollments', 'card_students']) { run(`UPDATE OR IGNORE ${t} SET student_id=? WHERE student_id=?`, into.id, s.id); run(`DELETE FROM ${t} WHERE student_id=?`, s.id); }
+          for (const t of ['topups', 'attendance', 'leaves', 'makeups', 'signups', 'videos']) run(`UPDATE ${t} SET student_id=? WHERE student_id=?`, into.id, s.id);
+          if (s.family && !into.family) run('UPDATE students SET family=? WHERE id=?', s.family, into.id);
+          if (!into.phone && s.phone) run('UPDATE students SET phone=? WHERE id=?', s.phone, into.id);
+          if (!into.birthday && s.birthday) run('UPDATE students SET birthday=? WHERE id=?', s.birthday, into.id);
+        } else for (const t of ['bindings', 'enrollments', 'card_students', 'leaves', 'makeups', 'signups', 'attendance']) run(`DELETE FROM ${t} WHERE student_id=?`, s.id);
+        run('DELETE FROM students WHERE id=?', s.id);
+        db.exec('COMMIT');
+      } catch (e) { db.exec('ROLLBACK'); throw e; }
+      return { removed: s.id, name: s.name, mergedInto: into ? into.id : '', intoName: into ? into.name : '', backup };
     },
     async 'a.resetData'(b, user) {
       if (b.confirm !== '清除') throw new Error('請輸入「清除」兩個字確認');

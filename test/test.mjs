@@ -494,6 +494,24 @@ let bad = ''; try { pushes.forEach(p => p.body && p.body.messages && p.body.mess
   ok(/太多次/.test((await call('guesser', 'bind', { code: '000000' })).error), '綁定碼連錯 5 次暫停');
   await call('boss', 'a.courseSave', { id: c, name: '退回測試', weekdays: [1], start: '04:40', end: '04:55', status: '停開' });
 }
+{ // 刪除／合併重複建立的學生
+  const a1 = (await call('boss', 'a.studentSave', { name: '重複生', phone: '0911000111' })).data, a2 = (await call('boss', 'a.studentSave', { name: '重複生', phone: '0911000111' })).data, a3 = (await call('boss', 'a.studentSave', { name: '空白生' })).data;
+  await call('dupParent', 'bind', { code: a3.code, relation: '母親' });
+  let i = (await call('boss', 'a.studentRemoveInfo', { id: a3.id })).data;
+  ok(i.empty && i.data.bindings === 1, '刪除前列出這筆學生的資料');
+  r = await call('boss', 'a.studentRemove', { id: a3.id });
+  ok(r.ok && !(await call('boss', 'a.students')).data.find(x => x.id === a3.id) && !(await call('dupParent', 'init')).data.students.length, '沒有帳務的學生可直接刪除，家長綁定一起移除');
+  await call('dupParent', 'bind', { code: a2.code, relation: '母親' });
+  await call('boss', 'a.topup', { studentId: a2.id, planId: 'P02', price: 4500 });
+  ok(/不能直接刪除/.test((await call('boss', 'a.studentRemove', { id: a2.id })).error), '有儲值的學生不能直接刪除');
+  i = (await call('boss', 'a.studentRemoveInfo', { id: a2.id })).data;
+  ok(i.like.some(x => x.id === a1.id), '找出同名同電話的可能重複');
+  r = await call('boss', 'a.studentRemove', { id: a2.id, mergeInto: a1.id });
+  const L = (await call('boss', 'a.students')).data;
+  ok(r.ok && !L.find(x => x.id === a2.id) && L.find(x => x.id === a1.id).remain === 10 && (await call('dupParent', 'init')).data.students[0].id === a1.id, '合併後上課卡與家長綁定搬到正確的學生');
+  ok(/僅限管理員/.test((await call('teacher', 'a.studentRemove', { id: a1.id })).error), '老師不能刪除學生');
+  await call('boss', 'a.studentSave', { id: a1.id, name: '重複生', status: '停用' });
+}
 { // 上課卡限定課程：一張卡可上多門課，扣堂只扣適用的卡
   const cs = (await call('boss', 'a.meta')).data.courses, [cA, cB, cC] = [0, 1, 2].map(n => cs[n] ? cs[n].id : (cs[0].id));
   const c2 = (await call('boss', 'a.courseSave', { name: '限定測試甲', weekdays: [1, 2, 3, 4, 5, 6, 0], start: '06:00', end: '06:30', teacher: 'T' })).data.id, c3 = (await call('boss', 'a.courseSave', { name: '限定測試乙', weekdays: [1, 2, 3, 4, 5, 6, 0], start: '07:00', end: '07:30', teacher: 'T' })).data.id;
