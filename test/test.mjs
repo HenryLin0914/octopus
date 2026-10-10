@@ -578,6 +578,13 @@ let bad = ''; try { pushes.forEach(p => p.body && p.body.messages && p.body.mess
   await call('boss', 'a.studentSave', { id: sid, name: '紀錄生', status: '停用' });
 }
 { // 推播檢查
+  { const sa = await call('boss', 'a.syncAvatars'); const L = (await call('boss', 'a.students')).data, bound = L.find(x => x.bound);
+    ok(sa.ok && bound && Array.isArray(bound.pa) && 'pic' in bound.pa[0], '家長頭像欄位與補抓頭像'); }
+  { const ov = (await call('teacher', 'a.overview')).data, ob = (await call('boss', 'a.overview')).data;
+    ok(ov.stats.monthIncome === null && ov.lastMonthIncome === null && !ov.expiring.length && typeof ob.stats.monthIncome === 'number', '老師的總覽不含收入與上課卡到期');
+    const deny = ['a.ledger', 'a.cards', 'a.cardLog', 'a.topup', 'a.topupSave', 'a.cardSave', 'a.cardShare', 'a.familyShare', 'a.attCard', 'a.plans', 'a.student', 'a.export', 'a.pushQuota'];
+    let leak = []; for (const x of deny) if (!/僅限管理員/.test((await call('teacher', x, { id: 'x', month: '2026-10' })).error || '')) leak.push(x);
+    ok(!leak.length, '老師不能呼叫任何帳務功能' + (leak.length ? '：' + leak.join() : '')); }
   { const pq = await call('boss', 'a.pushQuota'); ok(pq.ok && pq.data.ok && 'left' in pq.data, '總覽可取得本月推播額度'); }
   const n0 = pushes.length, pc = await call('boss', 'a.pushCheck');
   ok(pc.ok && pc.data.steps.some(x => x.name === '測試推播' && x.ok) && pc.data.steps.some(x => x.name === '您的 LINE 帳號') && pushes.slice(n0).some(x => /message\/push$/.test(x.url) && /推播測試/.test(x.body.messages[0].text)) && /僅限管理員/.test((await call('teacher', 'a.pushCheck')).error), '推播檢查會發測試訊息給自己，只有管理員能用');

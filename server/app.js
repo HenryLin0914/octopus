@@ -72,9 +72,9 @@ const SETTINGS = {
 const PLANS = [['P01', '單堂', 1, 500, 30], ['P02', '10堂卡', 10, 4500, 90], ['P03', '20堂卡', 20, 8000, 180]];
 const COLORS = ['#D6336C', '#1971C2', '#2B8A3E', '#E67700', '#7048E8', '#0C8599', '#C2255C', '#5C940D'];
 
-const OWNER_ONLY = new Set(['a.studentSave', 'a.enroll', 'a.unbind', 'a.topup', 'a.cardSave', 'a.familyShare', 'a.cardShare', 'a.courseSave', 'a.sessionSave', 'a.sessionDelete', 'a.genSessions',
+const OWNER_ONLY = new Set(['a.pushQuota', 'a.studentSave', 'a.enroll', 'a.unbind', 'a.topup', 'a.cardSave', 'a.familyShare', 'a.cardShare', 'a.courseSave', 'a.sessionSave', 'a.sessionDelete', 'a.genSessions',
   'a.videoSave', 'a.videoDelete', 'a.planSave', 'a.settingSave', 'a.adminSave', 'a.export', 'a.student', 'a.videos', 'a.plans', 'a.settings', 'a.admins', 'a.cards', 'a.cardLog', 'a.ledger', 'a.topupSave', 'a.videoInfo', 'a.dayOff', 'a.familySave', 'a.courseDelete', 'a.courseStudents', 'a.signupSave', 'a.rent', 'a.roomSave', 'a.roomDelete', 'a.rentBlockSave', 'a.rentBlockDelete', 'a.rentTagSave', 'a.rentTagDelete', 'a.bookingSave', 'a.rentSlots', 'a.roomCal', 'a.roomHours', 'a.ruleSave', 'a.ruleDelete', 'a.upload', 'a.menu', 'a.menuPageSave', 'a.menuTheme', 'a.resetInfo', 'a.resetData', 'a.audit', 'a.pushCheck', 'a.teacherSave', 'a.teacherDelete', 'a.attCard', 'a.menuPageDelete', 'a.menuPageMove', 'a.replySave', 'a.replyDelete', 'a.menuPublish', 'a.menuUnpublish']);
-const ASYNC = new Set(['a.pushQuota', 'a.pushCheck', 'a.resetData', 'a.menuPublish', 'a.menuUnpublish', 'a.videoInfo']);
+const ASYNC = new Set(['a.syncAvatars', 'a.pushQuota', 'a.pushCheck', 'a.resetData', 'a.menuPublish', 'a.menuUnpublish', 'a.videoInfo']);
 /** 從各種 YouTube 網址取出影片 ID（watch、youtu.be、shorts、live、embed） */
 export const ytId = url => { const m = String(url || '').match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^#]*&)?v=|shorts\/|live\/|embed\/|v\/))([\w-]{11})(?![\w-])/); return m ? m[1] : ''; };
 
@@ -91,6 +91,7 @@ export function createApp(opts = {}) {
     if (!cols.includes('date_to')) db.exec("ALTER TABLE courses ADD COLUMN date_to TEXT DEFAULT ''");
     if (!db.prepare('PRAGMA table_info(students)').all().some(c => c.name === 'family')) db.exec("ALTER TABLE students ADD COLUMN family TEXT DEFAULT ''");
     if (!cols.includes('intro')) db.exec("ALTER TABLE courses ADD COLUMN intro TEXT DEFAULT ''");
+    db.exec("CREATE TABLE IF NOT EXISTS profiles(user_id TEXT PRIMARY KEY, name TEXT DEFAULT '', picture TEXT DEFAULT '', updated TEXT DEFAULT '')"); // LINE 頭像
     // 方案與上課卡的適用課程：'' ＝全部課程通用；否則是逗號分隔的課程 ID
     for (const t of ['plans', 'cards']) if (!db.prepare('PRAGMA table_info(' + t + ')').all().some(c => c.name === 'courses')) db.exec('ALTER TABLE ' + t + " ADD COLUMN courses TEXT DEFAULT ''");
     db.exec("CREATE TABLE IF NOT EXISTS signups(id TEXT PRIMARY KEY, student_id TEXT, course_id TEXT, status TEXT, time TEXT, by_user TEXT, by_name TEXT, done_at TEXT DEFAULT '', done_by TEXT DEFAULT '')");
@@ -154,7 +155,7 @@ export function createApp(opts = {}) {
     const r = await lineFetch('https://api.line.me/oauth2/v2.1/verify', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ id_token: idToken, client_id: env.LINE_LOGIN_CHANNEL_ID || '' }) });
     if (!r.ok) throw new Error('AUTH');
     const d = await r.json();
-    return { userId: d.sub, name: d.name || '' };
+    return { userId: d.sub, name: d.name || '', picture: d.picture || '' };
   });
   const hmac = (s, key = SECRET) => crypto.createHmac('sha256', key).update(s).digest('base64url');
   /* 登入憑證綁定目前的 LINE Login channel：換了官方帳號（不同 Provider）之後，舊憑證裡的使用者 ID 是舊 Provider 的，
@@ -448,6 +449,8 @@ export function createApp(opts = {}) {
   /** 全家人之中，還沒有讓每個人都共用到的卡數 */
   const famGap = sid => new Set([sid, ...siblingsOf(sid).map(x => x.id)].filter(id => totalRemain(id) <= 0).flatMap(id => famUnshared(id).map(c => c.id))).size;
   let quotaCache = null;
+  const savePic = (id, name, pic) => { try { run("INSERT INTO profiles(user_id,name,picture,updated) VALUES(?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET name=CASE WHEN excluded.name<>'' THEN excluded.name ELSE name END, picture=excluded.picture, updated=excluded.updated", id, str(name, 60), /^https:\/\//.test(pic || '') ? pic : '', now()); } catch { /* 頭像只是加分，失敗不影響 */ } };
+  const picOf = id => (get('SELECT picture FROM profiles WHERE user_id=?', id) || {}).picture || '';
   const bindFails = new Map(); // 綁定碼輸錯次數（防止猜碼）
   /** 把幾位學生併成同一個家庭（沿用已有的家庭編號） */
   function linkFamily(ids) {
@@ -800,7 +803,8 @@ export function createApp(opts = {}) {
         plans: all('SELECT * FROM plans WHERE active=1 ORDER BY sort,id'), courses: all("SELECT * FROM courses ORDER BY status DESC, start, id"), colors: COLORS,
         rooms: all('SELECT name FROM rooms ORDER BY sort,id').map(r => r.name), teachers: all("SELECT t.*, (SELECT COUNT(*) FROM courses c WHERE c.teacher=t.name AND c.status='啟用') courses FROM teachers t ORDER BY (t.status='啟用') DESC, t.sort, t.name").map(t => ({ ...teacherOut(t), courses: t.courses })), teacherColors: TEACHER_COLORS };
     },
-    'a.overview'(b) {
+    'a.overview'(b, user) {
+      const own = !user || !user.admin || user.admin.role === 'owner'; // 老師看不到帳務（收入、上課卡到期）
       const d = nd(b.date) || today(), low = cfgNum('低堂數門檻', 2);
       const stus = all("SELECT * FROM students WHERE status='在學'");
       const lowAll = stus.map(s => { const t = tightest(s.id); return { id: s.id, name: s.name, remain: t.remain, course: t.course }; }).filter(s => s.remain <= low).sort((a, c) => a.remain - c.remain), lowList = lowAll.slice(0, 12);
@@ -810,15 +814,15 @@ export function createApp(opts = {}) {
         date: d, sessions: API['a.week']({ start: d, days: 1 }).sessions,
         stats: { students: stus.length, weekSessions: get("SELECT COUNT(*) n FROM sessions WHERE date>=? AND date<=? AND status<>'停課'", today(), addDays(today(), 6)).n,
           unbound: get("SELECT COUNT(*) n FROM students s WHERE s.status='在學' AND NOT EXISTS(SELECT 1 FROM bindings b WHERE b.student_id=s.id)").n,
-          monthIncome: get('SELECT COALESCE(SUM(amount),0) n FROM topups WHERE time>=?', today().slice(0, 7) + '-01').n },
+          monthIncome: own ? get('SELECT COALESCE(SUM(amount),0) n FROM topups WHERE time>=?', today().slice(0, 7) + '-01').n : null },
         signups: get("SELECT COUNT(*) n FROM signups WHERE status='待審核'").n, rentPending: get("SELECT COUNT(*) n FROM bookings WHERE status='待確認'").n,
         low: lowList, lowCount: lowAll.length,
         tomorrow: wk.sessions.filter(x => x.date === addDays(t0, 1)), weekDone: get("SELECT COUNT(*) n FROM sessions WHERE date>=? AND date<=? AND status='已結算'", addDays(t0, -6), t0).n,
         unmarked: API['a.week']({ start: addDays(t0, -14), days: 15 }).sessions.filter(x => x.unmarked).map(x => ({ sessionId: x.sessionId, date: x.date, start: x.start, course: x.course, teacher: x.teacher })),
         rentals: wk.rentals || [], pendingAdmins: get('SELECT COUNT(*) n FROM admins WHERE active=0').n,
-        lastMonthIncome: get('SELECT COALESCE(SUM(amount),0) n FROM topups WHERE time>=? AND time<?', pm, m0).n,
+        lastMonthIncome: own ? get('SELECT COALESCE(SUM(amount),0) n FROM topups WHERE time>=? AND time<?', pm, m0).n : null,
         monthAttend: get("SELECT COUNT(*) n FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE a.status='出席' AND s.date>=?", m0).n,
-        expiring: all("SELECT c.id,c.plan_name plan,c.remain,c.expire,(SELECT GROUP_CONCAT(s.name,'、') FROM card_students cs JOIN students s ON s.id=cs.student_id WHERE cs.card_id=c.id) names FROM cards c WHERE c.status='啟用' AND c.remain>0 AND c.expire<>'' AND c.expire>=? AND c.expire<=? ORDER BY c.expire LIMIT 12", today(), soon),
+        expiring: !own ? [] : all("SELECT c.id,c.plan_name plan,c.remain,c.expire,(SELECT GROUP_CONCAT(s.name,'、') FROM card_students cs JOIN students s ON s.id=cs.student_id WHERE cs.card_id=c.id) names FROM cards c WHERE c.status='啟用' AND c.remain>0 AND c.expire<>'' AND c.expire>=? AND c.expire<=? ORDER BY c.expire LIMIT 12", today(), soon),
         leaves: all('SELECT st.name student,l.reason,s.date,s.start,COALESCE(c.name,s.course_id) course FROM leaves l JOIN sessions s ON s.id=l.session_id JOIN students st ON st.id=l.student_id LEFT JOIN courses c ON c.id=s.course_id WHERE s.date>=? AND l.status<>? ORDER BY s.date,s.start LIMIT 12', today(), '取消')
       };
     },
@@ -1076,6 +1080,7 @@ export function createApp(opts = {}) {
       return all('SELECT * FROM students ORDER BY status, id').map(s => ({ id: s.id, name: s.name, birthday: s.birthday, phone: s.phone, code: own ? s.bind_code : '', status: s.status, note: s.note, remain: totalRemain(s.id), least: tightest(s.id).remain,
         bound: get('SELECT COUNT(*) n FROM bindings WHERE student_id=?', s.id).n, courses: all('SELECT course_id FROM enrollments WHERE student_id=?', s.id).map(r => r.course_id),
         family: siblingsOf(s.id).map(r => r.id), parents: all('SELECT line_name n, relation r FROM bindings WHERE student_id=?', s.id).map(r => (r.n || '家長') + (r.r ? '（' + r.r + '）' : '')),
+        pa: all('SELECT b.line_name n, b.relation r, COALESCE(p.picture,\'\') pic FROM bindings b LEFT JOIN profiles p ON p.user_id=b.user_id WHERE b.student_id=?', s.id),
         famUnshared: totalRemain(s.id) > 0 ? 0 : famUnshared(s.id).reduce((n, c) => n + c.remain, 0), // 自己有卡可用就不提示（例如小孩共用一張、媽媽自己一張）
         shared: !!get("SELECT 1 x FROM card_students a JOIN card_students o ON o.card_id=a.card_id AND o.student_id<>a.student_id JOIN cards c ON c.id=a.card_id WHERE a.student_id=? AND c.status='啟用' AND c.remain>0", s.id) }));
     },
@@ -1103,7 +1108,7 @@ export function createApp(opts = {}) {
       if (!s) throw new Error('找不到學生');
       return { info: { id: s.id, name: s.name, birthday: s.birthday, phone: s.phone, code: s.bind_code, status: s.status, note: s.note }, remain: totalRemain(s.id),
         courses: all('SELECT course_id FROM enrollments WHERE student_id=?', s.id).map(r => r.course_id),
-        parents: all('SELECT user_id userId,line_name name,relation,created_at at FROM bindings WHERE student_id=?', s.id).map(p => ({ ...p, kids: all('SELECT st.name FROM bindings b JOIN students st ON st.id=b.student_id WHERE b.user_id=? AND b.student_id<>?', p.userId, s.id).map(r => r.name) })),
+        parents: all('SELECT user_id userId,line_name name,relation,created_at at FROM bindings WHERE student_id=?', s.id).map(p => ({ ...p, pic: picOf(p.userId), kids: all('SELECT st.name FROM bindings b JOIN students st ON st.id=b.student_id WHERE b.user_id=? AND b.student_id<>?', p.userId, s.id).map(r => r.name) })),
         cards: all('SELECT c.* FROM cards c JOIN card_students cs ON cs.card_id=c.id WHERE cs.student_id=? ORDER BY c.bought DESC, c.id DESC', s.id).map(c => ({ ...c, scope: scopeText(c.courses), students: all('SELECT s.id,s.name FROM card_students cs JOIN students s ON s.id=cs.student_id WHERE cs.card_id=?', c.id), usage: cardUsage(c.id) })),
         famGap: famGap(s.id),
         family: siblingsOf(s.id).map(x => ({ id: x.id, name: x.name, remain: totalRemain(x.id), bound: get('SELECT COUNT(*) n FROM bindings WHERE student_id=?', x.id).n })),
@@ -1486,6 +1491,15 @@ export function createApp(opts = {}) {
     },
     /** 操作紀錄查詢（只有管理員）：可依日期、分類、操作人、關鍵字篩選 */
     /** 推播檢查：確認連到哪個官方帳號、額度、自己是不是好友、家長的 ID 是否有效，並實際發一則測試訊息給自己 */
+    /** 補抓家長的 LINE 頭像（還沒有或超過 3 天沒更新的，一次最多 30 位；只有好友才抓得到） */
+    async 'a.syncAvatars'() {
+      if (!env.LINE_CHANNEL_ACCESS_TOKEN) return { updated: 0 };
+      const ids = all("SELECT DISTINCT b.user_id id FROM bindings b LEFT JOIN profiles p ON p.user_id=b.user_id WHERE p.user_id IS NULL OR p.updated<? LIMIT 30", addDays(today(), -3)).map(r => r.id);
+      let updated = 0;
+      for (const id of ids) { try { const r = await lineFetch('https://api.line.me/v2/bot/profile/' + encodeURIComponent(id), { headers: authHdr() }); const j = r.ok ? await r.json() : {};
+        const before = picOf(id); savePic(id, j.displayName || '', j.pictureUrl || ''); if (picOf(id) !== before) updated++; } catch { /* 略過 */ } }
+      return { updated };
+    },
     /** 本月 LINE 推播額度（快取 5 分鐘，避免每次開總覽都去問 LINE） */
     async 'a.pushQuota'(b) {
       if (!env.LINE_CHANNEL_ACCESS_TOKEN) return { ok: false, text: '尚未設定 LINE 金鑰' };
@@ -1680,6 +1694,7 @@ export function createApp(opts = {}) {
     try {
       if (b.action === 'login') { const u = await verifyIdToken(b.idToken), prev = b.prev ? unsignAny(b.prev) : null;
         const moved = prev && prev.chan !== chanNow() ? migrateUser(prev.userId, u.userId, u.name) : false; // 舊憑證是別的 channel 發的：把資料轉到新 ID
+        if (u.picture !== undefined) savePic(u.userId, u.name, u.picture);
         return { ok: true, data: { token: sign({ u: u.userId, n: u.name, exp: Date.now() + 30 * 86400e3 }), moved } }; }
       if (b.action === 'devLogin' && env.DEV_LOGIN === '1') return { ok: true, data: { token: sign({ u: str(b.userId, 40), n: str(b.name, 40), exp: Date.now() + 86400e3 }) } };
       const user = unsign(b.token);
