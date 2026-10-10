@@ -71,7 +71,7 @@ ok(/已有紀錄/.test((await call('mom', 'leave', { studentId: sid, sessionId: 
 r = await call('mom', 'attendance', { studentId: sid }); ok(r.data.count['缺席'] === 1 && r.data.count['請假'] === 1, '出席統計 ' + JSON.stringify(r.data.count));
 
 // 共用卡
-const b1 = (await call('boss', 'a.studentSave', { name: '哥哥' })).data.id, b2 = (await call('boss', 'a.studentSave', { name: '妹妹' })).data.id;
+const b1 = (await call('boss', 'a.studentSave', { name: '哥哥' })).data.id, b2 = (await call('boss', 'a.studentSave', { name: '妹妹', familyWith: b1 })).data.id;
 r = await call('boss', 'a.topup', { studentId: b1, planId: 'P02', shareIds: [b2] }); ok(r.data.shared === 1 && r.data.remain === 10, '共用卡儲值');
 const T3 = (await call('boss', 'a.sessionSave', { courseId: 'C01', date: today(), start: '06:00', end: '07:00' })).data.id;
 ok((await call('boss', 'a.mark', { sessionId: T3, studentId: b1, status: '出席' })).data.remain === 9 && (await call('boss', 'a.mark', { sessionId: T3, studentId: b2, status: '出席' })).data.remain === 8, '兄妹扣同一張卡 → 8');
@@ -453,6 +453,47 @@ ok((await app.webhook(body, 'wrong')) === false, 'Webhook 簽章錯誤被拒');
 const pw = pushes.length; ok((await app.webhook(body, sig)) === true && pushes.length === pw + 1 && /剩餘 9 堂/.test(pushes[pw].body.messages[0].altText), 'Webhook 回覆堂數卡片');
 const walk = o => { if (o && typeof o === 'object') { if (o.type === 'text' && (typeof o.text !== 'string' || !o.text.length)) throw new Error('empty'); Object.values(o).forEach(walk); } };
 let bad = ''; try { pushes.forEach(p => p.body && p.body.messages && p.body.messages.forEach(walk)); } catch (e) { bad = e.message; } ok(!bad, '所有 Flex 文字非空');
+{ // 再按一次出席＝取消點名、退回堂數，學生仍留在這堂；「從這堂移除」才拿掉
+  const cr = await call('boss', 'a.courseSave', { name: '取消留名測試', weekdays: [1, 2, 3, 4, 5, 6, 0], start: '05:00', end: '05:30', teacher: 'T' }); if (!cr.data) console.log(cr.error); const c = cr.data.id;
+  const sid = (await call('boss', 'a.studentSave', { name: '臨時來上課' })).data.id;
+  await call('boss', 'a.topup', { studentId: sid, planId: 'P02', price: 4500 });
+  const day = (await call('boss', 'a.meta')).data.today, ss = (await call('boss', 'a.week', { start: day, days: 7 })).data.sessions.find(x => x.courseId === c).sessionId;
+  const row = async () => (await call('boss', 'a.roster', { sessionId: ss })).data.list.find(x => x.id === sid);
+  await call('boss', 'a.mark', { sessionId: ss, studentId: sid, status: '出席' });
+  ok((await row()).deduct === 1, '臨時學生報到扣堂');
+  await call('boss', 'a.mark', { sessionId: ss, studentId: sid, status: '取消' });
+  let x = await row();
+  ok(x && !x.status && x.remain === 10, '取消點名後退回堂數，學生仍在名單上');
+  await call('boss', 'a.mark', { sessionId: ss, studentId: sid, status: '取消', remove: true });
+  ok(!(await row()), '從這堂移除後不再列出');
+  await call('boss', 'a.markMany', { sessionId: ss, studentIds: [sid] });
+  ok((await row()).status === '出席', '移除後可以再加回來');
+  await call('boss', 'a.courseSave', { id: c, name: '取消留名測試', weekdays: [1], start: '05:00', end: '05:30', status: '停開' });
+}
+{ // 審查修正：停課／刪除退回堂數、共用卡不併家庭、請假限本人課程、老師看不到綁定碼、綁定碼防猜
+  const c = (await call('boss', 'a.courseSave', { name: '退回測試', weekdays: [1, 2, 3, 4, 5, 6, 0], start: '04:40', end: '04:55', teacher: 'T' })).data.id;
+  const sid = (await call('boss', 'a.studentSave', { name: '退回生', courses: [c] })).data.id, other = (await call('boss', 'a.studentSave', { name: '別家小孩' })).data.id;
+  await call('boss', 'a.topup', { studentId: sid, planId: 'P02', price: 4500, shareIds: [other] });
+  let L = (await call('boss', 'a.students')).data;
+  ok(!L.find(x => x.id === sid).family.length, '共用卡給非家人不會併成同一家庭');
+  const day = (await call('boss', 'a.meta')).data.today, ws = (await call('boss', 'a.week', { start: day, days: 7 })).data.sessions.filter(x => x.courseId === c);
+  await call('boss', 'a.mark', { sessionId: ws[0].sessionId, studentId: sid, status: '出席' });
+  const s0 = (await call('boss', 'a.week', { start: day, days: 7 })).data.sessions.find(x => x.sessionId === ws[0].sessionId);
+  r = await call('boss', 'a.sessionSave', { id: s0.sessionId, date: s0.date, start: s0.start, end: s0.end, teacher: 'T', room: '', status: '停課' });
+  L = (await call('boss', 'a.students')).data;
+  ok(L.find(x => x.id === sid).remain === 10, '停課後已扣的堂數退回');
+  await call('boss', 'a.settingSave', { key: '請假扣堂', value: '是' });
+  const s1 = ws[1];
+  await call('boss', 'a.mark', { sessionId: s1.sessionId, studentId: sid, status: '請假' });
+  ok((await call('boss', 'a.students')).data.find(x => x.id === sid).remain === 9, '請假扣堂');
+  r = await call('boss', 'a.sessionDelete', { id: s1.sessionId });
+  ok(r.ok && (await call('boss', 'a.students')).data.find(x => x.id === sid).remain === 10, '刪除場次後請假扣的堂數退回');
+  await call('boss', 'a.settingSave', { key: '請假扣堂', value: '否' });
+  ok(!(await call('teacher', 'a.students')).data.find(x => x.id === sid).code && (await call('boss', 'a.students')).data.find(x => x.id === sid).code, '老師看不到綁定碼');
+  for (let i = 0; i < 5; i++) await call('guesser', 'bind', { code: '000000' });
+  ok(/太多次/.test((await call('guesser', 'bind', { code: '000000' })).error), '綁定碼連錯 5 次暫停');
+  await call('boss', 'a.courseSave', { id: c, name: '退回測試', weekdays: [1], start: '04:40', end: '04:55', status: '停開' });
+}
 { // 上課卡限定課程：一張卡可上多門課，扣堂只扣適用的卡
   const cs = (await call('boss', 'a.meta')).data.courses, [cA, cB, cC] = [0, 1, 2].map(n => cs[n] ? cs[n].id : (cs[0].id));
   const c2 = (await call('boss', 'a.courseSave', { name: '限定測試甲', weekdays: [1, 2, 3, 4, 5, 6, 0], start: '06:00', end: '06:30', teacher: 'T' })).data.id, c3 = (await call('boss', 'a.courseSave', { name: '限定測試乙', weekdays: [1, 2, 3, 4, 5, 6, 0], start: '07:00', end: '07:30', teacher: 'T' })).data.id;
@@ -537,6 +578,7 @@ let bad = ''; try { pushes.forEach(p => p.body && p.body.messages && p.body.mess
   await call('boss', 'a.studentSave', { id: sid, name: '紀錄生', status: '停用' });
 }
 { // 推播檢查
+  { const pq = await call('boss', 'a.pushQuota'); ok(pq.ok && pq.data.ok && 'left' in pq.data, '總覽可取得本月推播額度'); }
   const n0 = pushes.length, pc = await call('boss', 'a.pushCheck');
   ok(pc.ok && pc.data.steps.some(x => x.name === '測試推播' && x.ok) && pc.data.steps.some(x => x.name === '您的 LINE 帳號') && pushes.slice(n0).some(x => /message\/push$/.test(x.url) && /推播測試/.test(x.body.messages[0].text)) && /僅限管理員/.test((await call('teacher', 'a.pushCheck')).error), '推播檢查會發測試訊息給自己，只有管理員能用');
   ok(Array.isArray(pc.data.recent), '回傳最近的發送紀錄');

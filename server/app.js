@@ -74,7 +74,7 @@ const COLORS = ['#D6336C', '#1971C2', '#2B8A3E', '#E67700', '#7048E8', '#0C8599'
 
 const OWNER_ONLY = new Set(['a.studentSave', 'a.enroll', 'a.unbind', 'a.topup', 'a.cardSave', 'a.familyShare', 'a.cardShare', 'a.courseSave', 'a.sessionSave', 'a.sessionDelete', 'a.genSessions',
   'a.videoSave', 'a.videoDelete', 'a.planSave', 'a.settingSave', 'a.adminSave', 'a.export', 'a.student', 'a.videos', 'a.plans', 'a.settings', 'a.admins', 'a.cards', 'a.cardLog', 'a.ledger', 'a.topupSave', 'a.videoInfo', 'a.dayOff', 'a.familySave', 'a.courseDelete', 'a.courseStudents', 'a.signupSave', 'a.rent', 'a.roomSave', 'a.roomDelete', 'a.rentBlockSave', 'a.rentBlockDelete', 'a.rentTagSave', 'a.rentTagDelete', 'a.bookingSave', 'a.rentSlots', 'a.roomCal', 'a.roomHours', 'a.ruleSave', 'a.ruleDelete', 'a.upload', 'a.menu', 'a.menuPageSave', 'a.menuTheme', 'a.resetInfo', 'a.resetData', 'a.audit', 'a.pushCheck', 'a.teacherSave', 'a.teacherDelete', 'a.attCard', 'a.menuPageDelete', 'a.menuPageMove', 'a.replySave', 'a.replyDelete', 'a.menuPublish', 'a.menuUnpublish']);
-const ASYNC = new Set(['a.pushCheck', 'a.resetData', 'a.menuPublish', 'a.menuUnpublish', 'a.videoInfo']);
+const ASYNC = new Set(['a.pushQuota', 'a.pushCheck', 'a.resetData', 'a.menuPublish', 'a.menuUnpublish', 'a.videoInfo']);
 /** 從各種 YouTube 網址取出影片 ID（watch、youtu.be、shorts、live、embed） */
 export const ytId = url => { const m = String(url || '').match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^#]*&)?v=|shorts\/|live\/|embed\/|v\/))([\w-]{11})(?![\w-])/); return m ? m[1] : ''; };
 
@@ -266,6 +266,7 @@ export function createApp(opts = {}) {
     const info = sessionInfo(sess);
     const old = activeRecord(sess.id, sid);
     if (old && old.status === status) return { dup: true, status, deduct: 0, remain: totalRemain(sid, info.courseId) };
+    if (old && old.status === '請假' && status !== '請假') run("UPDATE leaves SET status='取消' WHERE student_id=? AND session_id=? AND status<>'取消'", sid, sess.id); // 請假被改掉：家長端的請假紀錄跟著更新
     if (old) {
       if (old.deduct > 0 && old.card_id) run("UPDATE cards SET remain=remain+?, status=CASE WHEN status='用完' THEN '啟用' ELSE status END WHERE id=?", old.deduct, old.card_id);
       run("UPDATE attendance SET status='取消', note=? WHERE id=?", (old.note ? old.note + '；' : '') + '原為' + old.status + '，' + now() + ' 由 ' + operator + ' 變更', old.id);
@@ -276,13 +277,15 @@ export function createApp(opts = {}) {
     if (need > 0) {
       const card = pickCard(sid, need, info.courseId, preferCard);
       if (card) { const left = card.remain - need; run('UPDATE cards SET remain=?, status=? WHERE id=?', left, left <= 0 ? '用完' : '啟用', card.id); deduct = need; cardId = card.id; }
-      else note = totalRemain(sid) > 0 ? '沒有適用這門課的上課卡，未扣堂' : '無可用上課卡，未扣堂';
+      else note = totalRemain(sid, info.courseId) > 0 ? '單張上課卡剩餘堂數不足 ' + need + ' 堂，未扣堂' : totalRemain(sid) > 0 ? '沒有適用這門課的上課卡，未扣堂' : '無可用上課卡，未扣堂';
     }
     run('INSERT INTO attendance(id,session_id,student_id,status,method,time,deduct,card_id,operator,note) VALUES(?,?,?,?,?,?,?,?,?,?)', uid('A'), sess.id, sid, status, method, now(), deduct, cardId, operator, note);
     const remain = totalRemain(sid, info.courseId);
     if (notify) notifyAttendance(info, sid, status, deduct, remain, cardId);
     return { status, deduct, remain, note, cardId };
   }
+  /** 停課／刪除場次：這堂已點的名全部取消，扣掉的堂數退回原卡 */
+  const refundSession = (sess, why) => all("SELECT student_id id FROM attendance WHERE session_id=? AND status<>'取消'", sess.id).forEach(r => recordAttendance(sess, r.id, '取消', '後台', why, false));
   function notifyAttendance(info, sid, status, deduct, remain, cardId) {
     const name = (student(sid) || {}).name || sid, card = cardId ? get('SELECT * FROM cards WHERE id=?', cardId) : null, scoped = totalRemain(sid) !== remain;
     const label = scoped ? '這門課可用堂數' : '剩餘堂數';
@@ -444,6 +447,8 @@ export function createApp(opts = {}) {
     return all(`SELECT DISTINCT c.* FROM cards c JOIN card_students cs ON cs.card_id=c.id WHERE cs.student_id IN (${ids.map(() => '?').join(',')}) AND c.status='啟用' AND c.remain>0 AND (c.expire='' OR c.expire>=?) AND NOT EXISTS(SELECT 1 FROM card_students m WHERE m.card_id=c.id AND m.student_id=?)`, ...ids, today(), sid); };
   /** 全家人之中，還沒有讓每個人都共用到的卡數 */
   const famGap = sid => new Set([sid, ...siblingsOf(sid).map(x => x.id)].filter(id => totalRemain(id) <= 0).flatMap(id => famUnshared(id).map(c => c.id))).size;
+  let quotaCache = null;
+  const bindFails = new Map(); // 綁定碼輸錯次數（防止猜碼）
   /** 把幾位學生併成同一個家庭（沿用已有的家庭編號） */
   function linkFamily(ids) {
     ids = [...new Set(ids)].filter(student);
@@ -551,7 +556,7 @@ export function createApp(opts = {}) {
   const A_bk = id => { const k = id && get('SELECT * FROM bookings WHERE id=?', id); return k ? `${A_rm(k.room_id)} ${k.date.slice(5).replace('-', '/')} ${k.start}–${k.end}（${k.name}）` : ''; };
   const AUDIT = {
     // 出席與扣堂
-    'a.mark': ['出席', b => r => `${A_sl(b.sessionId)}｜${A_sn(b.studentId)} → ${b.status === '取消' ? '取消點名' : b.status}${r.deduct ? `，扣 ${r.deduct} 堂（${A_card(r.cardId)}）` : ''}${r.note ? '，' + r.note : ''}${r.dup ? '（重複，未變更）' : ''}`],
+    'a.mark': ['出席', b => r => `${A_sl(b.sessionId)}｜${A_sn(b.studentId)} → ${b.status === '取消' ? (b.remove ? '從這堂移除' : '取消點名') : b.status}${r.deduct ? `，扣 ${r.deduct} 堂（${A_card(r.cardId)}）` : ''}${r.note ? '，' + r.note : ''}${r.dup ? '（重複，未變更）' : ''}`],
     'a.markAll': ['出席', b => { let names = ''; try { names = API['a.roster']({ sessionId: b.sessionId }).list.filter(x => !x.status).map(x => x.name).join('、'); } catch { /* 找不到場次時由動作本身報錯 */ } return r => `${A_sl(b.sessionId)}｜全部出席，${r.marked} 人${names ? '：' + names : ''}`; }],
     'a.markMany': ['出席', b => r => `${A_sl(b.sessionId)}｜加入報到：${A_names(b.studentIds)}${r.noCard ? `（${r.noCard} 人沒有可扣的卡）` : ''}${r.added ? `，${r.added} 人加入固定名單` : ''}`],
     'a.attCard': ['出席', b => { const old = (activeRecord(b.sessionId, b.studentId) || {}).card_id; return () => old ? `${A_sl(b.sessionId)}｜${A_sn(b.studentId)} 改扣卡：${A_card(old)} → ${A_card(b.cardId)}` : `${A_sl(b.sessionId)}｜${A_sn(b.studentId)} 補扣堂：${A_card(b.cardId)}`; }],
@@ -626,8 +631,11 @@ export function createApp(opts = {}) {
     bind(b, user) {
       const code = str(b.code, 10);
       if (!code) throw new Error('請輸入綁定碼');
+      const t = Date.now(), tries = (bindFails.get(user.userId) || []).filter(x => t - x < 10 * 60e3);
+      if (tries.length >= 5) throw new Error('綁定碼輸入錯誤太多次，請 10 分鐘後再試，或向教室確認綁定碼');
       const stu = get("SELECT * FROM students WHERE bind_code=? AND status<>'停用'", code);
-      if (!stu) throw new Error('綁定碼不正確，請向教室確認');
+      if (!stu) { tries.push(t); bindFails.set(user.userId, tries); throw new Error('綁定碼不正確，請向教室確認' + (tries.length >= 3 ? `（再錯 ${5 - tries.length} 次將暫停 10 分鐘）` : '')); }
+      bindFails.delete(user.userId);
       const add = x => Number(run('INSERT OR IGNORE INTO bindings(user_id,line_name,student_id,relation,created_at) VALUES(?,?,?,?,?)', user.userId, user.name, x.id, str(b.relation, 20), now()).changes);
       const fresh = add(stu), also = siblingsOf(stu.id).filter(add).map(x => x.name); // 同家庭的家人一起綁定
       linkFamily(kidsOf(user.userId).map(x => x.id)); // 同一位家長綁定的孩子，自動視為同一家庭
@@ -713,6 +721,7 @@ export function createApp(opts = {}) {
       if (sess.status !== '正常') throw new Error('這堂課已' + sess.status + '，無法請假');
       if (toDate(sess.date, sess.start).getTime() - Date.now() <= cfgNum('請假截止小時', 2) * 3600e3) throw new Error('已超過線上請假時間（上課前 ' + cfgNum('請假截止小時', 2) + ' 小時），請直接聯絡教室');
       if (activeRecord(b.sessionId, b.studentId)) throw new Error('這堂課已有紀錄，無法重複請假');
+      if (!get('SELECT 1 x FROM enrollments WHERE student_id=? AND course_id=?', b.studentId, sess.course_id) && !get('SELECT 1 x FROM makeups WHERE student_id=? AND session_id=?', b.studentId, sess.id)) throw new Error('這位學生沒有排這堂課');
       const reason = str(b.reason);
       run('INSERT INTO leaves(id,student_id,session_id,reason,applied_at,by_name,by_user,status) VALUES(?,?,?,?,?,?,?,?)', uid('L'), b.studentId, b.sessionId, reason, now(), user.name, user.userId, '已登記');
       recordAttendance(sess, b.studentId, '請假', '線上請假', user.name || '家長', false);
@@ -778,10 +787,10 @@ export function createApp(opts = {}) {
       const start = toDate(sess.date, sess.start).getTime(), n = Date.now();
       if (n < start - cfgNum('報到開放分鐘前', 30) * 60000) throw new Error('尚未開放報到（上課前 ' + cfgNum('報到開放分鐘前', 30) + ' 分鐘開放）');
       if (n > start + cfgNum('報到截止分鐘後', 30) * 60000) throw new Error('已超過線上報到時間，請洽櫃檯');
-      if (cfgOn('僅限選課學生報到') && !get('SELECT 1 x FROM enrollments WHERE student_id=? AND course_id=?', b.studentId, sess.course_id)) throw new Error('這位學生未報名此課程，請洽櫃檯');
+      if (cfgOn('僅限選課學生報到') && !get('SELECT 1 x FROM enrollments WHERE student_id=? AND course_id=?', b.studentId, sess.course_id) && !get('SELECT 1 x FROM makeups WHERE student_id=? AND session_id=?', b.studentId, sess.id)) throw new Error('這位學生未報名此課程，請洽櫃檯');
       const info = sessionInfo(sess), old = activeRecord(b.sessionId, b.studentId);
       if (old && old.status === '出席') return { dup: true, remain: totalRemain(b.studentId, info.courseId), info };
-      if (!cfgOn('無堂數可線上報到') && !pickCard(b.studentId, info.deduct, info.courseId)) throw new Error(totalRemain(b.studentId) > 0 ? '目前的上課卡不適用「' + info.course + '」，請洽櫃檯' : '上課卡堂數不足，請先至櫃檯儲值');
+      if (!cfgOn('無堂數可線上報到') && !pickCard(b.studentId, info.deduct, info.courseId)) throw new Error(totalRemain(b.studentId, info.courseId) > 0 ? '上課卡堂數不足（這堂課要扣 ' + info.deduct + ' 堂），請洽櫃檯' : totalRemain(b.studentId) > 0 ? '目前的上課卡不適用「' + info.course + '」，請洽櫃檯' : '上課卡堂數不足，請先至櫃檯儲值');
       return { ...recordAttendance(sess, b.studentId, '出席', 'LINE線上', user.name || '家長'), info };
     },
 
@@ -839,7 +848,9 @@ export function createApp(opts = {}) {
       const fixedN = ids.length;
       const mk = all('SELECT student_id id FROM makeups WHERE session_id=?', b.sessionId).map(r => r.id);
       mk.forEach(id => { if (!ids.includes(id)) ids.push(id); });
-      all("SELECT DISTINCT student_id id FROM attendance WHERE session_id=? AND status<>'取消'", b.sessionId).forEach(r => { if (!ids.includes(r.id)) ids.push(r.id); });
+      const lastRec = {}; all('SELECT student_id id,status,note FROM attendance WHERE session_id=? ORDER BY time, rowid', b.sessionId).forEach(r => { lastRec[r.id] = r; });
+      // 點過名的人都留在名單上（取消點名只是退回堂數，不會讓人消失）；按「從這堂移除」的才拿掉
+      Object.values(lastRec).forEach(r => { if ((r.status !== '取消' || !/移出這堂$/.test(r.note || '')) && !ids.includes(r.id)) ids.push(r.id); });
       const list = ids.map(id => { const s = student(id), r = activeRecord(b.sessionId, id), m = get('SELECT s.date,s.start FROM makeups m JOIN sessions s ON s.id=m.session_id WHERE m.student_id=? AND m.from_session_id=?', id, b.sessionId);
         const fit = validCards(id, sess.course_id), used = r && r.card_id ? get('SELECT * FROM cards WHERE id=?', r.card_id) : null;
         return s && { id, name: s.name, status: r ? r.status : '', method: r ? r.method : '', note: r ? r.note : '', remain: fit.reduce((n, c) => n + c.remain, 0), other: totalRemain(id) - fit.reduce((n, c) => n + c.remain, 0),
@@ -852,7 +863,12 @@ export function createApp(opts = {}) {
       if (!sess) throw new Error('找不到場次');
       if (!student(b.studentId)) throw new Error('找不到學生');
       if (!['出席', '請假', '缺席', '取消'].includes(b.status)) throw new Error('狀態不正確');
-      return recordAttendance(sess, b.studentId, b.status, '後台', user.admin.name || user.name, true, str(b.cardId, 40));
+      const r = recordAttendance(sess, b.studentId, b.status, '後台', user.admin.name || user.name, true, str(b.cardId, 40));
+      if (b.remove && b.status === '取消') { // 從這堂移除（臨時加入的學生）：留下註記，點名單就不再列出
+        const last = get('SELECT id,note FROM attendance WHERE session_id=? AND student_id=? ORDER BY time DESC, rowid DESC LIMIT 1', sess.id, b.studentId);
+        if (last) run('UPDATE attendance SET note=? WHERE id=?', (last.note ? last.note + '；' : '') + '移出這堂', last.id);
+      }
+      return r;
     },
     /** 這筆出席改扣另一張卡（退回原本那張、改扣指定的那張） */
     'a.attCard'(b, user) {
@@ -1044,7 +1060,7 @@ export function createApp(opts = {}) {
       const sess = sessRow(b.sessionId);
       if (!sess) throw new Error('找不到場次');
       let n = 0;
-      all("SELECT e.student_id id FROM enrollments e JOIN students s ON s.id=e.student_id WHERE e.course_id=? AND s.status='在學'", sess.course_id).forEach(r => {
+      all("SELECT e.student_id id FROM enrollments e JOIN students s ON s.id=e.student_id WHERE e.course_id=? AND s.status='在學' AND (e.joined IS NULL OR e.joined='' OR e.joined<=?)", sess.course_id, sess.date).forEach(r => { // 加入這門課之前的場次不記缺席
         if (activeRecord(b.sessionId, r.id)) return;
         recordAttendance(sess, r.id, '缺席', '結算', user.admin.name || user.name); n++;
       });
@@ -1055,8 +1071,9 @@ export function createApp(opts = {}) {
       if (!sessRow(b.sessionId)) throw new Error('找不到場次');
       return { url: liffUrl('checkin', '&sid=' + encodeURIComponent(b.sessionId) + '&t=' + qrToken(b.sessionId)), refresh: Math.max(10, Math.floor(cfgNum('QR更新秒數', 60) / 2)) };
     },
-    'a.students'() {
-      return all('SELECT * FROM students ORDER BY status, id').map(s => ({ id: s.id, name: s.name, birthday: s.birthday, phone: s.phone, code: s.bind_code, status: s.status, note: s.note, remain: totalRemain(s.id), least: tightest(s.id).remain,
+    'a.students'(b, user) {
+      const own = !user || !user.admin || user.admin.role === 'owner';
+      return all('SELECT * FROM students ORDER BY status, id').map(s => ({ id: s.id, name: s.name, birthday: s.birthday, phone: s.phone, code: own ? s.bind_code : '', status: s.status, note: s.note, remain: totalRemain(s.id), least: tightest(s.id).remain,
         bound: get('SELECT COUNT(*) n FROM bindings WHERE student_id=?', s.id).n, courses: all('SELECT course_id FROM enrollments WHERE student_id=?', s.id).map(r => r.course_id),
         family: siblingsOf(s.id).map(r => r.id), parents: all('SELECT line_name n, relation r FROM bindings WHERE student_id=?', s.id).map(r => (r.n || '家長') + (r.r ? '（' + r.r + '）' : '')),
         famUnshared: totalRemain(s.id) > 0 ? 0 : famUnshared(s.id).reduce((n, c) => n + c.remain, 0), // 自己有卡可用就不提示（例如小孩共用一張、媽媽自己一張）
@@ -1125,7 +1142,7 @@ export function createApp(opts = {}) {
     'a.cardShare'(b) {
       const c = get('SELECT * FROM cards WHERE id=?', b.cardId), st = student(b.studentId);
       if (!c || !st) throw new Error('找不到上課卡或學生');
-      if (b.on) { run('INSERT OR IGNORE INTO card_students VALUES(?,?)', c.id, st.id); linkFamily(all('SELECT student_id id FROM card_students WHERE card_id=?', c.id).map(r => r.id)); }
+      if (b.on) { run('INSERT OR IGNORE INTO card_students VALUES(?,?)', c.id, st.id); }
       else { if (get('SELECT COUNT(*) n FROM card_students WHERE card_id=?', c.id).n <= 1) throw new Error('至少要有一位學生使用這張卡'); run('DELETE FROM card_students WHERE card_id=? AND student_id=?', c.id, st.id); }
       return { students: all('SELECT s.id,s.name FROM card_students cs JOIN students s ON s.id=cs.student_id WHERE cs.card_id=?', c.id) };
     },
@@ -1168,7 +1185,6 @@ export function createApp(opts = {}) {
       const courses = b.courses !== undefined ? cleanCourses(b.courses) : (plan.courses || '');
       run('INSERT INTO cards(id,plan_name,total,remain,bought,expire,status,courses) VALUES(?,?,?,?,?,?,?,?)', cardId, plan.name, lessons, lessons, t, expire, '啟用', courses);
       owners.forEach(id => run('INSERT INTO card_students VALUES(?,?)', cardId, id));
-      linkFamily(owners);
       run('INSERT INTO topups(id,time,student_id,plan_name,lessons,amount,pay,operator,card_id,note) VALUES(?,?,?,?,?,?,?,?,?,?)', uid('T'), now(), b.studentId, plan.name, lessons, price, str(b.pay, 20) || '現金', user.admin.name || user.name, cardId, str(b.note));
       const remain = totalRemain(b.studentId);
       if (cfgOn('儲值推播')) {
@@ -1192,7 +1208,6 @@ export function createApp(opts = {}) {
         if (!ids.length) throw new Error('至少要有一位學生');
         run('DELETE FROM card_students WHERE card_id=?', b.id);
         ids.forEach(id => run('INSERT OR IGNORE INTO card_students VALUES(?,?)', b.id, id));
-        linkFamily(ids);
       }
       return { ok: true };
     },
@@ -1230,7 +1245,7 @@ export function createApp(opts = {}) {
     'a.courseDelete'(b) {
       if (!get('SELECT 1 x FROM courses WHERE id=?', b.id)) throw new Error('找不到課程');
       if (get("SELECT 1 x FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.course_id=? AND a.status IN ('出席','缺席')", b.id)) throw new Error('這門課已有出席紀錄，不能刪除，請改成「停開」');
-      all('SELECT id FROM sessions WHERE course_id=?', b.id).forEach(x => { run('DELETE FROM attendance WHERE session_id=?', x.id); run('DELETE FROM leaves WHERE session_id=?', x.id); run('DELETE FROM makeups WHERE session_id=? OR from_session_id=?', x.id, x.id); });
+      all('SELECT * FROM sessions WHERE course_id=?', b.id).forEach(x => { refundSession(x, '系統（刪除課程退回）'); run('DELETE FROM attendance WHERE session_id=?', x.id); run('DELETE FROM leaves WHERE session_id=?', x.id); run('DELETE FROM makeups WHERE session_id=? OR from_session_id=?', x.id, x.id); });
       const n = Number(run('DELETE FROM sessions WHERE course_id=?', b.id).changes);
       run('DELETE FROM enrollments WHERE course_id=?', b.id); run('DELETE FROM session_skips WHERE id LIKE ?', b.id + '-%'); run('DELETE FROM courses WHERE id=?', b.id);
       return { deleted: true, sessions: n };
@@ -1262,6 +1277,7 @@ export function createApp(opts = {}) {
       const cur = sessRow(id);
       if (status !== '停課' && !b.force) { const cf = conflictsOf(cur); if (cf.length) throw conflictError(cf); }
       const stopped = status === '停課' && (!old || old.status !== '停課');
+      if (stopped) refundSession(cur, '系統（停課退回）');
       const postponed = stopped && b.postpone ? extendTerm(cur.course_id) : '';
       const kind = !old ? '加課' : stopped ? '停課' : old.status === '停課' && status !== '停課' ? '復課'
         : old.date !== date || old.start !== start || old.end !== end || old.teacher !== cur.teacher || old.room !== cur.room ? '調課' : (old.note || '') !== cur.note && cur.note ? '備註' : '';
@@ -1311,7 +1327,7 @@ export function createApp(opts = {}) {
       if (!x) throw new Error('找不到場次');
       if (get("SELECT 1 x FROM attendance WHERE session_id=? AND status<>'取消' AND status<>'請假'", b.id)) throw new Error('這堂課已有出席紀錄，不能刪除。若是不上課請改用「停課」');
       const notified = b.notify && x.status !== '停課' ? notifySession('停課', x, { ...x, status: '停課', note: str(b.reason) || '這堂課已取消' }) : 0;
-      run("UPDATE attendance SET status='取消' WHERE session_id=?", b.id); run('DELETE FROM leaves WHERE session_id=?', b.id); run('DELETE FROM makeups WHERE session_id=? OR from_session_id=?', b.id, b.id);
+      refundSession(x, '系統（刪除場次退回）'); run('DELETE FROM leaves WHERE session_id=?', b.id); run('DELETE FROM makeups WHERE session_id=? OR from_session_id=?', b.id, b.id);
       run('DELETE FROM sessions WHERE id=?', b.id);
       if (!String(x.id).startsWith('X')) run('INSERT OR IGNORE INTO session_skips VALUES(?)', x.id); // 固定排課的場次：記下來，避免自動排回來
       const c = get('SELECT * FROM courses WHERE id=?', x.course_id); // 單次課程刪掉最後一堂，課程一起移除
@@ -1470,6 +1486,17 @@ export function createApp(opts = {}) {
     },
     /** 操作紀錄查詢（只有管理員）：可依日期、分類、操作人、關鍵字篩選 */
     /** 推播檢查：確認連到哪個官方帳號、額度、自己是不是好友、家長的 ID 是否有效，並實際發一則測試訊息給自己 */
+    /** 本月 LINE 推播額度（快取 5 分鐘，避免每次開總覽都去問 LINE） */
+    async 'a.pushQuota'(b) {
+      if (!env.LINE_CHANNEL_ACCESS_TOKEN) return { ok: false, text: '尚未設定 LINE 金鑰' };
+      if (quotaCache && Date.now() - quotaCache.at < 5 * 60e3 && !b.fresh) return quotaCache.v;
+      const get1 = async url => { try { const r = await lineFetch(url, { headers: authHdr() }); return r.ok ? await r.json() : null; } catch { return null; } };
+      const q = await get1('https://api.line.me/v2/bot/message/quota'), c = await get1('https://api.line.me/v2/bot/message/quota/consumption');
+      if (!q) return { ok: false, text: '無法取得推播額度' };
+      const limit = q.type === 'limited' ? q.value : null, used = c ? c.totalUsage : null;
+      const v = { ok: true, limit, used, left: limit != null && used != null ? Math.max(0, limit - used) : null, month: today().slice(0, 7) };
+      quotaCache = { at: Date.now(), v }; return v;
+    },
     async 'a.pushCheck'(b, user) {
       const out = { steps: [], recent: pushLog.slice(0, 15), userId: user.userId, liffId: env.LIFF_ID || '', loginChannel: env.LINE_LOGIN_CHANNEL_ID || '' };
       const add = (name, ok, text, hint = '') => out.steps.push({ name, ok, text, hint });

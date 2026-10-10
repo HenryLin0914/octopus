@@ -81,6 +81,7 @@ main{padding:22px 26px 60px;min-width:0}
 .rpi{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0}.rpi span{position:relative}.rpi img{width:96px;height:96px;object-fit:cover;border-radius:8px;border:1px solid var(--line);display:block}
 .rpi button{position:absolute;right:-6px;top:-6px;width:24px;height:24px;border-radius:50%;border:0;background:#231a20;color:#fff;font-size:15px;line-height:1}
 .fam{color:var(--info)}
+.pq{display:inline-block;font-size:13px;padding:5px 11px;border-radius:99px;background:var(--ok2);color:var(--ok);white-space:nowrap}.pq b{font-size:15px}.pq.warn{background:var(--warn2);color:var(--warn)}.pq.bad{background:#fdecec;color:var(--bad)}
 .who{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px}.who .chip{border:1px solid var(--line);background:#fff;color:var(--muted,#777);border-radius:99px;padding:4px 11px;font-size:13px;cursor:pointer;font-family:inherit}.who .chip.on{background:#e8f5ec;border-color:#b9dcc4;color:#256b3c;font-weight:600}
 .fbox{background:#eef5fc;border:1px solid #cfe2f5;border-radius:10px;padding:10px 12px;margin-top:10px}.fbox .row{padding:7px 0;border-color:#cfe2f5}
 .amt{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -366,6 +367,14 @@ function formDialog(title, fields, values, save, { extra = '', saveText = '儲�
   return m;
 }
 
+/** 本月 LINE 推播剩餘則數（總覽右上角、設定的推播檢查） */
+async function fillQuota() {
+  const els = $$('[data-pq]'); if (!els.length) return;
+  let q; try { q = await api('a.pushQuota'); } catch { return; }
+  const html = !q.ok ? `<span class="pq">LINE 推播額度：${esc(q.text)}</span>` : q.limit == null ? '<span class="pq">LINE 推播：不限則數</span>'
+    : `<span class="pq ${q.left <= 0 ? 'bad' : q.left <= q.limit * 0.15 ? 'warn' : ''}" title="LINE 官方帳號本月可主動推播的則數（每月 1 日重置）；回覆訊息不算">本月 LINE 推播剩 <b>${q.left}</b>／${q.limit} 則</span>`;
+  $$('[data-pq]').forEach(e => { e.innerHTML = html; });
+}
 /* ---------- 頁面 ---------- */
 const PAGES = {
   async home() {
@@ -383,7 +392,7 @@ const PAGES = {
       d.lowCount && ['warn', d.lowCount, '位學生堂數不足', 'low'],
       d.expiring.length && ['', d.expiring.length, '張卡 14 天內到期', 'expiring'],
       st.unbound && ['', st.unbound, '位學生還沒綁定家長', 'unbound']].filter(Boolean);
-    return `<div class="head"><h1>${esc(A.meta.name || '')}，您好</h1><span class="s">${dLabel(d.date)}</span></div>
+    return `<div class="head"><h1>${esc(A.meta.name || '')}，您好</h1><span class="s">${dLabel(d.date)}</span><span class="sp"></span><span data-pq></span></div>
     <div class="card todo"><h2>待處理${todo.length ? `<span class="tag ${todo.some(t => t[0] === 'bad') ? 'bad' : 'warn'}">${todo.length} 項</span>` : ''}</h2>
       ${todo.length ? `<div class="tdl">${todo.map(t => `<button class="${t[0]}" data-jump="${t[3]}"><b>${t[1]}</b><span>${t[2]}</span><i>›</i></button>`).join('')}</div>` : '<div class="s" style="padding:4px 0 2px">目前沒有需要處理的事項 👍</div>'}</div>
     <div class="grid stats" style="margin:14px 0">
@@ -647,7 +656,7 @@ const PAGES = {
           <div class="acts"><button class="btn sm p" data-copy="msg">複製邀請訊息</button><button class="btn sm" data-copy="url">只複製網址</button></div></div>
         <p class="s" style="margin-bottom:0">老師只能看課表、點名與出席；儲值、帳務、影片與設定只有管理員能用。</p></div>
       ${A.meta.role === 'owner' ? `<div class="card"><h2>操作紀錄</h2><p class="s" style="margin-top:0">查看每個人在平台上做過什麼：點名扣堂、儲值、調整上課卡、刪除資料、設定變更等。扣錯堂或誤刪資料時可以回頭查。</p><a class="btn p" href="#audit" style="text-decoration:none;display:inline-block">查看操作紀錄</a></div>` : ''}
-      ${A.meta.role === 'owner' ? `<div class="card"><h2>LINE 推播檢查</h2><p class="s" style="margin-top:0">家長或管理員收不到通知時用：檢查連到哪個官方帳號、本月額度、您和家長的帳號是否收得到，並發一則測試訊息到您的 LINE。</p><button class="btn p" data-pushcheck>開始檢查並發送測試訊息</button></div>` : ''}
+      ${A.meta.role === 'owner' ? `<div class="card"><h2>LINE 推播檢查</h2><div data-pq style="margin-bottom:8px"></div><p class="s" style="margin-top:0">家長或管理員收不到通知時用：檢查連到哪個官方帳號、本月額度、您和家長的帳號是否收得到，並發一則測試訊息到您的 LINE。</p><button class="btn p" data-pushcheck>開始檢查並發送測試訊息</button></div>` : ''}
       <div class="card"><h2>LINE 圖文選單與自動回覆</h2><p class="s" style="margin-top:0">聊天室下方的選單：可以有多頁（上一頁／下一頁）、自訂每一格按下去要開連結、開系統功能，或回覆文字、圖片、檔案。</p><a class="btn p" href="#menu" style="display:inline-block;text-decoration:none">管理圖文選單</a></div>
       <div class="card"><h2>匯出資料（CSV，可用 Excel 開啟）</h2><div class="acts">${[['students', '學生'], ['attendance', '出席紀錄'], ['topups', '儲值紀錄'], ['cards', '上課卡'], ['sessions', '課表'], ['leaves', '請假']].map(x => `<button class="btn sm" data-export="${x[0]}">${x[1]}</button>`).join('')}</div>
         <p class="s" style="margin-bottom:0">資料庫每天自動備份，保留最近 14 天。</p></div>
@@ -709,7 +718,7 @@ async function openSession(id) {
     try {
       if (b.dataset.mk) { const r = await api('a.mark', { sessionId: id, studentId: b.dataset.id, status: b.dataset.mk }); const who = (d.list.find(k => k.id === b.dataset.id) || {}).name || ''; toast(b.dataset.mk === '取消' ? who + ' 已清除點名，堂數已退回' : who + ' ' + b.dataset.mk + (r.deduct ? '，扣 ' + r.deduct + ' 堂' : '，不扣堂') + (r.note ? '（' + r.note + '）' : '')); d.open = ''; await refresh(); }
       if (b.dataset.more) { d.open = d.open === b.dataset.more ? '' : b.dataset.more; $('.bd', m).innerHTML = body(); return; }
-      if (b.dataset.rm) { const x = d.list.find(k => k.id === b.dataset.rm); if (x.status) await api('a.mark', { sessionId: id, studentId: x.id, status: '取消' }); d.open = ''; toast('已從這堂移除 ' + x.name + (x.deduct ? '，退回 ' + x.deduct + ' 堂' : '')); await refresh(); return; }
+      if (b.dataset.rm) { const x = d.list.find(k => k.id === b.dataset.rm); await api('a.mark', { sessionId: id, studentId: x.id, status: '取消', remove: true }); d.open = ''; toast('已從這堂移除 ' + x.name + (x.deduct ? '，退回 ' + x.deduct + ' 堂' : '')); await refresh(); return; }
       if (b.dataset.unfix) { if (!confirm('把 ' + b.dataset.name + ' 移出「' + i.course + '」的固定名單？\n之後每一堂都不會再出現他；已經點過的紀錄不會刪除。')) return; const cur = (await api('a.courseStudents', { courseId: i.courseId })).ids; await api('a.courseStudents', { courseId: i.courseId, studentIds: cur.filter(k => k !== b.dataset.unfix) }); d.open = ''; toast('已移出固定名單'); await refresh(); return; }
       if (b.dataset.swap) { const x = d.list.find(k => k.id === b.dataset.swap);
         formDialog((x.card ? '改扣哪一張卡｜' : '補扣堂｜') + x.name, [{ k: 'cardId', label: '適用「' + i.course + '」的上課卡', type: 'select', opts: [...(!x.cardId || x.cards.some(k => k.id === x.cardId) ? [] : [[x.cardId, x.card + '（目前）']]), ...x.cards.map(k => [k.id, `${k.label}｜剩 ${k.remain} 堂${k.id === x.cardId ? '（目前）' : ''}`])] }], { cardId: x.cardId || (x.cards[0] || {}).id },
@@ -1325,7 +1334,7 @@ async function show(page) {
   if (A.page === 'leaves') { A.page = 'attend'; A.att.tab = 'leave'; }
   if (!PAGES[A.page] || (((NAV.find(n => n[0] === A.page) || [])[2] || A.page === 'menu' || A.page === 'audit') && !owner())) A.page = 'home';
   $$('#side a').forEach(a => a.classList.toggle('on', a.dataset.p === (A.page === 'menu' || A.page === 'audit' ? 'settings' : A.page)));
-  try { $('#app').innerHTML = await PAGES[A.page](); if (A.page === 'menu') drawMenuPreviews(); } catch (e) { $('#app').innerHTML = `<div class="card empty">⚠️ ${esc(e.message)}</div>`; }
+  try { $('#app').innerHTML = await PAGES[A.page](); if (A.page === 'menu') drawMenuPreviews(); fillQuota(); } catch (e) { $('#app').innerHTML = `<div class="card empty">⚠️ ${esc(e.message)}</div>`; }
 }
 window.addEventListener('hashchange', () => { $$('.mask').forEach(m => m.remove()); show(location.hash.slice(1) || 'home'); });
 let rs; window.addEventListener('resize', () => { clearTimeout(rs); rs = setTimeout(() => { if (A.page === 'schedule' && !$('.mask')) show(); }, 300); });
