@@ -81,6 +81,8 @@ main{padding:22px 26px 60px;min-width:0}
 .rpi{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0}.rpi span{position:relative}.rpi img{width:96px;height:96px;object-fit:cover;border-radius:8px;border:1px solid var(--line);display:block}
 .rpi button{position:absolute;right:-6px;top:-6px;width:24px;height:24px;border-radius:50%;border:0;background:#231a20;color:#fff;font-size:15px;line-height:1}
 .fam{color:var(--info)}
+.pu-tip{display:flex;gap:12px;align-items:center;background:#fff8ec;border:1px solid #ffd8a8;border-radius:12px;padding:12px 14px;margin-bottom:12px;color:#7a4a00}.pu-tip.bad{background:#fdecec;border-color:#f5c2c2;color:#8a1c1c}.pu-tip .g{flex:1;min-width:0}.pu-tip .s{color:inherit;opacity:.85;margin-top:2px}
+.pu-adv{background:#fff8ec;border:1px solid #ffd8a8;border-radius:12px;padding:12px 14px;margin-top:12px}.pu-adv>.t{font-weight:800;color:#8a4b00;margin-bottom:6px}.pu-adv-r{display:flex;gap:10px;align-items:center;padding:8px 0;border-top:1px dashed #ffd8a8}.pu-adv-r .no{width:22px;height:22px;border-radius:50%;background:#e67700;color:#fff;font-size:12px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex:none}.pu-adv-r .g{flex:1;min-width:0}
 .pu-q{background:var(--ok2);border-radius:12px;padding:12px 14px}.pu-q b{font-size:24px}.pu-q.warn{background:var(--warn2)}.pu-q.bad{background:#fdecec}
 .pu-bar{height:8px;background:rgba(0,0,0,.07);border-radius:9px;overflow:hidden;margin:7px 0}.pu-bar i{display:block;height:100%;background:var(--brand);border-radius:9px}.pu-bar.sm{height:6px;margin:0}.pu-bar.gray i{background:#adb5bd}
 table.pu{width:100%;border-collapse:collapse}table.pu td,table.pu th{padding:8px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle;font-size:14px}table.pu .n{text-align:right;white-space:nowrap}
@@ -385,25 +387,52 @@ async function fillQuota(fresh) {
     : q.used == null ? `<span class="pq warn">本月 LINE 推播上限 ${q.limit} 則（LINE 暫時查不到已用則數）</span>`
     : `<button class="pq ${q.left <= 0 ? 'bad' : q.left <= q.limit * 0.15 ? 'warn' : ''}" data-pqr title="${esc(q.bot ? '官方帳號：' + q.bot + ' ' + q.botId + '｜' : '')}數字是用這個官方帳號的 Messaging API 向 LINE 查詢的（和 LINE Official Account Manager 同一個來源），LINE 端統計可能延遲幾分鐘。每一位收件人算 1 則；官方帳號後台自己發的群發訊息也算在內；回覆訊息不算。點一下看各類推播用了多少、哪些可以關掉。">${q.botId ? esc(q.botId) + '｜' : ''}本月推播已用 ${q.used}・剩 <b>${q.left}</b>／${q.limit} 則<small>　${esc(q.at || '')} 更新 ↻</small></button>`;
   $$('[data-pq]').forEach(e => { e.innerHTML = html; });
+  // 額度快用完：在總覽最上面提示，建議關閉可省略的推播
+  const tight = q.ok && q.limit != null && q.used != null && q.left <= q.limit * .25, slot = $('[data-pqtip]');
+  if (slot) slot.innerHTML = tight ? `<div class="pu-tip ${q.left <= 0 ? 'bad' : ''}"><div class="g"><b>${q.left <= 0 ? 'LINE 本月推播額度已用完' : 'LINE 本月推播只剩 ' + q.left + ' 則'}</b><div class="s">${q.left <= 0 ? '報到、停課等通知這個月都發不出去了。' : '用完後報到、停課等通知就發不出去。'}建議先關閉報到通知、請假確認、儲值通知等可省略的推播（家長仍可在 LINE 選單查到），把額度留給停課、調課。</div></div><button class="btn sm p" data-pqr>看建議並關閉</button></div>` : '';
 }
+/** 額度不夠時的建議：數字越小越建議先關；keep＝建議保留。why＝關掉後家長／管理員還能從哪裡得知 */
+const PUSH_ADVICE = {
+  '報到通知': [1, '用量通常最大（每次出席 × 每位綁定的家長）。關掉後家長仍可在 LINE 選單「出席紀錄」查到，扣堂照常。'],
+  '請假確認（家長）': [2, '家長送出請假時畫面就會顯示成功，「請假」頁也查得到，這則通知是重複的。'],
+  '儲值通知': [3, '儲值多半在櫃檯當面完成，家長可在「上課卡」頁看到最新堂數。'],
+  '租借通知（管理員）': [4, '待確認的租借會出現在後台總覽的「待處理」。'],
+  '報名申請（管理員）': [5, '新的報名申請會出現在後台總覽的「待處理」。'],
+  '請假通知（管理員）': [6, '請假會顯示在總覽「今日請假」與點名單上。'],
+  '家長諮詢（管理員）': [7, '家長的留言仍在 LINE 官方帳號後台的聊天室，只是不會另外推播提醒你。'],
+  '堂數不足提醒': [8, '有助於提醒家長續儲值；可改成點名時口頭提醒，家長也能在「上課卡」頁看到。'],
+  '報名結果（家長）': ['keep', '家長需要知道報名有沒有成功，建議保留。'],
+  '租借通知（租借人）': ['keep', '租借人需要知道預約是否確認，建議保留。'],
+  '課程異動通知': ['keep', '停課、調課最需要即時通知，建議保留；不重要的老師備註可不勾「通知家長」。'],
+  '補課通知': ['keep', '補課時間家長需要知道；也可以當面告知後不勾「通知家長」。'],
+  '新影片通知': [9, '每次上傳時可不勾「通知家長」，家長在「影片」頁仍看得到。'],
+  '推播測試': ['', '只有在「LINE 推播檢查」按測試時才會發。'] };
 /** 推播用量：LINE 本月額度＋本系統各類推播用了幾則，可直接開關 */
 async function pushUsage(month) {
   const [q, d] = await Promise.all([api('a.pushQuota', { fresh: true }).catch(() => ({ ok: false })), api('a.pushStats', { month: month || '' })]);
   const thisMonth = d.month === A.meta.today.slice(0, 7), max = Math.max(1, ...d.list.map(x => x.n));
   const other = thisMonth && q.ok && q.used != null ? Math.max(0, q.used - d.total) : 0;
   const top = d.list.filter(x => x.n).sort((a, b) => b.n - a.n)[0];
+  const tight = thisMonth && q.ok && q.limit != null && q.used != null && q.left <= q.limit * .25;
+  const sug = d.list.filter(x => x.key && x.on && typeof (PUSH_ADVICE[x.name] || [])[0] === 'number').sort((a, b) => PUSH_ADVICE[a.name][0] - PUSH_ADVICE[b.name][0]);
+  const advice = tight && sug.length ? `<div class="pu-adv"><div class="t">${q.left <= 0 ? '額度已用完' : '額度快用完了（剩 ' + q.left + ' 則）'}：建議先關閉這些推播</div>
+    ${sug.map((x, i) => `<div class="pu-adv-r"><span class="no">${i + 1}</span><div class="g"><b>${esc(x.name)}</b>${x.n ? `<span class="s">　本月 ${x.n} 則</span>` : ''}<div class="s">${esc(PUSH_ADVICE[x.name][1])}</div></div><button class="btn sm" data-putg="${esc(x.key)}" data-v="否">關閉</button></div>`).join('')}
+    <div class="acts" style="margin-top:8px"><button class="btn p sm" data-puoff="${esc(sug.map(x => x.key).filter((k, i, a) => a.indexOf(k) === i).join(','))}">一次關閉以上 ${sug.length} 項</button><span class="s">需要時隨時可以再打開；下個月 1 日額度重置後也記得開回來。</span></div></div>`
+    : tight ? '<div class="pu-adv"><div class="t">可以關的推播都已經關了</div><div class="s">剩下的是建議保留的通知。發停課、補課、影片時，不重要的就不要勾「通知家長」。</div></div>' : '';
   const body = `${thisMonth && q.ok && q.limit != null ? `<div class="pu-q ${q.left <= 0 ? 'bad' : q.left <= q.limit * .15 ? 'warn' : ''}"><div><b>${q.used ?? '?'}</b>／${q.limit} 則<span class="s">　LINE 本月已用${q.botId ? '（' + esc(q.botId) + '）' : ''}</span></div><div class="pu-bar"><i style="width:${Math.min(100, (q.used || 0) / q.limit * 100)}%"></i></div><div class="s">剩 ${q.left ?? '?'} 則，每月 1 日重置。${q.left <= 0 ? '<b style="color:var(--bad)">額度已用完，主動推播會被 LINE 擋下。</b>' : ''}</div></div>` : ''}
-    <div class="acts" style="margin:10px 0;align-items:center"><span class="s">月份</span><select data-pum style="width:auto">${[...new Set([A.meta.today.slice(0, 7), ...d.months])].map(m => `<option ${m === d.month ? 'selected' : ''}>${m}</option>`).join('')}</select></div>
-    <table class="pu"><thead><tr><th>推播類別</th><th class="n">則數</th><th style="width:30%"></th><th>開關</th></tr></thead><tbody>${d.list.map(x => `<tr><td><b>${esc(x.name)}</b>${x.desc ? `<div class="s">${esc(x.desc)}</div>` : ''}${x.failed ? `<div class="s" style="color:var(--bad)">${x.failed} 次發送失敗</div>` : ''}</td><td class="n"><b>${x.n}</b></td><td><div class="pu-bar sm"><i style="width:${x.n / max * 100}%"></i></div></td>
+    ${advice}<div class="acts" style="margin:10px 0;align-items:center"><span class="s">月份</span><select data-pum style="width:auto">${[...new Set([A.meta.today.slice(0, 7), ...d.months])].map(m => `<option ${m === d.month ? 'selected' : ''}>${m}</option>`).join('')}</select></div>
+    <table class="pu"><thead><tr><th>推播類別</th><th class="n">則數</th><th style="width:30%"></th><th>開關</th></tr></thead><tbody>${d.list.map(x => `<tr><td><b>${esc(x.name)}</b>${(PUSH_ADVICE[x.name] || [])[0] === 'keep' ? ' <span class="tag ok">建議保留</span>' : typeof (PUSH_ADVICE[x.name] || [])[0] === 'number' && PUSH_ADVICE[x.name][0] <= 3 ? ' <span class="tag warn">額度不足時可先關</span>' : ''}<div class="s">${esc(x.name === '推播測試' ? PUSH_ADVICE[x.name][1] : x.desc || '')}</div>${x.failed ? `<div class="s" style="color:var(--bad)">${x.failed} 次發送失敗</div>` : ''}</td><td class="n"><b>${x.n}</b></td><td><div class="pu-bar sm"><i style="width:${x.n / max * 100}%"></i></div></td>
       <td>${x.key ? `<button class="tgl ${x.on ? 'on' : ''}" data-putg="${esc(x.key)}" data-v="${x.on ? '否' : '是'}" aria-pressed="${x.on}">${x.on ? '開' : '關'}</button>` : '<span class="s">發送時勾選</span>'}</td></tr>`).join('')}
       ${other ? `<tr><td><b>本系統以外／統計開始前</b><div class="s">官方帳號後台自己發的群發訊息，或 ${esc((d.since || '').slice(0, 10))} 開始統計之前發的</div></td><td class="n"><b>${other}</b></td><td><div class="pu-bar sm gray"><i style="width:${Math.min(100, other / Math.max(max, other) * 100)}%"></i></div></td><td></td></tr>` : ''}</tbody></table>
-    <div class="note" style="margin-top:12px">${top ? `這個月用最多的是「<b>${esc(top.name)}</b>」（${top.n} 則）。` : ''}每一位收件人算 1 則：同一則通知發給爸爸、媽媽兩位就是 2 則。回覆訊息（家長點選單後收到的內容）不算。<br>建議保留：課程異動（停課、調課）、請假確認；額度緊時優先關閉：報到通知、儲值通知。</div>
+    <div class="note" style="margin-top:12px">${top ? `這個月用最多的是「<b>${esc(top.name)}</b>」（${top.n} 則）。` : ''}每一位收件人算 1 則：同一則通知發給爸爸、媽媽兩位就是 2 則。回覆訊息（家長點選單後收到的內容）不算。<br>建議保留：課程異動（停課、調課）、報名結果、租借確認；額度緊時優先關閉：報到通知、請假確認、儲值通知（關掉後家長仍可在 LINE 選單裡查到）。</div>
     ${d.recent.length ? `<details style="margin-top:10px"><summary class="s">最近 ${d.recent.length} 次發送</summary>${d.recent.map(r => `<div class="s" style="display:flex;gap:8px;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--line)"><span>${esc(r.time.slice(5, 16))}　${esc(r.cat)}　${esc(r.alt)}</span><b style="color:${r.ok ? 'var(--ink)' : 'var(--bad)'};white-space:nowrap">${r.ok ? r.recipients + ' 則' : '失敗'}</b></div>`).join('')}</details>` : ''}
     <p class="s">統計從 ${esc((d.since || A.meta.today).slice(0, 10))} 開始記錄。</p>`;
   $$('.mask[data-pu]').forEach(x => x.remove());
   const m = dialog('LINE 推播用量', body, { wide: true }); m.dataset.pu = '1';
   m.addEventListener('change', e => { if (e.target.matches('[data-pum]')) pushUsage(e.target.value); });
-  m.addEventListener('click', async e => { const b = e.target.closest('[data-putg]'); if (!b) return; b.disabled = true;
+  m.addEventListener('click', async e => { const off = e.target.closest('[data-puoff]');
+    if (off) { off.disabled = true; try { for (const k of off.dataset.puoff.split(',')) await api('a.settingSave', { key: k, value: '否' }); toast('已關閉 ' + off.dataset.puoff.split(',').length + ' 項推播'); pushUsage(d.month); } catch (err) { toast(err.message, true); off.disabled = false; } return; }
+    const b = e.target.closest('[data-putg]'); if (!b) return; b.disabled = true;
     try { await api('a.settingSave', { key: b.dataset.putg, value: b.dataset.v }); toast((b.dataset.v === '是' ? '已開啟：' : '已關閉：') + b.dataset.putg); pushUsage(d.month); } catch (err) { toast(err.message, true); b.disabled = false; } });
   fillQuota();
 }
@@ -424,7 +453,7 @@ const PAGES = {
       d.lowCount && ['warn', d.lowCount, '位學生堂數不足', 'low'],
       d.expiring.length && ['', d.expiring.length, '張卡 14 天內到期', 'expiring'],
       st.unbound && ['', st.unbound, '位學生還沒綁定家長', 'unbound']].filter(Boolean);
-    return `<div class="head"><h1>${esc(A.meta.name || '')}，您好</h1><span class="s">${dLabel(d.date)}</span><span class="sp"></span>${owner() ? '<span data-pq></span>' : ''}</div>
+    return `<div class="head"><h1>${esc(A.meta.name || '')}，您好</h1><span class="s">${dLabel(d.date)}</span><span class="sp"></span>${owner() ? '<span data-pq></span>' : ''}</div>${owner() ? '<div data-pqtip></div>' : ''}
     <div class="card todo"><h2>待處理${todo.length ? `<span class="tag ${todo.some(t => t[0] === 'bad') ? 'bad' : 'warn'}">${todo.length} 項</span>` : ''}</h2>
       ${todo.length ? `<div class="tdl">${todo.map(t => `<button class="${t[0]}" data-jump="${t[3]}"><b>${t[1]}</b><span>${t[2]}</span><i>›</i></button>`).join('')}</div>` : '<div class="s" style="padding:4px 0 2px">目前沒有需要處理的事項 👍</div>'}</div>
     <div class="grid stats" style="margin:14px 0">
