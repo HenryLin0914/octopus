@@ -60,6 +60,8 @@ const SETTINGS = {
   '請假推播': ['是', '家長線上請假後，回覆「已收到請假」', 'bool'],
   '請假通知管理員': ['是', '家長線上請假後通知管理員與老師', 'bool'],
   '諮詢通知管理員': ['是', '家長從課表按「諮詢」留言時，用 LINE 通知管理員', 'bool'],
+  '報名推播': ['是', '線上報名：通知管理員有新申請、通知家長審核結果', 'bool'],
+  '租借推播': ['是', '教室租借：通知管理員有新預約／取消、通知租借人確認結果', 'bool'],
   '開放線上報名': ['是', '家長可在 LINE 課表對還沒參加的課程按「報名」', 'bool'],
   '報名需審核': ['是', '是＝管理員同意後才加入名單；否＝家長按下就直接加入', 'bool'],
   '開放教室租借': ['是', '外部使用者可在 LINE 預約開放的教室時段', 'bool'],
@@ -72,7 +74,7 @@ const SETTINGS = {
 const PLANS = [['P01', '單堂', 1, 500, 30], ['P02', '10堂卡', 10, 4500, 90], ['P03', '20堂卡', 20, 8000, 180]];
 const COLORS = ['#D6336C', '#1971C2', '#2B8A3E', '#E67700', '#7048E8', '#0C8599', '#C2255C', '#5C940D'];
 
-const OWNER_ONLY = new Set(['a.studentRemove', 'a.studentRemoveInfo', 'a.pushQuota', 'a.studentSave', 'a.enroll', 'a.unbind', 'a.topup', 'a.cardSave', 'a.familyShare', 'a.cardShare', 'a.courseSave', 'a.sessionSave', 'a.sessionDelete', 'a.genSessions',
+const OWNER_ONLY = new Set(['a.pushStats', 'a.studentRemove', 'a.studentRemoveInfo', 'a.pushQuota', 'a.studentSave', 'a.enroll', 'a.unbind', 'a.topup', 'a.cardSave', 'a.familyShare', 'a.cardShare', 'a.courseSave', 'a.sessionSave', 'a.sessionDelete', 'a.genSessions',
   'a.videoSave', 'a.videoDelete', 'a.planSave', 'a.settingSave', 'a.adminSave', 'a.export', 'a.student', 'a.videos', 'a.plans', 'a.settings', 'a.admins', 'a.cards', 'a.cardLog', 'a.ledger', 'a.topupSave', 'a.videoInfo', 'a.dayOff', 'a.familySave', 'a.courseDelete', 'a.courseStudents', 'a.signupSave', 'a.rent', 'a.roomSave', 'a.roomDelete', 'a.rentBlockSave', 'a.rentBlockDelete', 'a.rentTagSave', 'a.rentTagDelete', 'a.bookingSave', 'a.rentSlots', 'a.roomCal', 'a.roomHours', 'a.ruleSave', 'a.ruleDelete', 'a.upload', 'a.menu', 'a.menuPageSave', 'a.menuTheme', 'a.resetInfo', 'a.resetData', 'a.audit', 'a.pushCheck', 'a.teacherSave', 'a.teacherDelete', 'a.attCard', 'a.menuPageDelete', 'a.menuPageMove', 'a.replySave', 'a.replyDelete', 'a.menuPublish', 'a.menuUnpublish']);
 const ASYNC = new Set(['a.studentRemove', 'a.syncAvatars', 'a.pushQuota', 'a.pushCheck', 'a.resetData', 'a.menuPublish', 'a.menuUnpublish', 'a.videoInfo']);
 /** 從各種 YouTube 網址取出影片 ID（watch、youtu.be、shorts、live、embed） */
@@ -91,6 +93,7 @@ export function createApp(opts = {}) {
     if (!cols.includes('date_to')) db.exec("ALTER TABLE courses ADD COLUMN date_to TEXT DEFAULT ''");
     if (!db.prepare('PRAGMA table_info(students)').all().some(c => c.name === 'family')) db.exec("ALTER TABLE students ADD COLUMN family TEXT DEFAULT ''");
     if (!cols.includes('intro')) db.exec("ALTER TABLE courses ADD COLUMN intro TEXT DEFAULT ''");
+    db.exec("CREATE TABLE IF NOT EXISTS push_stats(id INTEGER PRIMARY KEY AUTOINCREMENT, time TEXT, cat TEXT, recipients INTEGER, ok INTEGER, alt TEXT DEFAULT '')"); // 推播用量統計
     db.exec("CREATE TABLE IF NOT EXISTS profiles(user_id TEXT PRIMARY KEY, name TEXT DEFAULT '', picture TEXT DEFAULT '', updated TEXT DEFAULT '')"); // LINE 頭像
     // 方案與上課卡的適用課程：'' ＝全部課程通用；否則是逗號分隔的課程 ID
     for (const t of ['plans', 'cards']) if (!db.prepare('PRAGMA table_info(' + t + ')').all().some(c => c.name === 'courses')) db.exec('ALTER TABLE ' + t + " ADD COLUMN courses TEXT DEFAULT ''");
@@ -142,10 +145,17 @@ export function createApp(opts = {}) {
       const r = await lineFetch('https://api.line.me/v2/bot/message/' + pathname, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHdr() }, body: JSON.stringify(payload) });
       let err = '';
       if (!r.ok) { err = (await r.text()).slice(0, 300); console.error('LINE', pathname, r.status, err); }
-      pushLog.unshift({ time: now(), kind: pathname, to: Array.isArray(payload.to) ? payload.to.length : 1, status: r.status || (r.ok ? 200 : 0), ok: !!r.ok, error: err, alt: ((payload.messages || [])[0] || {}).altText || ((payload.messages || [])[0] || {}).text || '' });
+      const alt = ((payload.messages || [])[0] || {}).altText || ((payload.messages || [])[0] || {}).text || '', n = Array.isArray(payload.to) ? payload.to.length : 1;
+      pushLog.unshift({ time: now(), kind: pathname, to: n, status: r.status || (r.ok ? 200 : 0), ok: !!r.ok, error: err, alt });
+      try { run('INSERT INTO push_stats(time,cat,recipients,ok,alt) VALUES(?,?,?,?,?)', now(), catOf(alt), n * (payload.messages || [1]).length, r.ok ? 1 : 0, alt.slice(0, 80)); } catch { /* 統計失敗不影響發送 */ }
     } catch (e) { console.error('LINE', pathname, e.message); pushLog.unshift({ time: now(), kind: pathname, to: 0, status: 0, ok: false, error: '連不上 LINE：' + e.message, alt: '' }); }
     pushLog.length = Math.min(pushLog.length, 40);
   }
+  /** 推播類別（依訊息標題判斷），用來統計每一類用掉多少則 */
+  const PUSH_CATS = [[/已報到/, '報到通知', '報到推播'], [/^🔔/, '堂數不足提醒', '低堂數推播'], [/^📝 已收到/, '請假確認（家長）', '請假推播'], [/^📝 請假通知/, '請假通知（管理員）', '請假通知管理員'],
+    [/^🎫/, '儲值通知', '儲值推播'], [/^💬 家長諮詢/, '家長諮詢（管理員）', '諮詢通知管理員'], [/^📝 線上報名/, '報名申請（管理員）', '報名推播'], [/報名成功|^報名結果/, '報名結果（家長）', '報名推播'],
+    [/^🏠 (教室租借|租借取消)/, '租借通知（管理員）', '租借推播'], [/^🏠/, '租借通知（租借人）', '租借推播'], [/停課通知|調課通知|加課通知|恢復上課|老師的話/, '課程異動通知', ''], [/^📌/, '補課通知', ''], [/^🎬/, '新影片通知', ''], [/推播測試/, '推播測試', '']];
+  const catOf = alt => (PUSH_CATS.find(c => c[0].test(alt || '')) || [0, '其他'])[1];
   const pushLog = []; // 最近 40 次發送結果（重啟後清空），給「推播檢查」看
   let outbox = [];
   const pushMsg = (userIds, message) => { const to = [...new Set(userIds.filter(Boolean))]; for (let i = 0; i < to.length; i += 500) outbox.push({ to: to.slice(i, i + 500), messages: [message] }); };
@@ -437,7 +447,7 @@ export function createApp(opts = {}) {
   function notifyRenter(b, title, color, note) {
     if (!b.user_id) return 0;
     const v = bookingView(b);
-    pushMsg([b.user_id], flexMsg('🏠 ' + title + '｜' + v.room + ' ' + whenOf(b), [flexBubble({ color, title, name: v.room, rows: [['時間', whenOf(b)], ['預約人', b.name], ['人數', b.people ? b.people + ' 人' : ''], ['費用', b.amount ? b.amount + ' 元' : '']], note, noteColor: C.INK, btn: ['查看我的預約', 'rent'] })]));
+    if (cfgOn('租借推播')) pushMsg([b.user_id], flexMsg('🏠 ' + title + '｜' + v.room + ' ' + whenOf(b), [flexBubble({ color, title, name: v.room, rows: [['時間', whenOf(b)], ['預約人', b.name], ['人數', b.people ? b.people + ' 人' : ''], ['費用', b.amount ? b.amount + ' 元' : '']], note, noteColor: C.INK, btn: ['查看我的預約', 'rent'] })]));
     return 1;
   }
 
@@ -714,7 +724,7 @@ export function createApp(opts = {}) {
       run('INSERT INTO signups(id,student_id,course_id,status,time,by_user,by_name) VALUES(?,?,?,?,?,?,?)', id, stu.id, c.id, review ? '待審核' : '已加入', now(), user.userId, user.name);
       if (!review) run('INSERT INTO enrollments VALUES(?,?,?)', stu.id, c.id, today());
       const when = c.weekdays === '' ? (c.date_from || '').slice(5).replace('-', '/') + ' ' + c.start : '每週' + courseDays(c).map(d => '日一二三四五六'[d]).join('、') + ' ' + c.start + '–' + c.end;
-      pushMsg(all("SELECT user_id FROM admins WHERE active=1 AND role='owner'").map(r => r.user_id), flexMsg('📝 線上報名｜' + stu.name + ' → ' + c.name, [flexBubble({ color: C.INFO, title: review ? '報名申請' : '新報名', name: stu.name,
+      if (cfgOn('報名推播')) pushMsg(all("SELECT user_id FROM admins WHERE active=1 AND role='owner'").map(r => r.user_id), flexMsg('📝 線上報名｜' + stu.name + ' → ' + c.name, [flexBubble({ color: C.INFO, title: review ? '報名申請' : '新報名', name: stu.name,
         rows: [['課程', c.name], ['時間', when], ['申請人', user.name], ['剩餘堂數', totalRemain(stu.id) + ' 堂']], note: review ? '請到後台「總覽 → 報名申請」同意或婉拒。' : '已自動加入這門課的學生名單。', noteColor: C.SUB })]));
       return { status: review ? '待審核' : '已加入' };
     },
@@ -760,7 +770,7 @@ export function createApp(opts = {}) {
       const review = cfgOn('租借需確認'), id = uid('B'), amount = Math.round(room.price * (tm(end) - tm(start)) / 60);
       run('INSERT INTO bookings(id,room_id,date,start,end,user_id,line_name,name,phone,purpose,people,status,amount,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)', id, room.id, date, start, end, user.userId, user.name, name, phone, str(b.purpose, 200), Math.max(0, Math.floor(Number(b.people)) || 0), review ? '待確認' : '已確認', amount, now());
       const bk = get('SELECT * FROM bookings WHERE id=?', id);
-      pushMsg(all("SELECT user_id FROM admins WHERE active=1 AND role='owner'").map(r => r.user_id), flexMsg('🏠 教室租借' + (review ? '申請' : '') + '｜' + room.name + ' ' + whenOf(bk), [flexBubble({ color: C.INFO, title: review ? '教室租借申請' : '新的教室預約', name: room.name,
+      if (cfgOn('租借推播')) pushMsg(all("SELECT user_id FROM admins WHERE active=1 AND role='owner'").map(r => r.user_id), flexMsg('🏠 教室租借' + (review ? '申請' : '') + '｜' + room.name + ' ' + whenOf(bk), [flexBubble({ color: C.INFO, title: review ? '教室租借申請' : '新的教室預約', name: room.name,
         rows: [['時間', whenOf(bk)], ['預約人', name + '（' + phone + '）'], ['人數', bk.people ? bk.people + ' 人' : ''], ['用途', bk.purpose], ['費用', amount ? amount + ' 元' : '']], note: review ? '請到後台「租借」確認或婉拒。' : '已自動成立。', noteColor: C.SUB })]));
       if (!review) notifyRenter(bk, '預約成功', C.OK, cfg('租借須知', ''));
       return { id, status: bk.status, amount };
@@ -770,7 +780,7 @@ export function createApp(opts = {}) {
       if (!bk || !['待確認', '已確認'].includes(bk.status)) throw new Error('這筆預約無法取消');
       if (toDate(bk.date, bk.start).getTime() < Date.now()) throw new Error('已經過了使用時間');
       run("UPDATE bookings SET status='已取消', decided_at=?, decided_by=? WHERE id=?", now(), '預約人取消', bk.id);
-      pushMsg(all("SELECT user_id FROM admins WHERE active=1 AND role='owner'").map(r => r.user_id), flexMsg('🏠 租借取消｜' + bookingView(bk).room + ' ' + whenOf(bk), [flexBubble({ color: C.SUB, title: '預約人取消租借', name: bookingView(bk).room, rows: [['時間', whenOf(bk)], ['預約人', bk.name + '（' + bk.phone + '）']] })]));
+      if (cfgOn('租借推播')) pushMsg(all("SELECT user_id FROM admins WHERE active=1 AND role='owner'").map(r => r.user_id), flexMsg('🏠 租借取消｜' + bookingView(bk).room + ' ' + whenOf(bk), [flexBubble({ color: C.SUB, title: '預約人取消租借', name: bookingView(bk).room, rows: [['時間', whenOf(bk)], ['預約人', bk.name + '（' + bk.phone + '）']] })]));
       return { ok: true };
     },
     leaves(b, user) {
@@ -1057,7 +1067,7 @@ export function createApp(opts = {}) {
       const stu = student(g.student_id), c = get('SELECT * FROM courses WHERE id=?', g.course_id);
       run('UPDATE signups SET status=?, done_at=?, done_by=? WHERE id=?', b.approve ? '已加入' : '已婉拒', now(), user.admin.name || user.name, g.id);
       if (b.approve && stu && c) run('INSERT OR IGNORE INTO enrollments VALUES(?,?,?)', stu.id, c.id, today());
-      if (stu && c) pushMsg(parentsOf(stu.id), flexMsg((b.approve ? '✅ 報名成功｜' : '報名結果｜') + stu.name + ' ' + c.name, [flexBubble({ color: b.approve ? C.OK : C.SUB, title: b.approve ? '報名成功' : '報名未成功', name: stu.name,
+      if (stu && c && cfgOn('報名推播')) pushMsg(parentsOf(stu.id), flexMsg((b.approve ? '✅ 報名成功｜' : '報名結果｜') + stu.name + ' ' + c.name, [flexBubble({ color: b.approve ? C.OK : C.SUB, title: b.approve ? '報名成功' : '報名未成功', name: stu.name,
         rows: [['課程', c.name], ['老師', c.teacher]], note: b.approve ? '已加入課程名單，可在課表查看上課時間與請假。' : (str(b.reason) || '這次沒有辦法安排，詳情請按課表上的「諮詢」聯絡我們。'), noteColor: C.INK, btn: ['查看課表', 'schedule'] })]));
       return { ok: true };
     },
@@ -1528,6 +1538,18 @@ export function createApp(opts = {}) {
     },
     /** 操作紀錄查詢（只有管理員）：可依日期、分類、操作人、關鍵字篩選 */
     /** 推播檢查：確認連到哪個官方帳號、額度、自己是不是好友、家長的 ID 是否有效，並實際發一則測試訊息給自己 */
+    /** 推播用量：本月（或指定月份）每一類用了幾則，以及對應的開關 */
+    'a.pushStats'(b) {
+      const month = /^\d{4}-\d{2}$/.test(b.month || '') ? b.month : today().slice(0, 7);
+      const rows = all('SELECT cat, SUM(CASE WHEN ok=1 THEN recipients ELSE 0 END) n, SUM(ok) sends, SUM(1-ok) failed FROM push_stats WHERE substr(time,1,7)=? GROUP BY cat ORDER BY n DESC', month);
+      const cats = PUSH_CATS.filter((c, i, a) => a.findIndex(x => x[1] === c[1]) === i).map(c => c[1]).concat('其他');
+      const keyOf = name => (PUSH_CATS.find(c => c[1] === name) || [])[2] || '';
+      const list = cats.map(name => { const r = rows.find(x => x.cat === name) || {}; const key = keyOf(name); return { name, n: r.n || 0, sends: r.sends || 0, failed: r.failed || 0, key, on: key ? cfgOn(key) : null, desc: key ? (SETTINGS[key] || [])[1] : name === '其他' ? '' : '每次操作時自己勾選「通知家長」才會發' }; })
+        .filter(x => x.n || x.failed || x.key || x.name !== '其他');
+      const recent = all('SELECT time,cat,recipients,ok,alt FROM push_stats WHERE substr(time,1,7)=? ORDER BY id DESC LIMIT 30', month);
+      const since = (get('SELECT MIN(time) t FROM push_stats') || {}).t || '';
+      return { month, list, total: list.reduce((n, x) => n + x.n, 0), recent, since, months: all('SELECT DISTINCT substr(time,1,7) m FROM push_stats ORDER BY m DESC LIMIT 12').map(r => r.m) };
+    },
     /** 補抓家長的 LINE 頭像（還沒有或超過 3 天沒更新的，一次最多 30 位；只有好友才抓得到） */
     async 'a.syncAvatars'() {
       if (!env.LINE_CHANNEL_ACCESS_TOKEN) return { updated: 0 };
@@ -1569,6 +1591,7 @@ export function createApp(opts = {}) {
       if (ids.length) add('已綁定的家長', good === sample.length, `抽查 ${sample.length} 位，${good} 位收得到（共 ${ids.length} 位綁定）`, good === sample.length ? '' : good === 0 ? '抽查的家長都收不到：很可能是切換官方帳號前綁定的舊資料，或 LIFF 不在同一個 Provider。請家長加入新的官方帳號後重新綁定。' : '收不到的家長可能已封鎖或刪除官方帳號好友，或是切換帳號前綁定的。');
       else add('已綁定的家長', true, '目前沒有任何家長綁定', '');
       if (b.send !== false) { const t = await call('https://api.line.me/v2/bot/message/push', { method: 'POST', body: JSON.stringify({ to: user.userId, messages: [{ type: 'text', text: '✅ 這是「' + cfg('教室名稱', '教室') + '」後台發出的推播測試（' + now().slice(5, 16) + '）。收到這則訊息代表推播功能正常。' }] }) });
+        try { run('INSERT INTO push_stats(time,cat,recipients,ok,alt) VALUES(?,?,?,?,?)', now(), '推播測試', 1, t.ok ? 1 : 0, '推播測試'); } catch { /* 略過 */ }
         add('測試推播', t.ok, t.ok ? '已送出，請看 LINE 有沒有收到' : `LINE 拒絕發送（${t.status}）${t.j.message || t.t}`, t.ok ? '送出成功但沒收到時，請確認沒有封鎖這個官方帳號，且看的是正確的官方帳號聊天室。' : t.status === 429 ? '本月推播額度已用完。' : ''); }
       return out;
     },

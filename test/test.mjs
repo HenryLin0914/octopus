@@ -603,6 +603,8 @@ let bad = ''; try { pushes.forEach(p => p.body && p.body.messages && p.body.mess
     const deny = ['a.ledger', 'a.cards', 'a.cardLog', 'a.topup', 'a.topupSave', 'a.cardSave', 'a.cardShare', 'a.familyShare', 'a.attCard', 'a.plans', 'a.student', 'a.export', 'a.pushQuota'];
     let leak = []; for (const x of deny) if (!/僅限管理員/.test((await call('teacher', x, { id: 'x', month: '2026-10' })).error || '')) leak.push(x);
     ok(!leak.length, '老師不能呼叫任何帳務功能' + (leak.length ? '：' + leak.join() : '')); }
+  { const st = (await call('boss', 'a.pushStats')).data, ck = st.list.find(x => x.name === '報到通知');
+    ok(st.total > 0 && ck && ck.n > 0 && ck.key === '報到推播' && typeof ck.on === 'boolean' && /僅限管理員/.test((await call('teacher', 'a.pushStats')).error), '推播用量依類別統計，並對應開關'); }
   { const pq = await call('boss', 'a.pushQuota'); ok(pq.ok && pq.data.ok && 'left' in pq.data, '總覽可取得本月推播額度'); }
   const n0 = pushes.length, pc = await call('boss', 'a.pushCheck');
   ok(pc.ok && pc.data.steps.some(x => x.name === '測試推播' && x.ok) && pc.data.steps.some(x => x.name === '您的 LINE 帳號') && pushes.slice(n0).some(x => /message\/push$/.test(x.url) && /推播測試/.test(x.body.messages[0].text)) && /僅限管理員/.test((await call('teacher', 'a.pushCheck')).error), '推播檢查會發測試訊息給自己，只有管理員能用');
