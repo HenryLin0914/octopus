@@ -379,7 +379,7 @@ async function fillQuota(fresh) {
   let q; try { q = await api('a.pushQuota', { fresh: !!fresh }); } catch { return; }
   const html = !q.ok ? `<span class="pq">LINE 推播額度：${esc(q.text)}</span>` : q.limit == null ? '<span class="pq">LINE 推播：不限則數</span>'
     : q.used == null ? `<span class="pq warn">本月 LINE 推播上限 ${q.limit} 則（LINE 暫時查不到已用則數）</span>`
-    : `<button class="pq ${q.left <= 0 ? 'bad' : q.left <= q.limit * 0.15 ? 'warn' : ''}" data-pqr title="數字來自 LINE 官方（和 LINE Official Account Manager 同一個來源），LINE 端統計可能延遲幾分鐘。每一位收件人算 1 則；官方帳號後台自己發的群發訊息也算在內；回覆訊息不算。點一下立即更新。">本月 LINE 推播已用 ${q.used}・剩 <b>${q.left}</b>／${q.limit} 則<small>　${esc(q.at || '')} 更新 ↻</small></button>`;
+    : `<button class="pq ${q.left <= 0 ? 'bad' : q.left <= q.limit * 0.15 ? 'warn' : ''}" data-pqr title="${esc(q.bot ? '官方帳號：' + q.bot + ' ' + q.botId + '｜' : '')}數字是用這個官方帳號的 Messaging API 向 LINE 查詢的（和 LINE Official Account Manager 同一個來源），LINE 端統計可能延遲幾分鐘。每一位收件人算 1 則；官方帳號後台自己發的群發訊息也算在內；回覆訊息不算。點一下立即更新。">${q.botId ? esc(q.botId) + '｜' : ''}本月推播已用 ${q.used}・剩 <b>${q.left}</b>／${q.limit} 則<small>　${esc(q.at || '')} 更新 ↻</small></button>`;
   $$('[data-pq]').forEach(e => { e.innerHTML = html; });
 }
 /* ---------- 頁面 ---------- */
