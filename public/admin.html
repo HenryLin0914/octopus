@@ -81,6 +81,7 @@ main{padding:22px 26px 60px;min-width:0}
 .rpi{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0}.rpi span{position:relative}.rpi img{width:96px;height:96px;object-fit:cover;border-radius:8px;border:1px solid var(--line);display:block}
 .rpi button{position:absolute;right:-6px;top:-6px;width:24px;height:24px;border-radius:50%;border:0;background:#231a20;color:#fff;font-size:15px;line-height:1}
 .fam{color:var(--info)}
+.dupw{background:var(--warn2);border:1px solid #ffd8a8;border-radius:10px;padding:9px 12px;margin-top:10px;font-size:13px;color:#7a4a00}.dupw>div{margin-top:4px}.dupw .s{color:#8a5a14}
 .pav{border-radius:50%;object-fit:cover;flex:none;vertical-align:middle;background:var(--soft)}.pav0{display:inline-flex;align-items:center;justify-content:center;background:var(--brand2);color:var(--brand);font-weight:700}.pas{display:flex;flex-direction:column;gap:3px;margin-top:4px;font-size:12px}.pas span{display:flex;align-items:center;gap:6px;white-space:nowrap}
 .pq{display:inline-block;font-size:13px;padding:5px 11px;border-radius:99px;background:var(--ok2);color:var(--ok);white-space:nowrap}.pq b{font-size:15px}.pq.warn{background:var(--warn2);color:var(--warn)}.pq.bad{background:#fdecec;color:var(--bad)}
 .who{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px}.who .chip{border:1px solid var(--line);background:#fff;color:var(--muted,#777);border-radius:99px;padding:4px 11px;font-size:13px;cursor:pointer;font-family:inherit}.who .chip.on{background:#e8f5ec;border-color:#b9dcc4;color:#256b3c;font-weight:600}
@@ -922,12 +923,24 @@ function editCourse(id, renew) {
 /* ---------- 學生 ---------- */
 const STU_F = () => [{ k: 'name', label: '姓名' }, { k: 'birthday', label: '生日', type: 'date', half: 1 }, { k: 'phone', label: '聯絡電話', half: 1 },
   { k: 'courses', label: '排入課程（點名單會出現這位學生）', type: 'checks', opts: A.meta.courses.filter(c => c.status === '啟用').map(c => [c.id, c.name]) }, { k: 'note', label: '備註' }];
+/** 找出可能重複的學生：同名、同生日（排除自己） */
+const dupStudents = (name, birthday, except = '') => { name = (name || '').trim(); return A.students.filter(x => x.id !== except && ((name && x.name === name) || (birthday && x.birthday === birthday)))
+  .map(x => ({ x, why: name && x.name === name && birthday && x.birthday === birthday ? '同名同生日' : name && x.name === name ? '同名' : '同生日' })); };
+const dupText = L => L.map(d => `${d.x.name}（${d.x.id}${d.x.birthday ? '｜' + d.x.birthday : ''}${d.x.phone ? '｜' + d.x.phone : ''}${d.x.status === '停用' ? '｜已停用' : ''}）— ${d.why}`).join('\n');
+/** 輸入姓名或生日時，即時提示可能重複的學生 */
+function dupWatch(m, except = '') {
+  const box = $('[data-dupw]', m); if (!box) return;
+  const run = () => { const L = dupStudents($('[name="name"]', m).value, $('[name="birthday"]', m).value, except);
+    box.innerHTML = L.length ? `<div class="dupw"><b>可能重複：</b>${L.slice(0, 5).map(d => `<div>${esc(d.x.name)}（${esc(d.x.id)}${d.x.birthday ? '｜' + esc(d.x.birthday) : ''}${d.x.phone ? '｜' + esc(d.x.phone) : ''}${d.x.status === '停用' ? '｜已停用' : ''}）<span class="tag ${d.why === '同生日' ? '' : 'warn'}">${d.why}</span></div>`).join('')}<div class="s">若是同一個人，請改用現有的資料，不要重複建立。</div></div>` : ''; };
+  m.addEventListener('input', e => { if (['name', 'birthday'].includes(e.target.name)) run(); }); m.addEventListener('change', e => { if (e.target.name === 'birthday') run(); }); run();
+}
 function newStudent() {
   const F = [...STU_F().slice(0, 3), { k: 'familyWith', label: '家人（同一家庭，例如兄弟姊妹、媽媽；可不選）', type: 'select', opts: [['', '沒有／之後再設定']].concat(A.students.filter(x => x.status !== '停用').map(x => [x.id, x.name + '（' + x.id + '）'])) }, ...STU_F().slice(3)];
-  formDialog('新增學生', F, {}, async o => { const dup = A.students.filter(x => x.name === (o.name || '').trim() || (o.phone && x.phone === o.phone && x.name === (o.name || '').trim()));
-    if (dup.length && !confirm('已經有同名的學生：\n' + dup.map(x => x.name + '（' + x.id + (x.phone ? '｜' + x.phone : '') + (x.status === '停用' ? '｜已停用' : '') + '）').join('\n') + '\n\n確定要再新增一位嗎？')) throw new Error('已取消，沒有新增');
+  const nm = formDialog('新增學生', F, {}, async o => { const dup = dupStudents(o.name, o.birthday);
+    if (dup.length && !confirm('可能已經有這位學生：\n' + dupText(dup) + '\n\n確定要再新增一位嗎？')) throw new Error('已取消，沒有新增');
     const r = await api('a.studentSave', o); const sib = o.familyWith && (A.students.find(x => x.id === o.familyWith) || {}); await show(); setTimeout(() => dialog('已新增 ' + o.name, `<p>學生編號：<b>${esc(r.id)}</b></p><p>綁定碼：<b style="font-size:28px;letter-spacing:4px">${esc(r.code)}</b></p>
-    ${sib && sib.name ? `<p class="s">已和 <b>${esc(sib.name)}</b> 設為同一家庭。${sib.bound ? '點學生 →「家人」可以幫已綁定的家長直接補綁，家長不用再輸入綁定碼。' : '家長輸入其中一位的綁定碼，兩位會一起綁定。'}</p>` : '<p class="s">請把綁定碼交給家長。家長在 LINE 點選單任一格，輸入綁定碼即可；爸爸媽媽可以各自綁定。</p>'}`), 50); }, { saveText: '新增', extra: '<p class="s">設為同一家庭後：家長輸入其中一位的綁定碼就會全部綁定，儲值時也會優先列出家人供勾選共用上課卡。</p>' });
+    ${sib && sib.name ? `<p class="s">已和 <b>${esc(sib.name)}</b> 設為同一家庭。${sib.bound ? '點學生 →「家人」可以幫已綁定的家長直接補綁，家長不用再輸入綁定碼。' : '家長輸入其中一位的綁定碼，兩位會一起綁定。'}</p>` : '<p class="s">請把綁定碼交給家長。家長在 LINE 點選單任一格，輸入綁定碼即可；爸爸媽媽可以各自綁定。</p>'}`), 50); }, { saveText: '新增', extra: '<div data-dupw></div><p class="s">設為同一家庭後：家長輸入其中一位的綁定碼就會全部綁定，儲值時也會優先列出家人供勾選共用上課卡。</p>' });
+  dupWatch(nm);
 }
 function importStudents() {
   const F = [{ k: 'text', label: '每行一位：姓名,生日,電話（生日、電話可省略）', type: 'textarea', rows: 8, ph: '王小明,2018-03-15,0912345678\n李小華' },
@@ -935,6 +948,8 @@ function importStudents() {
   formDialog('批次匯入學生', F, {}, async o => {
     const rows = o.text.split('\n').map(l => l.split(/[,，\t]/).map(x => x.trim())).filter(a => a[0]).map(a => ({ name: a[0], birthday: a[1] || '', phone: a[2] || '' }));
     if (!rows.length) throw new Error('請至少輸入一位學生');
+    const dup = rows.flatMap(r => dupStudents(r.name, r.birthday).map(d => r.name + ' ↔ ' + dupText([d])));
+    if (dup.length && !confirm('有 ' + dup.length + ' 筆可能和現有學生重複：\n' + dup.slice(0, 15).join('\n') + (dup.length > 15 ? '\n…' : '') + '\n\n仍要全部匯入嗎？（按取消可回去刪掉重複的行）')) throw new Error('已取消，沒有匯入');
     const r = await api('a.studentImport', { rows, courseId: o.courseId }); toast('已新增 ' + r.added + ' 位，綁定碼已自動產生'); show();
   }, { saveText: '匯入', extra: '<p class="s">可直接從 Excel 複製貼上。每位學生的綁定碼會自動產生，之後可用「匯出資料 → 學生」一次列出。</p>' });
 }
@@ -962,7 +977,9 @@ async function openStudent(id) {
           { memberIds: d.family.map(f => f.id), sync: '1' }, async o => { const r = await api('a.familySave', { studentId: id, memberIds: o.memberIds, syncParents: !!o.sync }); toast('已儲存' + (r.bound ? '，補綁 ' + r.bound + ' 筆家長綁定' : '')); await show(); openStudent(id); },
           { extra: '<p class="s">同一家庭的好處：家長輸入任一位的綁定碼就全部綁定；儲值時可直接勾選共用上課卡。全部取消勾選＝把這位學生移出家庭。</p>', back: () => openStudent(id) }); }
       if (b.dataset.a === 'edit') { m.remove(); formDialog('編輯 ' + s.name, [...STU_F(), { k: 'status', label: '狀態', type: 'select', opts: [['在學', '在學'], ['停用', '停用（離開教室）']] }, { k: 'regen', label: '綁定碼', type: 'select', opts: [['', '維持不變'], ['1', '重新產生（舊的失效）']] }], { ...s, courses: d.courses },
-        async o => { await api('a.studentSave', { id, ...o, regenCode: !!o.regen }); toast('已儲存'); show(); openStudent(id); }, { back: () => openStudent(id) }); }
+        async o => { const dup = (o.name !== s.name || o.birthday !== (s.birthday || '')) ? dupStudents(o.name !== s.name ? o.name : '', o.birthday !== (s.birthday || '') ? o.birthday : '', id) : [];
+          if (dup.length && !confirm('可能和其他學生重複：\n' + dupText(dup) + '\n\n仍要儲存嗎？')) throw new Error('已取消，沒有儲存');
+          await api('a.studentSave', { id, ...o, regenCode: !!o.regen }); toast('已儲存'); show(); openStudent(id); }, { back: () => openStudent(id), extra: '<div data-dupw></div>' }); dupWatch($$('.mask').pop(), id); }
       if (b.dataset.unbind) { if (!confirm('確定解除這位家長的綁定？')) return; await api('a.unbind', { userId: b.dataset.unbind, studentId: id }); toast('已解除'); m.remove(); show(); openStudent(id); }
       if (b.dataset.card) { m.remove(); cardDialog(d.cards.find(x => x.id === b.dataset.card), () => { show(); openStudent(id); }, () => openStudent(id)); }
     } catch (err) { toast(err.message, true); }
