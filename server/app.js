@@ -1537,15 +1537,15 @@ export function createApp(opts = {}) {
         const before = picOf(id); savePic(id, j.displayName || '', j.pictureUrl || ''); if (picOf(id) !== before) updated++; } catch { /* 略過 */ } }
       return { updated };
     },
-    /** 本月 LINE 推播額度（快取 5 分鐘，避免每次開總覽都去問 LINE） */
+    /** 本月 LINE 推播額度（快取 1 分鐘；按一下可立即重抓） */
     async 'a.pushQuota'(b) {
       if (!env.LINE_CHANNEL_ACCESS_TOKEN) return { ok: false, text: '尚未設定 LINE 金鑰' };
-      if (quotaCache && Date.now() - quotaCache.at < 5 * 60e3 && !b.fresh) return quotaCache.v;
+      if (quotaCache && Date.now() - quotaCache.at < 60e3 && !b.fresh) return quotaCache.v;
       const get1 = async url => { try { const r = await lineFetch(url, { headers: authHdr() }); return r.ok ? await r.json() : null; } catch { return null; } };
       const q = await get1('https://api.line.me/v2/bot/message/quota'), c = await get1('https://api.line.me/v2/bot/message/quota/consumption');
       if (!q) return { ok: false, text: '無法取得推播額度' };
       const limit = q.type === 'limited' ? q.value : null, used = c ? c.totalUsage : null;
-      const v = { ok: true, limit, used, left: limit != null && used != null ? Math.max(0, limit - used) : null, month: today().slice(0, 7) };
+      const v = { ok: true, limit, used, left: limit != null && used != null ? Math.max(0, limit - used) : null, month: today().slice(0, 7), at: now().slice(11, 16) };
       quotaCache = { at: Date.now(), v }; return v;
     },
     async 'a.pushCheck'(b, user) {

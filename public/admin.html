@@ -83,7 +83,7 @@ main{padding:22px 26px 60px;min-width:0}
 .fam{color:var(--info)}
 .dupw{background:var(--warn2);border:1px solid #ffd8a8;border-radius:10px;padding:9px 12px;margin-top:10px;font-size:13px;color:#7a4a00}.dupw>div{margin-top:4px}.dupw .s{color:#8a5a14}
 .pav{border-radius:50%;object-fit:cover;flex:none;vertical-align:middle;background:var(--soft)}.pav0{display:inline-flex;align-items:center;justify-content:center;background:var(--brand2);color:var(--brand);font-weight:700}.pas{display:flex;flex-direction:column;gap:3px;margin-top:4px;font-size:12px}.pas span{display:flex;align-items:center;gap:6px;white-space:nowrap}
-.pq{display:inline-block;font-size:13px;padding:5px 11px;border-radius:99px;background:var(--ok2);color:var(--ok);white-space:nowrap}.pq b{font-size:15px}.pq.warn{background:var(--warn2);color:var(--warn)}.pq.bad{background:#fdecec;color:var(--bad)}
+.pq small{font-size:11px;opacity:.75}button.pq{border:0;cursor:pointer;font-family:inherit}.pq{display:inline-block;font-size:13px;padding:5px 11px;border-radius:99px;background:var(--ok2);color:var(--ok);white-space:nowrap}.pq b{font-size:15px}.pq.warn{background:var(--warn2);color:var(--warn)}.pq.bad{background:#fdecec;color:var(--bad)}
 .who{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px}.who .chip{border:1px solid var(--line);background:#fff;color:var(--muted,#777);border-radius:99px;padding:4px 11px;font-size:13px;cursor:pointer;font-family:inherit}.who .chip.on{background:#e8f5ec;border-color:#b9dcc4;color:#256b3c;font-weight:600}
 .fbox{background:#eef5fc;border:1px solid #cfe2f5;border-radius:10px;padding:10px 12px;margin-top:10px}.fbox .row{padding:7px 0;border-color:#cfe2f5}
 .amt{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -374,11 +374,12 @@ function formDialog(title, fields, values, save, { extra = '', saveText = '儲�
 }
 
 /** 本月 LINE 推播剩餘則數（總覽右上角、設定的推播檢查） */
-async function fillQuota() {
+async function fillQuota(fresh) {
   const els = $$('[data-pq]'); if (!els.length) return;
-  let q; try { q = await api('a.pushQuota'); } catch { return; }
+  let q; try { q = await api('a.pushQuota', { fresh: !!fresh }); } catch { return; }
   const html = !q.ok ? `<span class="pq">LINE 推播額度：${esc(q.text)}</span>` : q.limit == null ? '<span class="pq">LINE 推播：不限則數</span>'
-    : `<span class="pq ${q.left <= 0 ? 'bad' : q.left <= q.limit * 0.15 ? 'warn' : ''}" title="LINE 官方帳號本月可主動推播的則數（每月 1 日重置）；回覆訊息不算">本月 LINE 推播剩 <b>${q.left}</b>／${q.limit} 則</span>`;
+    : q.used == null ? `<span class="pq warn">本月 LINE 推播上限 ${q.limit} 則（LINE 暫時查不到已用則數）</span>`
+    : `<button class="pq ${q.left <= 0 ? 'bad' : q.left <= q.limit * 0.15 ? 'warn' : ''}" data-pqr title="數字來自 LINE 官方（和 LINE Official Account Manager 同一個來源），LINE 端統計可能延遲幾分鐘。每一位收件人算 1 則；官方帳號後台自己發的群發訊息也算在內；回覆訊息不算。點一下立即更新。">本月 LINE 推播已用 ${q.used}・剩 <b>${q.left}</b>／${q.limit} 則<small>　${esc(q.at || '')} 更新 ↻</small></button>`;
   $$('[data-pq]').forEach(e => { e.innerHTML = html; });
 }
 /* ---------- 頁面 ---------- */
@@ -1437,6 +1438,7 @@ document.addEventListener('click', async e => {
       return formDialog('儲值：選擇學生', [{ k: 'sid', label: '學生', type: 'select', opts: list.map(x => [x.id, `${x.name}（剩 ${x.remain} 堂）`]) }], {}, async o => { setTimeout(() => topup(o.sid), 30); }, { saveText: '下一步' }); }
     if (ds.atab) { A.att.tab = ds.atab; return show(); }
     if (ds.astu) { A.att.student = ds.astu; A.att.tab = 'log'; return show(); }
+    if (ds.pqr !== undefined) { el.disabled = true; await fillQuota(true); return; }
     if (ds.wlay) { try { localStorage.setItem('octo_wlay', ds.wlay); } catch { /* 無痕模式 */ } return show(); }
     if (ds.mtab) { A.money.tab = ds.mtab; return show(); }
     if (ds.cf) { A.money.cf = ds.cf; return show(); }
